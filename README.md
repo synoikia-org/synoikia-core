@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <strong>Many households, one roof.</strong><br />
+  <strong>Many MCPs, one roof.</strong><br />
   One control plane for your self-hosted MCPs: every service behind a single MCP server, one admin portal and one permission gate.
 </p>
 
@@ -20,6 +20,9 @@
   <a href="#contributing">Contributing</a>
 </p>
 
+> [!WARNING]
+> This tool is in early development. Expect breaking changes, missing features, and bugs. It is not yet recommended for production use.
+
 ---
 
 Synoikia replaces a handful of separately deployed [MCP][mcp] servers with one, extended by plugins. Each plugin instance gets its own MCP endpoint, and every call from a model passes through the same sandbox, access levels and human approvals:
@@ -28,26 +31,30 @@ Synoikia replaces a handful of separately deployed [MCP][mcp] servers with one, 
 https://mcp.example.com/truenas   → TrueNAS plugin
 https://mcp.example.com/seerr     → Seerr plugin
 https://mcp.example.com/ha        → Home Assistant plugin
-http://admin.lan:8081             → Admin portal (separate port, login required)
+https://synoikia.example.com      → Admin portal (separate port, login required)
 ```
+## The name
+
+_Synoikia_ (Greek συνοικία; pronounced si.niˈci.a) comes from _syn_ (σύν, "together") and _oikos_ (οἶκος, "house"): households living together. It shares its root with _synoikismos_, or [synoecism](https://en.wikipedia.org/wiki/Synoecism), the ancient Greek practice of joining separate villages into a single city. Athens traced its own founding to one, and marked it every year with a festival called the Synoikia.
+
+That is what this project does for your MCP servers: services that used to run scattered, each with its own deployment and its own rules, now live under one roof and answer to one household.
 
 ## Why Synoikia
 
-Synoikia grew out of running several MCP servers next to each other ([TrueNAS][truenas], [Seerr][seerr], [Home Assistant][ha]) and hitting the same two problems with every one of them.
+Synoikia grew out of running several MCP servers next to each other and hitting the same two problems with every one of them.
 
 ### 1. Tool definitions eat the context window
 
 A typical MCP server exposes one [tool][mcp-tools] per operation, and every tool's name, description and schema is loaded into the model's context at the start of every session, whether it is used or not. The more of the API a server covers, the more it costs, so servers end up hand-curating a small subset and still paying tens of thousands of tokens for it.
 
-Synoikia uses the [**Code Mode**][code-mode] pattern instead: each endpoint exposes three small tools. The model calls `search(code)` to find only the operations and schemas it needs for the task, then `execute(code)` to call them, and `resume` to pick up a call that waited for your approval. The full catalog never enters the context, so the cost stays flat however large the upstream API is:
+Synoikia uses the [**Code Mode**][code-mode] pattern instead: each endpoint exposes three small tools. The model calls `search(code)` to find only the operations and schemas it needs for the task, then `execute(code)` to call them, and `resume` to pick up a call that waited for your approval. The full catalog never enters the context, so the cost stays flat however large the upstream API is.
+
+Few examples:
 
 | Integration    | Classic MCP server                         | Context cost    | With Synoikia (3 tools)     |
 | -------------- | ------------------------------------------ | --------------- | --------------------------- |
 | TrueNAS        | 52 hand-picked tools                       | ~15–20K tokens  | ~1–3K, all ~650–700 methods |
 | Home Assistant | 65 curated tools, growing with each domain | ~45–60K+ tokens | ~1–3K, every service        |
-| Seerr          | 6 tools covering ~10% of the API           | ~1K tokens      | ~1–2K, 100% of the API      |
-
-A naive one-tool-per-method wrapper of the TrueNAS API alone would cost over 100K tokens. _Estimates from the original per-server designs, now kept with each plugin in [synoikia-core-plugins][core-plugins]._
 
 ### 2. Every MCP server has its own idea of safety
 
@@ -57,11 +64,11 @@ Synoikia implements the security-critical parts **once, in core**, and applies t
 
 ## Core features
 
-**🔌 One server, many plugins.** Plugins are installed from plugin repositories, verified with [minisign][minisign] signatures. The [Synoikia plugins repository][core-plugins] ([TrueNAS][truenas], [Seerr][seerr], [Home Assistant][ha]) comes pre-configured, and you can add your own. Run several instances of the same plugin, each on its own endpoint.
+**🔌 One server, many MCPs.** MCPs (internally called plugins) are installed from plugin repositories, verified with [minisign][minisign] signatures. The [Synoikia plugins repository][core-plugins] comes pre-configured with a set of MCPs, and you can add your own. Run several instances of the same MCP (i.e., truenas-prod, truenas-staging), each on its own endpoint.
 
 **🧰 Three tools per endpoint.** Every endpoint exposes just `search(code)`, `execute(code)` and `resume`. The model discovers operations and calls them with code that runs inside an [`isolated-vm`][isolated-vm] sandbox with no Node APIs, network or timers.
 
-**🛂 A permission gate on every call.** Each operation has an access level, set per group with per-operation exceptions. New groups start at Ask. Whether an operation reads or writes comes from the upstream API (the HTTP method, or the roles a TrueNAS method requires), not from a guess:
+**🛂 A permission gate on every call.** Each operation has an access level, set per group with per-operation exceptions. New groups start at Ask. Whether an operation reads or writes comes from the upstream API, not from a guess:
 
 | Level     | Behaviour                                                                   |
 | --------- | --------------------------------------------------------------------------- |
@@ -72,7 +79,7 @@ Synoikia implements the security-critical parts **once, in core**, and applies t
 
 An operation's own level only offers what fits it: a read is None, Read or Ask (every call asks), a write None, Ask or Write.
 
-**✋ Human approvals the model can't fake.** You approve on Synoikia's own approval page, where you sign in once per browser with your authenticator app. Clients that support [URL-mode elicitation][elicitation] open it for you; in chat clients such as Claude, an approval card appears in the conversation and the chat continues by itself after you decide. The client that made the call can't approve it. "Approve for this session" lets one client run its Ask operations on one endpoint without asking, for a few hours. Destructive operations are `locked`: off until you set them to Ask, and then they always need a human, a typed confirmation and a fresh authenticator code, and can never be pre-approved or set to Write.
+**✋ Human-in-the-loop (HITL) the model can't fake.** You approve on Synoikia's own approval page, where you sign in once per browser with your authenticator app. Clients that support [URL-mode elicitation][elicitation] open it for you; in chat clients such as Claude Chat or CHATGPT, an approval card appears in the conversation and the chat continues by itself after you decide. The client that made the call can't approve it. "Approve for this session" lets one client run its Ask operations on one endpoint without asking, for a few hours (useful for batch operations). Destructive operations are `locked` by default: off until you set them to Ask, and then they always need a human, a typed confirmation and a fresh authenticator code, and can never be pre-approved or set to Write.
 
 **🔐 Per-client ceilings.** Each connected client gets an access ceiling when you connect it (OAuth consent) or create its token: read only by default. MCP clients authenticate with [OAuth 2.1][oauth], bearer tokens or your existing reverse-proxy auth (such as [Cloudflare Access][cf-access] or [Authelia][authelia]).
 
@@ -80,29 +87,11 @@ An operation's own level only offers what fits it: a read is None, Read or Ask (
 
 **🙈 Secrets stay out of the transcript.** Passwords, tokens and keys are redacted from results, logs, approvals and the audit trail, including each instance's actual secret values wherever they appear in text.
 
-**📜 Audit log and notifications.** Every call, decision and admin change is audited and exportable. [ntfy][ntfy] and signed webhooks tell you when something needs you.
+**📜 Audit log and notifications.** Every call, decision and admin change is audited and exportable. An optional [ntfy][ntfy] and signed webhooks tell you when something needs you.
 
-**🖥️ An admin portal on your LAN.** A separate, login-protected port with local accounts, [TOTP][totp] and [OIDC][oidc] single sign-on, for endpoints, access levels, pre-approval rules, clients, plugins and settings.
+**🖥️ An admin portal.** A separate, login-protected port with local accounts, [TOTP][totp] and [OIDC][oidc] single sign-on, for endpoints, access levels, pre-approval rules, clients, plugins and settings.
 
 **🔄 Self-maintaining catalogs.** Each instance re-syncs its operation catalog when the upstream version changes, before serving anything from a newly installed plugin version, and on a daily schedule, and keeps serving the last good catalog if the upstream is briefly unreachable.
-
-## The name
-
-_Synoikia_ (Greek συνοικία) comes from _syn_ (σύν, "together") and _oikos_ (οἶκος, "house"): households living together. It shares its root with _synoikismos_, or [synoecism](https://en.wikipedia.org/wiki/Synoecism), the ancient Greek practice of joining separate villages into a single city. Athens traced its own founding to one, and marked it every year with a festival called the Synoikia.
-
-That is what this project does for your MCP servers: services that used to run scattered, each with its own deployment and its own rules, now live under one roof and answer to one household.
-
-<p align="center">
-  <img src="docs/assets/synoikia-mark.svg" alt="" width="72" />
-</p>
-
-The mark draws the same idea: four identical dwellings, joined by paths to one shared hearth at the centre, inside the wall of the city.
-
-## Status
-
-The core is complete: encryption, catalog sync with access levels, the permission-confined plugin host, the [`isolated-vm`][isolated-vm] sandbox, the permission gate with pre-approval rules and human approval, admin auth (local + TOTP + OIDC), MCP auth (external, bearer, OAuth 2.1), the Admin API and portal, ntfy/webhook notifications, plugin repositories with minisign signing, and maintenance jobs.
-
-The TrueNAS, Seerr and Home Assistant plugins live in [synoikia-core-plugins][core-plugins] and are released there as a signed plugin repository. The software design description is in [`docs/design/`](docs/design/README.md).
 
 ## Layout
 
