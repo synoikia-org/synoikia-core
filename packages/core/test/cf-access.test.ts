@@ -1,9 +1,10 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
-import { checkCloudflareAccess, verifyCloudflareAccess } from '../src/auth/mcp-auth.js';
+import type { JWTVerifyGetKey } from 'jose';
+import { checkCloudflareAccess } from '../src/auth/external-cloudflare.js';
 
-/** Cloudflare Access assertions (design §6.2 `external` mode; review test gap 9). */
-describe('verifyCloudflareAccess', () => {
+/** Cloudflare Access assertions (design §6.2 `external` method). */
+describe('checkCloudflareAccess', () => {
   const TEAM = 'home.cloudflareaccess.com';
   const AUD = 'aud-tag-123';
 
@@ -22,30 +23,32 @@ describe('verifyCloudflareAccess', () => {
     return { keys, sign };
   }
 
-  it('accepts a valid assertion and returns its email (or subject)', async () => {
+  const who = async (teamDomain: string, assertion: string, keys: JWTVerifyGetKey) => {
+    const result = await checkCloudflareAccess(teamDomain, AUD, assertion, keys);
+    return result.ok ? result.identity : null;
+  };
+
+  it('accepts a valid user assertion and returns its email', async () => {
     const { keys, sign } = await team();
-    await expect(verifyCloudflareAccess(TEAM, AUD, await sign({ email: 'me@example.com' }), keys)).resolves.toBe(
+    await expect(who(TEAM, await sign({ sub: 'u-1', email: 'me@example.com' }), keys)).resolves.toBe('me@example.com');
+    await expect(who(`https://${TEAM}/`, await sign({ sub: 'u-1', email: 'me@example.com' }), keys)).resolves.toBe(
       'me@example.com',
     );
-    await expect(verifyCloudflareAccess(`https://${TEAM}/`, AUD, await sign({ sub: 'svc-1' }), keys)).resolves.toBe(
-      'svc-1',
-    );
   });
 
-  it('names a service token by its client ID, since its subject is empty', async () => {
+  it('refuses a service token assertion: it names no user', async () => {
     const { keys, sign } = await team();
+    const service = await checkCloudflareAccess(TEAM, AUD, await sign({ sub: '', common_name: 'abc.access' }), keys);
+    expect(service).toEqual({ ok: false, reason: expect.stringContaining('service token') });
     await expect(
-      verifyCloudflareAccess(TEAM, AUD, await sign({ sub: '', common_name: 'abc.access' }), keys),
-    ).resolves.toBe('service:abc.access');
+      who(TEAM, await sign({ sub: 'u-1', email: 'a@b.c', common_name: 'abc.access' }), keys),
+    ).resolves.toBeNull();
   });
 
-  it('refuses an assertion that names nobody, and an email that could pose as a service token', async () => {
+  it('refuses an assertion without a user email', async () => {
     const { keys, sign } = await team();
-    for (const claims of [{}, { sub: '' }, { email: '' }])
-      await expect(verifyCloudflareAccess(TEAM, AUD, await sign(claims), keys)).resolves.toBeNull();
-    await expect(
-      verifyCloudflareAccess(TEAM, AUD, await sign({ email: 'service:abc.access', sub: 'u-1' }), keys),
-    ).resolves.toBe('u-1');
+    for (const claims of [{}, { sub: '' }, { email: '' }, { sub: 'u-1' }, { sub: 'u-1', email: 'service:abc' }])
+      await expect(who(TEAM, await sign(claims), keys)).resolves.toBeNull();
   });
 
   it('rejects a wrong audience, a wrong issuer, an expired token, another key and garbage', async () => {
@@ -58,7 +61,7 @@ describe('verifyCloudflareAccess', () => {
       await other.sign({ email: 'a@b.c' }),
       'not-a-jwt',
     ];
-    for (const assertion of cases) await expect(verifyCloudflareAccess(TEAM, AUD, assertion, keys)).resolves.toBeNull();
+    for (const assertion of cases) await expect(who(TEAM, assertion, keys)).resolves.toBeNull();
   });
 
   it('says which claim did not match, for the server log', async () => {

@@ -13,7 +13,7 @@ import { findRegistryEntries, scopesFromQuery } from '../../catalog/registry.js'
 import { createRule, deleteRule, listRules, updateRule } from '../../catalog/rules.js';
 import { NotFoundError, ValidationError } from '../../errors.js';
 import { ACCESS_LEVELS } from '../../gate/access.js';
-import { AUTH_MODES } from '../../instances/manager.js';
+import { AUTH_METHODS } from '../../instances/manager.js';
 import { clientIp, readJson, readOptionalJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 import { createRedactor, GLOBAL_SENSITIVE_KEYS } from '../../gate/redact.js';
@@ -38,7 +38,7 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         slug: z.string().min(1).max(63),
         displayName: z.string().max(100).optional(),
         connection: z.record(z.string(), z.unknown()).default({}),
-        authMode: z.enum(AUTH_MODES).nullable().optional(),
+        authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
         settings: z.record(z.string(), z.unknown()).optional(),
         enabled: z.boolean().optional(),
       }),
@@ -55,7 +55,7 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         displayName: z.string().max(100).optional(),
         slug: z.string().max(63).optional(),
         enabled: z.boolean().optional(),
-        authMode: z.enum(AUTH_MODES).nullable().optional(),
+        authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
         settings: z.record(z.string(), z.unknown()).optional(),
       }),
     );

@@ -399,6 +399,46 @@ describe('instances and access', () => {
     expect(csv).toContain('operation_updated');
   });
 
+  it('sets an endpoint’s client auth methods and shows the effective ones', async () => {
+    const t = await withInstance();
+    const patch = (authMethods: unknown) => t.b.patch(`/api/instances/${t.id}`, { authMethods });
+    expect((await patch(['bearer', 'telepathy'])).status).toBe(400);
+    expect(await (await patch(['oauth', 'bearer', 'oauth'])).json()).toMatchObject({
+      authMethods: ['bearer', 'oauth'],
+    });
+    const effective = async () =>
+      ((await (await t.b.get('/api/overview')).json()) as { instances: { effectiveAuthMethods: string[] }[] })
+        .instances[0]?.effectiveAuthMethods;
+    expect(await effective()).toEqual(['bearer', 'oauth']);
+    expect((await t.b.put('/api/settings/mcp', { clientAuth: { bearer: false, oauth: true } })).status).toBe(200);
+    expect(await effective()).toEqual(['oauth']);
+    expect(await (await patch([])).json()).toMatchObject({ authMethods: [] });
+    expect(await effective()).toEqual([]);
+    expect(await (await patch(null)).json()).toMatchObject({ authMethods: null });
+    expect(await effective()).toEqual(['oauth']);
+  });
+
+  it('refuses client auth settings with no method, or external auth without its provider', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const put = (body: unknown) => b.put('/api/settings/mcp', body);
+    const none = await put({ clientAuth: { bearer: false, oauth: false, external: false } });
+    expect(none.status).toBe(400);
+    expect(await none.json()).toMatchObject({ error: 'invalid_settings' });
+    expect((await put({ clientAuth: { external: true } })).status).toBe(400);
+    expect(
+      (await put({ clientAuth: { external: true }, cfAccess: { teamDomain: 'team.example', aud: '' } })).status,
+    ).toBe(400);
+    expect((await put({ external: { provider: 'other' } })).status).toBe(400);
+    const ok = await put({ clientAuth: { external: true }, cfAccess: { teamDomain: 'team.example', aud: 'tag' } });
+    expect(await ok.json()).toMatchObject({
+      clientAuth: { bearer: true, oauth: true, external: true },
+      external: { provider: 'cloudflare' },
+    });
+    // The provider can't lose its configuration while external auth is on.
+    expect((await put({ cfAccess: { teamDomain: '', aud: '' } })).status).toBe(400);
+  });
+
   it('issues MCP bearer tokens once and never lists their value', async () => {
     const t = await withInstance();
     const created = (await (await t.b.post('/api/tokens', { name: 'claude code', scope: [t.id] })).json()) as {

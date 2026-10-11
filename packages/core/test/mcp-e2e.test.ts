@@ -6,7 +6,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitationCompleteNotificationSchema, ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import type { CryptoKey, JWTVerifyGetKey } from 'jose';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../src/app.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
 import { setRoleLevel } from '../src/catalog/role-levels.js';
@@ -26,6 +28,19 @@ import { createTestApp } from './helpers.js';
  * full OAuth 2.1 flow and URL-mode approvals. */
 
 const PASSWORD = 'correct horse battery';
+
+const cfKeys = vi.hoisted(() => ({
+  local: undefined as JWTVerifyGetKey | undefined,
+  privateKey: undefined as CryptoKey | undefined,
+}));
+vi.mock('jose', async (importOriginal) => {
+  const jose = await importOriginal<typeof import('jose')>();
+  const createRemoteJWKSet = ((url: URL) =>
+    url.hostname === 'e2e.cloudflareaccess.com'
+      ? (...args: Parameters<JWTVerifyGetKey>) => cfKeys.local!(...args)
+      : jose.createRemoteJWKSet(url)) as typeof jose.createRemoteJWKSet;
+  return { ...jose, createRemoteJWKSet };
+});
 
 let ctx: AppContext;
 let servers: RunningServers;
@@ -48,6 +63,9 @@ beforeAll(async () => {
     { memoryDb: true },
   );
   adminId = (await ctx.users.create({ username: 'admin', password: PASSWORD })).id;
+  const pair = await generateKeyPair('RS256');
+  cfKeys.privateKey = pair.privateKey;
+  cfKeys.local = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256' }] });
   servers = await startServers(ctx);
   base = `http://127.0.0.1:${servers.mcp.port}`;
   // OAuth is off until the public URL is known (review M12); the port is only known now.
@@ -103,6 +121,41 @@ const approvalIdOf = (res: Record<string, unknown>) => {
   const url = (res.approval as { url: string }).url;
   return ctx.links.resolve(new URL(url).pathname.slice('/a/'.length))!.approvalId;
 };
+
+// Cloudflare Access with a local key set in place of the team's remote one.
+const CF_TEAM = 'e2e.cloudflareaccess.com';
+const CF_AUD = 'e2e-aud';
+const cf = {
+  async sign(claims: Record<string, unknown>) {
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(`https://${CF_TEAM}`)
+      .setAudience(CF_AUD)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(cfKeys.privateKey!);
+  },
+};
+const useExternal = (on: boolean) =>
+  updateSettings(
+    ctx.db,
+    'mcp',
+    on
+      ? { clientAuth: { bearer: true, oauth: true, external: true }, cfAccess: { teamDomain: CF_TEAM, aud: CF_AUD } }
+      : { clientAuth: { bearer: true, oauth: true, external: false }, cfAccess: { teamDomain: '', aud: '' } },
+  );
+
+const initializeWith = (slug: string, headers: Record<string, string> = {}) =>
+  fetch(`${base}/${slug}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'a', version: '1' } },
+    }),
+  });
 
 const parse = (res: unknown) =>
   JSON.parse((res as { content: { text: string }[] }).content[0]!.text) as Record<string, unknown>;
@@ -549,60 +602,52 @@ describe('MCP endpoint with bearer tokens', () => {
   });
 
   it('refuses anonymous external callers: every call belongs to a user', async () => {
-    updateSettings(ctx.db, 'mcp', { trustedIdentityHeader: '' });
-    await ctx.instances.update(otherInstanceId, { authMode: 'external' });
+    useExternal(true);
+    await ctx.instances.update(otherInstanceId, { authMethods: ['external'] });
     try {
-      const res = await fetch(`${base}/echo-two`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'a', version: '1' } },
-        }),
-      });
-      expect(res.status).toBe(401);
+      expect((await initializeWith('echo-two')).status).toBe(401);
     } finally {
-      await ctx.instances.update(otherInstanceId, { authMode: null });
+      await ctx.instances.update(otherInstanceId, { authMethods: null });
+      useExternal(false);
     }
   });
 
-  it('serves external mode with a trusted identity header, registering unknown names with the default role', async () => {
-    updateSettings(ctx.db, 'mcp', { trustedIdentityHeader: 'remote-user' });
-    await ctx.instances.update(otherInstanceId, { authMode: 'external' });
+  it('refuses a Cloudflare Access service token assertion', async () => {
+    useExternal(true);
+    await ctx.instances.update(otherInstanceId, { authMethods: ['external'] });
+    try {
+      const assertion = await cf.sign({ sub: '', common_name: 'abc.access' });
+      expect((await initializeWith('echo-two', { 'cf-access-jwt-assertion': assertion })).status).toBe(401);
+    } finally {
+      await ctx.instances.update(otherInstanceId, { authMethods: null });
+      useExternal(false);
+    }
+  });
+
+  it('serves external auth with a Cloudflare Access user, registering unknown names with the default role', async () => {
+    useExternal(true);
+    await ctx.instances.update(otherInstanceId, { authMethods: ['external'] });
     await ctx.instances.syncNow(otherInstanceId);
-    const initAs = (name: string) =>
-      fetch(`${base}/echo-two`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
-          'remote-user': name,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'a', version: '1' } },
-        }),
-      });
+    const initAs = async (email: string) =>
+      initializeWith('echo-two', { 'cf-access-jwt-assertion': await cf.sign({ sub: `id-${email}`, email }) });
     // Self-registration is off until an admin sets a default role.
-    expect((await initAs('alice')).status).toBe(403);
-    expect(ctx.users.byUsername('alice')).toBeUndefined();
+    expect((await initAs('alice@example.com')).status).toBe(403);
+    expect(ctx.users.byUsername('alice@example.com')).toBeUndefined();
     const viewers = ctx.roles.create({ name: 'Viewers' });
     ctx.roles.setInstances(viewers.id, [otherInstanceId]);
     setRoleLevel(ctx.db, viewers.id, otherInstanceId, { group: 'echo' }, 'read');
     updateSettings(ctx.db, 'security', { defaultRoleId: viewers.id });
-    // The admin matches case-insensitively and keeps the Admin role.
-    expect((await initAs('ADMIN')).status).toBe(200);
-    // A self-registered account never stands for a proxy identity, whatever its name.
-    await ctx.users.register({ username: 'Carol', password: PASSWORD }, 'signup');
-    expect((await initAs('carol')).status).toBe(403);
+    // An admin-made user matches case-insensitively and keeps its role.
+    await ctx.users.create({ username: 'Boss@example.com', password: PASSWORD });
+    expect((await initAs('boss@example.com')).status).toBe(200);
+    // A self-registered account never stands for an external identity, whatever its name.
+    await ctx.users.register({ username: 'carol@example.com', password: PASSWORD }, 'signup');
+    expect((await initAs('carol@example.com')).status).toBe(403);
     const client = new Client({ name: 'e2e', version: '1' });
+    const assertion = await cf.sign({ sub: 'id-alice', email: 'alice@example.com' });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`${base}/echo-two`), {
-        requestInit: { headers: { 'remote-user': 'alice' } },
+        requestInit: { headers: { 'cf-access-jwt-assertion': assertion } },
       }),
     );
     await client.callTool({ name: 'execute', arguments: { code: `return await echo.call('echo.query');` } });
@@ -613,8 +658,8 @@ describe('MCP endpoint with bearer tokens', () => {
       .all()
       .filter((a) => a.kind === 'call')
       .at(-1);
-    expect(last?.actorId).toBe('external:alice');
-    expect(ctx.users.byUsername('alice')?.roleId).toBe(viewers.id);
+    expect(last?.actorId).toBe('external:alice@example.com');
+    expect(ctx.users.byUsername('alice@example.com')?.roleId).toBe(viewers.id);
     // The role's maximum is Read: writes are out of reach and out of sight.
     const found = parse(
       await client.callTool({
@@ -626,7 +671,49 @@ describe('MCP endpoint with bearer tokens', () => {
     expect((found as { result: string[] }).result).not.toContain('echo.set');
     await client.close();
     updateSettings(ctx.db, 'security', { defaultRoleId: null });
-    await ctx.instances.update(otherInstanceId, { authMode: null });
+    await ctx.instances.update(otherInstanceId, { authMethods: null });
+    useExternal(false);
+  });
+
+  it('accepts external and bearer callers on the same endpoint', async () => {
+    useExternal(true);
+    try {
+      const { token } = ctx.tokens.create({ name: 'both', scope: ['*'] }, { userId: adminId });
+      await ctx.users.create({ username: 'dual@example.com', password: PASSWORD });
+      const assertion = await cf.sign({ sub: 'id-dual', email: 'dual@example.com' });
+      expect((await initializeWith('echo', { authorization: `Bearer ${token}` })).status).toBe(200);
+      expect((await initializeWith('echo', { 'cf-access-jwt-assertion': assertion })).status).toBe(200);
+      // Without either, the bearer challenge still points OAuth clients at the metadata.
+      const none = await initializeWith('echo');
+      expect(none.status).toBe(401);
+      expect(none.headers.get('www-authenticate')).toContain('resource_metadata=');
+    } finally {
+      useExternal(false);
+    }
+  });
+
+  it('narrows an endpoint to its methods that are enabled globally, and refuses all when none are', async () => {
+    const { token } = ctx.tokens.create({ name: 'narrow', scope: ['*'] }, { userId: adminId });
+    const withToken = () => initializeWith('echo-two', { authorization: `Bearer ${token}` });
+    try {
+      await ctx.instances.update(otherInstanceId, { authMethods: ['oauth'] });
+      expect((await withToken()).status).toBe(401);
+      await ctx.instances.update(otherInstanceId, { authMethods: ['bearer', 'oauth'] });
+      expect((await withToken()).status).toBe(200);
+      updateSettings(ctx.db, 'mcp', { clientAuth: { bearer: false, oauth: true, external: false } });
+      const off = await withToken();
+      expect(off.status).toBe(401);
+      expect(off.headers.get('www-authenticate')).toContain('resource_metadata=');
+      await ctx.instances.update(otherInstanceId, { authMethods: ['bearer'] });
+      expect((await withToken()).status).toBe(403);
+      expect((await fetch(`${base}/.well-known/oauth-protected-resource/echo-two`)).status).toBe(404);
+      updateSettings(ctx.db, 'mcp', { clientAuth: { bearer: true, oauth: true, external: false } });
+      await ctx.instances.update(otherInstanceId, { authMethods: [] });
+      expect((await withToken()).status).toBe(403);
+    } finally {
+      updateSettings(ctx.db, 'mcp', { clientAuth: { bearer: true, oauth: true, external: false } });
+      await ctx.instances.update(otherInstanceId, { authMethods: null });
+    }
   });
 });
 
@@ -1131,8 +1218,8 @@ describe('server log for refused connections', () => {
       const warn = lines.find((l) => l.level === 'warn')!;
       expect(warn.line).toMatch(/^WARN MCP request refused method=POST slug=echo status=401 reason="got a JWT/);
       expect(warn.line).toContain('a JWT from another issuer (iss=https://home.cloudflareaccess.com)');
-      expect(warn.line).toContain('set the endpoint to External auth');
-      expect(warn.line).toContain('mode=bearer+oauth');
+      expect(warn.line).toContain('enable External client auth for this endpoint');
+      expect(warn.line).toContain('methods=bearer,oauth');
       expect(lines.map((l) => l.line).join('\n')).not.toContain(foreignJwt);
     } finally {
       restore();
@@ -1157,9 +1244,12 @@ describe('server log for refused connections', () => {
     }
   });
 
-  it('names the mismatched Cloudflare Access claim in External mode', async () => {
-    updateSettings(ctx.db, 'mcp', { cfAccess: { teamDomain: 'home.cloudflareaccess.com', aud: 'right-aud' } });
-    await ctx.instances.update(otherInstanceId, { authMode: 'external' });
+  it('names the mismatched Cloudflare Access claim for External auth', async () => {
+    updateSettings(ctx.db, 'mcp', {
+      clientAuth: { bearer: true, oauth: true, external: true },
+      cfAccess: { teamDomain: 'home.cloudflareaccess.com', aud: 'right-aud' },
+    });
+    await ctx.instances.update(otherInstanceId, { authMethods: ['external'] });
     const { lines, restore } = capture();
     try {
       expect((await initialize('echo-two', { 'cf-access-jwt-assertion': foreignJwt })).status).toBe(401);
@@ -1173,8 +1263,8 @@ describe('server log for refused connections', () => {
       expect(missing!.line).toContain('no Cf-Access-Jwt-Assertion header');
     } finally {
       restore();
-      updateSettings(ctx.db, 'mcp', { cfAccess: { teamDomain: '', aud: '' } });
-      await ctx.instances.update(otherInstanceId, { authMode: null });
+      useExternal(false);
+      await ctx.instances.update(otherInstanceId, { authMethods: null });
     }
   });
 

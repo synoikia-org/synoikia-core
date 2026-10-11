@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { writeAudit } from './audit.js';
+import { EXTERNAL_PROVIDER_IDS, externalProvider } from './auth/external.js';
 import type { Db } from './db/index.js';
 import { settings } from './db/schema.js';
 import { ValidationError } from './errors.js';
@@ -43,12 +44,18 @@ const SETTINGS_SCHEMAS = {
     .prefault({}),
   mcp: z
     .object({
-      defaultAuthMode: z.enum(['external', 'bearer', 'oauth', 'bearer+oauth']).default('bearer+oauth'),
+      /** Client auth methods enabled on the MCP port (design §6.2); an endpoint can only narrow them. */
+      clientAuth: z
+        .object({
+          bearer: z.boolean().default(true),
+          oauth: z.boolean().default(true),
+          external: z.boolean().default(false),
+        })
+        .prefault({}),
+      external: z.object({ provider: z.enum(EXTERNAL_PROVIDER_IDS).default('cloudflare') }).prefault({}),
       allowDynamicRegistration: z.boolean().default(true),
-      /** Cloudflare Access JWT verification for `external` mode. */
+      /** The Cloudflare Access provider's application (design §6.2). */
       cfAccess: z.object({ teamDomain: z.string().default(''), aud: z.string().default('') }).prefault({}),
-      /** Header set by an auth proxy (Authelia/Authentik) used only to attribute calls in `external` mode. */
-      trustedIdentityHeader: z.string().default(''),
       accessTokenTtlMinutes: z
         .number()
         .int()
@@ -68,6 +75,16 @@ const SETTINGS_SCHEMAS = {
 
 export type SettingsSection = keyof typeof SETTINGS_SCHEMAS;
 export type Settings<S extends SettingsSection> = z.infer<(typeof SETTINGS_SCHEMAS)[S]>;
+
+/** Rules across fields of `mcp`, checked on save only: stored values stay readable as they are. */
+function mcpProblems(value: Settings<'mcp'>): string[] {
+  const problems: string[] = [];
+  if (!Object.values(value.clientAuth).some(Boolean)) problems.push('clientAuth: enable at least one method');
+  const provider = externalProvider(value);
+  if (value.clientAuth.external && !provider.configured(value))
+    problems.push(`external: configure ${provider.name} before you enable external auth`);
+  return problems;
+}
 
 export function isSettingsSection(name: string): name is SettingsSection {
   return Object.prototype.hasOwnProperty.call(SETTINGS_SCHEMAS, name);
@@ -107,6 +124,8 @@ export function updateSettings<S extends SettingsSection>(
       parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
     );
   }
+  const problems = section === 'mcp' ? mcpProblems(parsed.data as Settings<'mcp'>) : [];
+  if (problems.length) throw new ValidationError('invalid_settings', 'Invalid settings', problems);
   db.transaction((tx) => {
     tx.insert(settings)
       .values({ key: section, value: parsed.data })

@@ -8,12 +8,13 @@ import { z } from 'zod';
 import type { AppContext } from '../../app.js';
 import type { Config } from '../../config/env.js';
 import type { ClientPrompts } from '../../approvals/service.js';
-import { authenticateMcp, effectiveAuthMode, ownerLive, principalLive, publicMcpBase } from '../../auth/mcp-auth.js';
+import { authenticateMcp, ownerLive, principalLive, publicMcpBase } from '../../auth/mcp-auth.js';
 import { TOKEN_PREFIX } from '../../auth/mcp-tokens.js';
 import { ACCESS_PREFIX } from '../../auth/oauth.js';
 import type { McpIdentity } from '../../auth/mcp-auth.js';
 import type { OAuthService } from '../../auth/oauth.js';
 import type { CallerContext } from '../../gate/pipeline.js';
+import { effectiveAuthMethods } from '../../instances/manager.js';
 import { executeCode, resumeExecution, searchCode } from '../../runtime/index.js';
 import type { ExecuteResult } from '../../runtime/executions.js';
 import type { LogFields } from '../../log.js';
@@ -485,7 +486,9 @@ export class McpEndpoints {
 
     const auth = await authenticateMcp(this.ctx, this.oauth, c, instance);
     if (!auth.ok) {
-      this.refused(c, slug, auth.status, auth.detail, { mode: effectiveAuthMode(this.ctx, instance.authMode) });
+      this.refused(c, slug, auth.status, auth.detail, {
+        methods: effectiveAuthMethods(this.ctx.db, instance.authMethods).join(',') || 'none',
+      });
       if (auth.wwwAuthenticate) c.header('WWW-Authenticate', auth.wwwAuthenticate);
       return c.json({ error: auth.error, error_description: auth.message }, auth.status);
     }

@@ -30,8 +30,26 @@ import type { InstanceSettings } from './settings.js';
 /** Instance lifecycle (design §4, §10): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
 
-export const AUTH_MODES = ['external', 'bearer', 'oauth', 'bearer+oauth'] as const;
-export type AuthMode = (typeof AUTH_MODES)[number];
+export const AUTH_METHODS = ['bearer', 'oauth', 'external'] as const;
+export type AuthMethod = (typeof AUTH_METHODS)[number];
+
+/** An endpoint's stored method list (design §6.2): null inherits every enabled method; anything unreadable
+ * allows none. */
+export function storedAuthMethods(raw: unknown): AuthMethod[] | null {
+  if (raw === null || raw === undefined) return null;
+  if (!Array.isArray(raw)) return [];
+  return AUTH_METHODS.filter((m) => raw.includes(m));
+}
+
+/** The methods an endpoint accepts: its own list, or all, narrowed to the globally enabled ones. */
+export function effectiveAuthMethods(db: Db, raw: unknown): AuthMethod[] {
+  const enabled = getSettings(db, 'mcp').clientAuth;
+  return (storedAuthMethods(raw) ?? AUTH_METHODS).filter((m) => enabled[m]);
+}
+
+function uniqueMethods(methods: AuthMethod[] | null | undefined): AuthMethod[] | null | undefined {
+  return methods && AUTH_METHODS.filter((m) => methods.includes(m));
+}
 
 type InstanceRow = typeof pluginInstances.$inferSelect;
 type PluginRow = typeof plugins.$inferSelect;
@@ -70,7 +88,7 @@ export interface CreateInstanceInput {
   displayName?: string;
   /** Config and secrets together, as the connection form submits them. */
   connection: Record<string, unknown>;
-  authMode?: AuthMode | null;
+  authMethods?: AuthMethod[] | null;
   settings?: unknown;
   enabled?: boolean;
 }
@@ -155,7 +173,6 @@ export class InstanceManager {
   /** The role's endpoints at `mcpBase`, each with the role's switches on it and live status only where
    * its switch shows it (design §6.4). */
   listForRole(role: PublicRole, mcpBase: string) {
-    const mode = getSettings(this.db, 'mcp').defaultAuthMode;
     return this.list().flatMap((i) => {
       const switches = roleEndpointSwitches(this.db, role.id, i.id);
       if (!switches) return [];
@@ -165,7 +182,7 @@ export class InstanceManager {
           slug: i.slug,
           displayName: i.displayName,
           endpointUrl: `${mcpBase}/${i.slug}`,
-          authMode: i.authMode ?? mode,
+          authMethods: effectiveAuthMethods(this.db, i.authMethods),
           ...switches,
           ...(switches.canSeeStatus
             ? {
@@ -236,7 +253,7 @@ export class InstanceManager {
       slug: instance.slug,
       displayName: instance.displayName,
       enabled: instance.enabled,
-      authMode: (instance.authMode as AuthMode | null) ?? null,
+      authMethods: storedAuthMethods(instance.authMethods),
       status: instance.status,
       statusError: instance.statusError,
       upstreamVersion: instance.upstreamVersion,
@@ -356,8 +373,8 @@ export class InstanceManager {
       );
     }
     if (this.bySlug(slug)) throw new ConflictError('slug_taken', `/${slug} is already in use`);
-    if (input.authMode != null && !(AUTH_MODES as readonly string[]).includes(input.authMode)) {
-      throw new ValidationError('invalid_auth_mode', 'Unknown auth mode');
+    if (input.authMethods?.some((m) => !(AUTH_METHODS as readonly string[]).includes(m))) {
+      throw new ValidationError('invalid_auth_method', 'Unknown client auth method');
     }
     const settings = parseInstanceSettings(input.settings);
     const { config, secrets } = validateConnection(manifest, input.connection);
@@ -373,7 +390,7 @@ export class InstanceManager {
           enabled: input.enabled ?? true,
           config,
           secretsEnc: this.sealSecrets(id, secrets),
-          authMode: input.authMode ?? null,
+          authMethods: uniqueMethods(input.authMethods) ?? null,
           settings,
           createdAt: this.now(),
         })
@@ -394,7 +411,13 @@ export class InstanceManager {
 
   async update(
     id: string,
-    patch: { displayName?: string; slug?: string; enabled?: boolean; authMode?: AuthMode | null; settings?: unknown },
+    patch: {
+      displayName?: string;
+      slug?: string;
+      enabled?: boolean;
+      authMethods?: AuthMethod[] | null;
+      settings?: unknown;
+    },
     actor: Actor = {},
   ) {
     const before = this.row(id);
@@ -409,11 +432,11 @@ export class InstanceManager {
       set.slug = patch.slug;
     }
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
-    if (patch.authMode !== undefined) {
-      if (patch.authMode !== null && !(AUTH_MODES as readonly string[]).includes(patch.authMode)) {
-        throw new ValidationError('invalid_auth_mode', 'Unknown auth mode');
+    if (patch.authMethods !== undefined) {
+      if (patch.authMethods?.some((m) => !(AUTH_METHODS as readonly string[]).includes(m))) {
+        throw new ValidationError('invalid_auth_method', 'Unknown client auth method');
       }
-      set.authMode = patch.authMode;
+      set.authMethods = uniqueMethods(patch.authMethods) ?? null;
     }
     if (patch.settings !== undefined) {
       // Start from the normalized stored settings, so a field an older release stored and this one
