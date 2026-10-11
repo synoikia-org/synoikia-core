@@ -41,4 +41,4 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 - Delete `pre_approval_hits` older than the largest rule window.
 - Delete expired sessions, OAuth codes, OAuth tokens and approval-page tokens.
 - Delete decided approvals older than 7 days. The audit log keeps their record.
-- Core never deletes `audit_log` rows by itself. The optional setting `audit.retentionDays` (7 or more; not set by default) deletes older rows. Core audits a change to this setting.
+- Delete `audit_log` rows older than `audit.retentionDays`. The default is 90 days, and the minimum is 7. When the admin clears it, core keeps the audit log forever. Core audits a change to this setting and each purge.
