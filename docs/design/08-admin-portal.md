@@ -85,7 +85,7 @@ A new widget is a core change. A manifest with an unknown widget name is not val
 
 All routes are on the Admin listener and return JSON. `/api/*` routes need a session cookie. Routes that change state need the CSRF token.
 
-Only an admin can use a route, with these exceptions: `/api/session`, `/api/setup`, `/api/profile/*` and `/api/me/*`. Core refuses all other routes with 403 for a user with another role. A new route is therefore admin-only. The `/api/me/*` routes check the switches of the role, and return 404 for an endpoint that is not in the role.
+Only an admin can use a route, with these exceptions: `/api/session`, `/api/setup`, `/api/profile/*` and `/api/me/*`. Core refuses all other routes with 403 for a user with another role. A new route is therefore admin-only. The `/api/me/*` routes check the switches of the role on the endpoint, and return 404 for an endpoint that is not in the role.
 
 ```
 POST   /auth/login | /auth/totp | /auth/logout | /auth/register (sign-up form, §6.5)
@@ -118,6 +118,7 @@ GET/POST/DELETE /api/tokens {name, scope, access, expiresAt}
 GET/POST/DELETE /api/oauth/clients          GET/DELETE /api/oauth/grants
 GET/POST/PATCH/DELETE /api/notifiers        POST /api/notifiers/:id/test
 GET/POST /api/roles                 PATCH/DELETE /api/roles/:id        PUT /api/roles/:id/instances {instanceIds}
+PATCH  /api/roles/:id/endpoints/:instanceId {canSetOwnLevels?, canManageOwnRules?, canSeeStatus?}
 GET    /api/roles/:id/endpoints/:instanceId/access
 PUT    /api/roles/:id/endpoints/:instanceId/groups/:key | /operations/:opId {level (null = not set)}
 POST   /api/roles/:id/endpoints/:instanceId/bulk-level {level}
