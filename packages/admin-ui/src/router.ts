@@ -13,6 +13,7 @@ import InstanceLayout from './views/instance/InstanceLayout.vue';
 import InstanceSettingsView from './views/instance/InstanceSettingsView.vue';
 import RulesView from './views/instance/RulesView.vue';
 import LoginView from './views/LoginView.vue';
+import MyEndpointAboutView from './views/MyEndpointAboutView.vue';
 import MyEndpointView from './views/MyEndpointView.vue';
 import MyEndpointsView from './views/MyEndpointsView.vue';
 import NewEndpointView from './views/NewEndpointView.vue';
@@ -51,6 +52,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'endpoints/new', component: NewEndpointView, meta: { title: 'New endpoint', admin: true } },
       { path: 'my', component: MyEndpointsView, meta: { title: 'My endpoints' } },
       { path: 'my/:id', component: MyEndpointView, meta: { title: 'Endpoint' } },
+      { path: 'my/:id/about', component: MyEndpointAboutView, meta: { title: 'Endpoint' } },
       {
         path: 'endpoints/:slug',
         component: InstanceLayout,

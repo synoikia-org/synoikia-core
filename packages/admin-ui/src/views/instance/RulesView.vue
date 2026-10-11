@@ -90,7 +90,10 @@ const error = computed(() => {
   return latestError([toggleRule, deleteRule]) ?? (loadError ? errorText(loadError) : undefined);
 });
 
-const eligible = computed(() => ops.value.filter((o) => o.classification === 'write' && !o.locked));
+// A user's own rules only name operations they can call; core refuses the rest.
+const eligible = computed(() =>
+  ops.value.filter((o) => o.classification === 'write' && !o.locked && (!props.own || o.reachable)),
+);
 
 // ── editor ──
 

@@ -138,19 +138,22 @@ describe('My endpoint tabs', () => {
     const user = { ...signedIn.user, role };
     fakeApi({
       'GET /api/session': { ...signedIn, user },
-      'GET /api/me/endpoints': [
-        {
-          id: 'i1',
-          slug: 'nas',
-          displayName: 'Acme',
-          endpointUrl: 'https://mcp.example.com/nas',
-          authMode: 'oauth',
-          canManageOwnRules: true,
-          canSetOwnLevels: false,
-          canSeeStatus: true,
-          status: { state: 'ready', enabled: true, plugin: 'Acme', upstreamVersion: null, lastSyncedAt: null },
-        },
-      ],
+      'GET /api/me/endpoints': {
+        assigned: [
+          {
+            id: 'i1',
+            slug: 'nas',
+            displayName: 'Acme',
+            endpointUrl: 'https://mcp.example.com/nas',
+            authMode: 'oauth',
+            canManageOwnRules: true,
+            canSetOwnLevels: false,
+            canSeeStatus: true,
+            status: { state: 'ready', enabled: true, plugin: 'Acme', upstreamVersion: null, lastSyncedAt: null },
+          },
+        ],
+        unassigned: [],
+      },
       'GET /api/me/endpoints/i1/levels': { groups: [], operations: [] },
       'GET /api/me/endpoints/i1/rules': [],
       'GET /api/me/endpoints/i1/rule-form': { matchProfiles: {}, targets: null },

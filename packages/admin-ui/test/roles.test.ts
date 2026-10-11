@@ -26,7 +26,8 @@ const endpoint = (id: string, slug: string, switches: Switches = {}) => ({
   canSeeStatus: false,
   ...switches,
 });
-const mine = [endpoint('i1', 'nas')];
+const mine = { assigned: [endpoint('i1', 'nas')], unassigned: [] };
+const other = { id: 'i9', slug: 'lab', displayName: 'Lab', plugin: 'Acme', description: 'Runs the lab.' };
 const view = {
   groups: [{ key: 'app', label: 'Apps', endpointLevel: 'ask', roleLevel: 'ask', ownLevel: null }],
   operations: [
@@ -68,6 +69,71 @@ describe('a non-admin user', () => {
     expect(router.currentRoute.value.path).toBe('/my');
   });
 
+  it('sees unassigned endpoints only when there are some, and opens their about page', async () => {
+    fakeApi({ 'GET /api/session': asUser(), 'GET /api/me/endpoints': mine });
+    const first = await mountAt('/my');
+    await flushPromises();
+    expect(first.wrapper.text()).toContain('Assigned endpoints');
+    expect(first.wrapper.text()).not.toContain('Unassigned endpoints');
+    first.wrapper.unmount();
+
+    fakeApi({
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': { ...mine, unassigned: [other] },
+      'GET /api/me/endpoints/i9/about': { ...other, role: 'Operators' },
+    });
+    const { wrapper, router } = await mountAt('/my');
+    await flushPromises();
+    const tables = wrapper.findAll('table');
+    expect(tables).toHaveLength(2);
+    expect(tables[0]!.text()).toContain('/nas');
+    expect(tables[1]!.text()).toContain('/lab');
+    expect(tables[1]!.text()).not.toContain('https://');
+    await tables[1]!.get('a').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/my/i9/about');
+    const text = wrapper.text();
+    expect(text).toContain('/lab');
+    expect(text).toContain('Runs the lab.');
+    expect(text).toContain('Operators');
+    expect(text).toContain("You don't have access to this endpoint. Contact an administrator if you need it.");
+  });
+
+  it('shows operations their role keeps at None as Off, with no level to pick', async () => {
+    const off = {
+      ...view.operations[0]!,
+      id: 'op2',
+      key: 'app.delete',
+      roleMax: 'none',
+      level: 'none',
+      reachable: false,
+      mode: null,
+      reason: 'level_none',
+    };
+    fakeApi({
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': {
+        assigned: [endpoint('i1', 'nas', { canSetOwnLevels: true, canSeeStatus: true })],
+        unassigned: [],
+      },
+      'GET /api/me/endpoints/i1/access': {
+        groups: [
+          ...view.groups,
+          { key: 'sys', label: 'System', endpointLevel: 'ask', roleLevel: null, ownLevel: null },
+        ],
+        operations: [view.operations[0], off, { ...off, id: 'op3', key: 'sys.reboot', group: 'sys' }],
+      },
+    });
+    const { wrapper } = await mountAt('/my/i1');
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Access for Apps"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Access for System"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="Expand Apps"]').trigger('click');
+    expect(wrapper.find('[aria-label="Level of app.start"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Level of app.delete"]').exists()).toBe(false);
+    expect(wrapper.get('[data-op="app.delete"]').text()).toContain('Off');
+  });
+
   it('sees levels read-only without the own-levels switch', async () => {
     fakeApi({ 'GET /api/session': asUser(), 'GET /api/me/endpoints': mine, 'GET /api/me/endpoints/i1/access': view });
     const { wrapper } = await mountAt('/my/i1');
@@ -80,7 +146,10 @@ describe('a non-admin user', () => {
   it('sets their own level, capped by the role maximum', async () => {
     const { calls } = fakeApi({
       'GET /api/session': asUser(),
-      'GET /api/me/endpoints': [endpoint('i1', 'nas', { canSetOwnLevels: true, canManageOwnRules: true })],
+      'GET /api/me/endpoints': {
+        assigned: [endpoint('i1', 'nas', { canSetOwnLevels: true, canManageOwnRules: true })],
+        unassigned: [],
+      },
       'GET /api/me/endpoints/i1/access': view,
       'PUT /api/me/endpoints/i1/groups/app': view,
     });
@@ -102,7 +171,10 @@ describe('a non-admin user', () => {
   it('gets the rules tab and own levels only on endpoints whose switches allow them', async () => {
     fakeApi({
       'GET /api/session': asUser(),
-      'GET /api/me/endpoints': [endpoint('i1', 'nas'), endpoint('i2', 'lab', { canManageOwnRules: true })],
+      'GET /api/me/endpoints': {
+        assigned: [endpoint('i1', 'nas'), endpoint('i2', 'lab', { canManageOwnRules: true })],
+        unassigned: [],
+      },
       'GET /api/me/endpoints/i1/access': view,
       'GET /api/me/endpoints/i2/access': view,
       'GET /api/me/endpoints/i2/rules': [],
@@ -254,7 +326,7 @@ describe('own pre-approval rules', () => {
     };
     const { calls } = fakeApi({
       'GET /api/session': asUser(),
-      'GET /api/me/endpoints': [endpoint('i1', 'nas', { canManageOwnRules: true })],
+      'GET /api/me/endpoints': { assigned: [endpoint('i1', 'nas', { canManageOwnRules: true })], unassigned: [] },
       'GET /api/me/endpoints/i1/access': own,
       'GET /api/me/endpoints/i1/rules': [],
       'GET /api/me/endpoints/i1/rule-form': {

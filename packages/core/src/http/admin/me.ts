@@ -30,10 +30,21 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   };
   const owner = (c: Context<AdminEnv>, instanceId: string): RuleOwner => ({
     userId: me(c).id,
-    operations: ctx.users.levels(me(c), instanceId).operations,
+    operations: ctx.users.levels(me(c), instanceId).operations.filter((o) => o.reachable),
   });
 
-  app.get('/api/me/endpoints', (c) => c.json(ctx.instances.listForRole(ctx.users.roleOf(me(c)), mcpBase())));
+  app.get('/api/me/endpoints', (c) => {
+    const role = ctx.users.roleOf(me(c));
+    return c.json({
+      assigned: ctx.instances.listForRole(role, mcpBase()),
+      unassigned: ctx.instances.listUnassigned(role),
+    });
+  });
+
+  // One endpoint outside the role, by name only; any other id answers 404 (design §6.4).
+  app.get('/api/me/endpoints/:id/about', (c) =>
+    c.json(ctx.instances.aboutUnassigned(ctx.users.roleOf(me(c)), c.req.param('id'))),
+  );
 
   app.get('/api/me/endpoints/:id/access', (c) => c.json(ctx.users.levels(me(c), myInstance(c).id)));
 

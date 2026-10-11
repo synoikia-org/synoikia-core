@@ -451,6 +451,26 @@ export interface LevelView {
   }[];
 }
 
+/** `/api/me/endpoints`: the role's endpoints, and the others by name when the role may see them (design §6.4). */
+export interface MyEndpoints {
+  assigned: MyEndpoint[];
+  unassigned: UnassignedEndpoint[];
+}
+
+/** An endpoint outside the signed-in user's role: its name and plugin only. */
+export interface UnassignedEndpoint {
+  id: string;
+  slug: string;
+  displayName: string;
+  plugin: string;
+  description: string | null;
+}
+
+/** `/api/me/endpoints/:id/about`: one unassigned endpoint and the user's role name. */
+export interface UnassignedEndpointAbout extends UnassignedEndpoint {
+  role: string;
+}
+
 /** An endpoint of the signed-in user's role (`/api/me/endpoints`), with the role's switches on it. */
 export interface MyEndpoint extends EndpointSwitches {
   id: string;

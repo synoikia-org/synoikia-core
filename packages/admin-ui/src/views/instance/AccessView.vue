@@ -152,6 +152,9 @@ const OP_RANK: Record<Level, number> = { none: 0, ask: 1, read: 2, write: 3 };
 const capTitle = computed(() =>
   props.scope?.kind === 'role' ? "Above the endpoint's level" : "Above your role's maximum",
 );
+// A user's row their role keeps at None shows its level only: there is nothing to choose.
+const groupFixed = (g: GroupSummary) => props.scope?.kind === 'own' && caps.value.groups.get(g.key) === 'none';
+const opFixed = (op: Operation) => props.scope?.kind === 'own' && caps.value.ops.get(op.id) === 'none';
 const groupLevelDisabled = (g: GroupSummary, l: Level) => {
   const cap = caps.value.groups.get(g.key);
   return !!props.scope && cap !== undefined && GROUP_RANK[l] > GROUP_RANK[cap];
@@ -296,6 +299,9 @@ function status(op: Operation): { text: string; tone: string } {
       <li v-else-if="!readonly">
         Your role sets the most each one can do; ↺ on a group goes back to your role's level.
       </li>
+      <li v-if="scope?.kind === 'own' && ops.some((o) => !o.reachable)">
+        Off means your clients can't call it. An administrator can give your role more.
+      </li>
     </ul>
     <p v-if="pendingTotal" class="alert warn">
       {{ pendingTotal }} new write {{ pendingTotal === 1 ? 'operation is' : 'operations are' }} at Write but still
@@ -331,7 +337,7 @@ function status(op: Operation): { text: string; tone: string } {
           <button v-if="!scope" class="btn-link small" type="button" :aria-describedby="groupId(g)" @click="rename(g)">
             Rename
           </button>
-          <span v-if="readonly" class="pill">{{ LEVEL_LABELS[g.level] }}</span>
+          <span v-if="readonly || groupFixed(g)" class="pill">{{ LEVEL_LABELS[g.level] }}</span>
           <!-- Arrows move focus only: each choice writes to the server, so Space or Enter picks it. -->
           <div
             v-else
@@ -418,7 +424,7 @@ function status(op: Operation): { text: string; tone: string } {
                 Guide
               </label>
               <div
-                v-if="!readonly"
+                v-if="!readonly && !opFixed(op)"
                 class="segmented sm"
                 role="radiogroup"
                 :aria-label="`Level of ${op.key}`"
