@@ -245,7 +245,11 @@ const BLOCKED: Record<string, string> = {
                 <template
                   v-for="(h, n) in describeHosts(p.manifest.network.hosts, p.manifest.connection?.schema)"
                   :key="n"
-                  >{{ n ? ', ' : '' }}<span :class="{ mono: h.literal }">{{ h.text }}</span></template
+                  >{{ n ? ', ' : '' }}<span v-if="h.literal" class="mono">{{ h.raw }}</span
+                  ><template v-else
+                    >{{ h.text }} (<span class="mono" data-raw-host>{{ h.raw }}</span
+                    >)</template
+                  ></template
                 >
               </div>
             </td>

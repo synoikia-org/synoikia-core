@@ -89,12 +89,15 @@ export function pageTitle(to: RouteLocationNormalized): string | undefined {
 const CONNECTION_FIELD = /\{\{\s*connection\.(\w+)\s*\}\}/g;
 
 /** Declared network hosts as readers see them: `{{connection.<field>}}` names the field by its title. */
-export function describeHosts(hosts: string[], schema?: ConnectionSchema): { text: string; literal: boolean }[] {
+export function describeHosts(
+  hosts: string[],
+  schema?: ConnectionSchema,
+): { raw: string; text: string; literal: boolean }[] {
   const title = (field: string) => schema?.properties?.[field]?.title ?? field;
   return hosts.map((host) => {
     const whole = /^\{\{\s*connection\.(\w+)\s*\}\}$/.exec(host);
-    if (whole) return { text: `the host of each endpoint's ${title(whole[1]!)}`, literal: false };
+    if (whole) return { raw: host, text: `the host of each endpoint's ${title(whole[1]!)}`, literal: false };
     const text = host.replace(CONNECTION_FIELD, (_m, field: string) => `‹${title(field)}›`);
-    return { text, literal: text === host };
+    return { raw: host, text, literal: text === host };
   });
 }
