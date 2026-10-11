@@ -25,7 +25,7 @@ This skill decides **how** a change gets done: which mode, which work pattern, a
 | Nothing in a security path, or a one-line fix with its test                   | Changes to the gate, sandbox, approvals, auth, crypto, plugins, an API contract or the SDK |
 | Reviewable as one PR in one sitting                                           | More than one PR's worth of review, or the work splits into steps                          |
 
-If you're unsure, treat it as big. Underestimating costs a rewrite; overestimating costs one short plan.
+Check the request against the repo while you size it (read-only): if the work is already done or the premise doesn't hold, say so with the evidence and ask what the user meant instead of planning it. If you're unsure of the size, treat it as big. Underestimating costs a rewrite; overestimating costs one short plan.
 
 ## 2. Big or logical: plan mode first
 
