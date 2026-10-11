@@ -14,7 +14,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `packages/admin-ui`         | Admin portal: Vue 3, Pinia, Vite                                                                                                                                                                                   |
 | `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and `checkPluginContract` plugin repos test against. Published API                                                                                   |
 
-Plugin authoring: `docs/plugin-authoring.md`. SDK code is bundled into every plugin, so `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` decide what plugins tell core: treat changes there as security changes. `create-plugin` templates use only published SDK and core APIs and are smoke-tested by `packages/create-plugin/test/smoke.test.ts`.
+Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. SDK code is bundled into every plugin, so `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` decide what plugins tell core: treat changes there as security changes. `create-plugin` templates use only published SDK and core APIs and are smoke-tested by `packages/create-plugin/test/smoke.test.ts`.
 
 Each security-critical directory under `packages/core/src` (`gate/`, `sandbox/`, `plugins/`, `auth/`) has a short `README.md` with its pipeline and design sections. Read it before changing that module.
 
@@ -45,7 +45,8 @@ pnpm format                                                                     
 - Unused variables are allowed only with a `_` prefix.
 - Keep comments minimal: one or two lines, only for what the code can't say (a reason, a constraint, a design § reference). No multi-line comment blocks, in code, YAML, SQL or workflows; the design doc and READMEs carry the long explanations.
 - Prettier formats everything (a hook runs it after each edit). Template layout in `.vue` files is Prettier's job, not ESLint's.
-- Keep changes focused, add tests for new behavior, and update the README or design doc when behavior changes (see `.github/PULL_REQUEST_TEMPLATE.md`).
+- Keep changes focused and add tests for new behavior (see `.github/PULL_REQUEST_TEMPLATE.md`).
+- Keep `README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md` and `SECURITY.md` current: when a change affects what one of them describes (features, setup, commands, packages, ports, config, releases, security scope), update it in the same PR, along with the design doc section.
 
 ## Design documents
 

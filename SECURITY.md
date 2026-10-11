@@ -6,8 +6,8 @@ about it, and about the credential handling around it, seriously.
 
 ## Supported Versions
 
-Only the latest published release (npm packages `@synoikia/core` /
-`@synoikia/plugin-sdk`, and the latest `ghcr.io/via-justa/synoikia`
+Only the latest published release (npm packages `@synoikia/core`,
+`@synoikia/plugin-sdk` and `@synoikia/create-plugin`, and the latest `ghcr.io/via-justa/synoikia`
 image tag) receives security fixes. There is no long-term support branch —
 upgrade to the latest release before reporting an issue that may already be
 fixed.
@@ -31,6 +31,8 @@ We're especially interested in reports touching:
 - The `isolated-vm` sandbox boundary
 - Authentication (admin login, TOTP, OIDC, MCP OAuth/bearer tokens)
 - Secret redaction in logs, the audit trail, and approval pages
+- Plugin isolation (child processes under the Node permission model) and
+  plugin repository signature verification
 
 ## Response
 

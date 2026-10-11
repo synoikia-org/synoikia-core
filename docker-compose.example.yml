@@ -1,5 +1,5 @@
-# Example deployment. Publish 8080 through your reverse proxy as https://mcp.example.com and keep
-# 8081 (admin portal) reachable from the LAN/VPN only — see docs/design/11-deployment.md.
+# Example deployment. Publish 8080 through your reverse proxy as https://mcp.example.com; the admin
+# portal runs on its own dedicated port, 8081 — see docs/design/11-deployment.md.
 services:
   synoikia:
     # `latest` tracks the newest stable release; pin an explicit version (e.g. `:0.2.0`) in production.
@@ -8,7 +8,7 @@ services:
     env_file: .env
     ports:
       - '127.0.0.1:8080:8080' # MCP endpoints → reverse proxy
-      - '192.168.1.10:8081:8081' # Admin portal → LAN interface only (adjust to your host)
+      - '192.168.1.10:8081:8081' # Admin portal → dedicated port (adjust the bind address to your host)
     volumes:
       - synoikia-data:/data
 
