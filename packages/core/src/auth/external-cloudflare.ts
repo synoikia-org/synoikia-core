@@ -42,7 +42,12 @@ export async function checkCloudflareAccess(
   }
   const issuer = `https://${domain}`;
   try {
-    const { payload } = await jwtVerify(assertion, jwks, { issuer, audience: aud });
+    const { payload } = await jwtVerify(assertion, jwks, {
+      issuer,
+      audience: aud,
+      algorithms: ['RS256'],
+      requiredClaims: ['exp', 'iat'],
+    });
     // A service token's assertion has an empty `sub` and names the token's client ID in `common_name`:
     // it is no user, so it is refused (design §6.2).
     if (payload.common_name !== undefined || !payload.sub)

@@ -5,7 +5,7 @@ import { EXTERNAL_PROVIDER_IDS, externalProvider } from './auth/external.js';
 import type { Db } from './db/index.js';
 import { settings } from './db/schema.js';
 import { ValidationError } from './errors.js';
-import { cleanStored, parseLeniently } from './lenient.js';
+import { cleanStored } from './lenient.js';
 
 /** Global settings (design §8.2 "Settings"), one JSON document per section in the `settings` table. */
 
@@ -90,10 +90,35 @@ export function isSettingsSection(name: string): name is SettingsSection {
   return Object.prototype.hasOwnProperty.call(SETTINGS_SCHEMAS, name);
 }
 
+/** Stored fields that read as off, not as their open defaults, when they can't be read (design §6.2). */
+const FAIL_CLOSED: { [S in SettingsSection]?: Record<string, unknown> } = {
+  mcp: { clientAuth: { bearer: false, oauth: false, external: false } },
+};
+
+/** Fields an earlier release stored that a save now refuses, so a stale client can't lose them silently. */
+const RETIRED: { [S in SettingsSection]?: string[] } = {
+  mcp: ['defaultAuthMode', 'trustedIdentityHeader'],
+};
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The lenient read of a stored section, with {@link FAIL_CLOSED} fields closed when dropped. */
+function readStored<S extends SettingsSection>(section: S, raw: unknown) {
+  const schema = SETTINGS_SCHEMAS[section];
+  const result = cleanStored(schema, raw, `settings.${section}`);
+  const closed = Object.entries(FAIL_CLOSED[section] ?? {}).filter(([key]) =>
+    result.dropped.some((p) => p === '*' || p === key || p.startsWith(`${key}.`)),
+  );
+  if (!closed.length) return { ...result, value: result.value as Settings<S> };
+  const cleaned = { ...(isPlainObject(result.cleaned) ? result.cleaned : {}), ...Object.fromEntries(closed) };
+  return { value: schema.parse(cleaned) as Settings<S>, cleaned, dropped: result.dropped };
+}
+
 /** Stored settings are read leniently: a field a newer schema rejects falls back to its default. */
 export function getSettings<S extends SettingsSection>(db: Db, section: S): Settings<S> {
   const row = db.select().from(settings).where(eq(settings.key, section)).get();
-  return parseLeniently(SETTINGS_SCHEMAS[section], row?.value, `settings.${section}`) as Settings<S>;
+  return readStored(section, row?.value).value;
 }
 
 /** Startup: removes stored settings fields the schema rejects, once; valid fields stay as stored. */
@@ -101,7 +126,7 @@ export function normalizeStoredSettings(db: Db): string[] {
   const changed: string[] = [];
   for (const row of db.select().from(settings).all()) {
     if (!isSettingsSection(row.key)) continue;
-    const { cleaned, dropped } = cleanStored(SETTINGS_SCHEMAS[row.key], row.value, `settings.${row.key}`);
+    const { cleaned, dropped } = readStored(row.key, row.value);
     if (!dropped.length) continue;
     db.update(settings).set({ value: cleaned }).where(eq(settings.key, row.key)).run();
     changed.push(row.key);
@@ -116,7 +141,20 @@ export function updateSettings<S extends SettingsSection>(
   actor: { userId?: string } = {},
 ): Settings<S> {
   const before = getSettings(db, section);
-  const parsed = SETTINGS_SCHEMAS[section].safeParse({ ...before, ...(patch as object) });
+  const retired = (RETIRED[section] ?? []).filter((k) => isPlainObject(patch) && k in patch);
+  if (retired.length)
+    throw new ValidationError(
+      'invalid_settings',
+      'Invalid settings',
+      retired.map((k) => `${k}: no longer supported`),
+    );
+  // Nested objects merge with the stored ones, so a partial save keeps the fields it leaves out.
+  const merged: Record<string, unknown> = { ...before };
+  for (const [key, value] of Object.entries(isPlainObject(patch) ? patch : {})) {
+    const stored = merged[key];
+    merged[key] = isPlainObject(stored) && isPlainObject(value) ? { ...stored, ...value } : value;
+  }
+  const parsed = SETTINGS_SCHEMAS[section].safeParse(merged);
   if (!parsed.success) {
     throw new ValidationError(
       'invalid_settings',

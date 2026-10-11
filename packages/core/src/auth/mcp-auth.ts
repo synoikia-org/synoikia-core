@@ -143,7 +143,7 @@ async function authenticateExternal(ctx: AppContext, c: Context, instanceId: str
   const settings = getSettings(ctx.db, 'mcp');
   const provider = externalProvider(settings);
   if (!provider.configured(settings))
-    return refuse(401, 'unauthorized', 'External auth is not configured', `${provider.name} is not configured`);
+    return refuse(401, 'unauthorized', 'Authentication required', `${provider.name} is not configured`);
   const found = await provider.identify(c.req.raw.headers, settings);
   // Every call belongs to a user (design §6.4): a caller the provider didn't name is refused.
   if (!found.ok) return refuse(401, 'unauthorized', `${provider.name} did not identify the caller`, found.reason);
@@ -168,13 +168,21 @@ export async function authenticateMcp(
   const methods = effectiveAuthMethods(ctx.db, instance.authMethods);
   const auth = c.req.header('authorization');
 
-  if (!methods.length)
-    return refuse(
-      403,
-      'forbidden',
-      'This endpoint accepts no client auth method',
-      'no client auth method is both enabled globally and allowed on this endpoint',
-    );
+  if (!methods.length) {
+    const detail = 'no client auth method is both enabled globally and allowed on this endpoint';
+    const held = auth?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    // Only a live credential learns why; anyone else gets the answer of an unknown slug.
+    if (held && (ctx.tokens.verify(held) || oauth.verifyAccess(held, '')))
+      return refuse(403, 'forbidden', 'This endpoint accepts no client auth method', detail);
+    return {
+      ok: false,
+      status: 401,
+      error: 'unauthorized',
+      message: 'Authentication required',
+      wwwAuthenticate: 'Bearer',
+      detail,
+    };
+  }
 
   const allowBearer = methods.includes('bearer');
   // OAuth is off until PUBLIC_MCP_URL is set: its discovery documents must not come from the Host header.

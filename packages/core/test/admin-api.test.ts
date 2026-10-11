@@ -416,6 +416,12 @@ describe('instances and access', () => {
     expect(await effective()).toEqual([]);
     expect(await (await patch(null)).json()).toMatchObject({ authMethods: null });
     expect(await effective()).toEqual(['oauth']);
+    // A client that still sends the retired auth mode is refused, not ignored.
+    expect((await t.b.patch(`/api/instances/${t.id}`, { authMode: 'bearer' })).status).toBe(400);
+    expect(
+      (await t.b.post('/api/instances', { pluginId: 'echo', slug: 'echo-2', connection: {}, authMode: 'bearer' }))
+        .status,
+    ).toBe(400);
   });
 
   it('refuses client auth settings with no method, or external auth without its provider', async () => {
@@ -437,6 +443,15 @@ describe('instances and access', () => {
     });
     // The provider can't lose its configuration while external auth is on.
     expect((await put({ cfAccess: { teamDomain: '', aud: '' } })).status).toBe(400);
+    // A partial save keeps the methods and provider fields it leaves out.
+    expect((await put({ clientAuth: { bearer: false } })).status).toBe(200);
+    const partial = await put({ clientAuth: { external: true }, cfAccess: { aud: 'tag-2' } });
+    expect(await partial.json()).toMatchObject({
+      clientAuth: { bearer: false, oauth: true, external: true },
+      cfAccess: { teamDomain: 'team.example', aud: 'tag-2' },
+    });
+    for (const retired of [{ defaultAuthMode: 'bearer' }, { trustedIdentityHeader: 'remote-user' }])
+      expect(await (await put(retired)).json()).toMatchObject({ error: 'invalid_settings' });
   });
 
   it('issues MCP bearer tokens once and never lists their value', async () => {

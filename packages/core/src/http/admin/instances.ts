@@ -33,15 +33,17 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/instances', async (c) => {
     const body = await readJson(
       c,
-      z.object({
-        pluginId: z.string().min(1),
-        slug: z.string().min(1).max(63),
-        displayName: z.string().max(100).optional(),
-        connection: z.record(z.string(), z.unknown()).default({}),
-        authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
-        settings: z.record(z.string(), z.unknown()).optional(),
-        enabled: z.boolean().optional(),
-      }),
+      z
+        .object({
+          pluginId: z.string().min(1),
+          slug: z.string().min(1).max(63),
+          displayName: z.string().max(100).optional(),
+          connection: z.record(z.string(), z.unknown()).default({}),
+          authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
+          settings: z.record(z.string(), z.unknown()).optional(),
+          enabled: z.boolean().optional(),
+        })
+        .strict(),
     );
     return c.json(await ctx.instances.create(body, actor(c)), 201);
   });
@@ -51,13 +53,15 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.patch('/api/instances/:id', async (c) => {
     const body = await readJson(
       c,
-      z.object({
-        displayName: z.string().max(100).optional(),
-        slug: z.string().max(63).optional(),
-        enabled: z.boolean().optional(),
-        authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
-        settings: z.record(z.string(), z.unknown()).optional(),
-      }),
+      z
+        .object({
+          displayName: z.string().max(100).optional(),
+          slug: z.string().max(63).optional(),
+          enabled: z.boolean().optional(),
+          authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
+          settings: z.record(z.string(), z.unknown()).optional(),
+        })
+        .strict(),
     );
     return c.json(await ctx.instances.update(c.req.param('id'), body, actor(c)));
   });

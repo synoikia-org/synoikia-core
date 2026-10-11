@@ -710,6 +710,17 @@ describe('MCP endpoint with bearer tokens', () => {
       updateSettings(ctx.db, 'mcp', { clientAuth: { bearer: true, oauth: true, external: false } });
       await ctx.instances.update(otherInstanceId, { authMethods: [] });
       expect((await withToken()).status).toBe(403);
+      // Without a live credential, an endpoint that accepts nothing answers like an unknown slug.
+      for (const headers of [{}, { authorization: 'Bearer junk' }] as Record<string, string>[]) {
+        const empty = await initializeWith('echo-two', headers);
+        const unknown = await initializeWith('no-such-endpoint', headers);
+        expect([empty.status, empty.headers.get('www-authenticate'), await empty.json()]).toEqual([
+          unknown.status,
+          unknown.headers.get('www-authenticate'),
+          await unknown.json(),
+        ]);
+        expect(empty.status).toBe(401);
+      }
     } finally {
       updateSettings(ctx.db, 'mcp', { clientAuth: { bearer: true, oauth: true, external: false } });
       await ctx.instances.update(otherInstanceId, { authMethods: null });

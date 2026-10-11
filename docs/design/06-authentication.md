@@ -62,7 +62,8 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 
 - An endpoint accepts all enabled methods, or a subset of them (Instance → Settings, `plugin_instances.auth_methods`).
 - The effective methods are the subset of the endpoint, or all methods, that are also enabled globally.
-- If the effective set is empty, core refuses each request to the endpoint with 403. The portal shows a warning.
+- If the effective set is empty, core refuses each request to the endpoint. A caller with a live credential gets 403. Other callers get the answer of an unknown slug (401). The portal shows a warning.
+- If core cannot read the stored methods, all methods are off.
 - Core refuses a save of the settings that enables no method, with 400 `invalid_settings`.
 
 **Method selection.**
@@ -76,7 +77,7 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 - An external provider identifies the user of each request. The admin selects the provider (`mcp.external.provider`). Core refuses a save that enables `external` while the provider has no configuration.
 - Each provider is one module in the provider harness (`auth/external.ts`). The MCP listener uses only the harness, never a provider directly.
 - **Cloudflare Access** is the only provider. Its configuration is `mcp.cfAccess.teamDomain` and `mcp.cfAccess.aud`.
-  - The `Cf-Access-Jwt-Assertion` header must verify against the JWKS of the team, with the issuer and audience of the application.
+  - The `Cf-Access-Jwt-Assertion` header must verify against the JWKS of the team, with `RS256`, the issuer and audience of the application, and `exp` and `iat` claims.
   - The identity is the `email` claim. Core refuses an assertion without an e-mail address.
   - Core refuses the assertion of a service token (an empty `sub`, or a `common_name` claim). A service token is not a user.
 - **User.** Core finds the user whose user name is the identity. Upper and lower case do not matter. Only a user that an admin made, or that `external` registered, can match. A user from the sign-up form or OIDC never matches, so nobody can take an external identity first. If there is no such user, self-registration (§6.5) creates one. If self-registration is off, the name is taken, or the identity is not a valid user name, core refuses the request with 403.

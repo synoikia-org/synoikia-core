@@ -12,14 +12,18 @@ describe('checkCloudflareAccess', () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256');
     const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' };
     const keys = createLocalJWKSet({ keys: [jwk] });
-    const sign = (claims: Record<string, unknown>, opts: { iss?: string; aud?: string; exp?: string } = {}) =>
-      new SignJWT(claims)
+    const sign = (
+      claims: Record<string, unknown>,
+      opts: { iss?: string; aud?: string; exp?: string | null; iat?: boolean } = {},
+    ) => {
+      const jwt = new SignJWT(claims)
         .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
         .setIssuer(opts.iss ?? `https://${TEAM}`)
-        .setAudience(opts.aud ?? AUD)
-        .setIssuedAt()
-        .setExpirationTime(opts.exp ?? '5m')
-        .sign(privateKey);
+        .setAudience(opts.aud ?? AUD);
+      if (opts.iat !== false) jwt.setIssuedAt();
+      if (opts.exp !== null) jwt.setExpirationTime(opts.exp ?? '5m');
+      return jwt.sign(privateKey);
+    };
     return { keys, sign };
   }
 
@@ -62,6 +66,13 @@ describe('checkCloudflareAccess', () => {
       'not-a-jwt',
     ];
     for (const assertion of cases) await expect(who(TEAM, assertion, keys)).resolves.toBeNull();
+  });
+
+  it('refuses an assertion without an expiry or an issue time', async () => {
+    const { keys, sign } = await team();
+    const user = { sub: 'u-1', email: 'me@example.com' };
+    await expect(who(TEAM, await sign(user, { exp: null }), keys)).resolves.toBeNull();
+    await expect(who(TEAM, await sign(user, { iat: false }), keys)).resolves.toBeNull();
   });
 
   it('says which claim did not match, for the server log', async () => {
