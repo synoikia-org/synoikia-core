@@ -4,12 +4,13 @@ import { computed, ref, toRaw, useId, watch } from 'vue';
 import { errorText } from '../../api';
 import { useCopy } from '../../composables/useCopy';
 import { useSaveSettings, useSettingsQuery } from '../../composables/useSettings';
-import { AUTH_MODE_LABELS } from '../../format';
-import { AUTH_MODES } from '../../types';
-import type { Settings } from '../../types';
+import { AUTH_METHOD_LABELS, EXTERNAL_PROVIDER_LABELS } from '../../format';
+import { AUTH_METHODS } from '../../types';
+import type { AuthMethod, ExternalProvider, Settings } from '../../types';
 
 const settingsQuery = useSettingsQuery();
 const saveMcp = useSaveSettings('mcp');
+const saving = saveMcp.isPending;
 const form = ref<Settings['mcp']>();
 const uid = useId();
 const publicMcpUrl = computed(() => settingsQuery.data.value?.publicMcpUrl ?? null);
@@ -29,7 +30,10 @@ watch(
   { immediate: true },
 );
 
+const noMethod = computed(() => !!form.value && !AUTH_METHODS.some((m) => form.value?.clientAuth[m]));
+
 function save() {
+  saved.value = undefined;
   saveMcp.mutate(form.value, {
     onSuccess: () => (saved.value = { kind: 'ok', text: 'Saved.' }),
     onError: (err) => (saved.value = { kind: 'error', text: errorText(err) }),
@@ -43,7 +47,7 @@ const CF_REDIRECTS = [
     uris: ['https://claude.ai/api/mcp/auth_callback', 'https://claude.com/api/mcp/auth_callback'],
   },
   {
-    client: 'Cloudflare MCP portal (only if you use step 6)',
+    client: 'Cloudflare MCP portal (only if you use step 5)',
     uris: [
       'https://dash.cloudflare.com/*',
       'https://<portal-hostname>/servers-callback',
@@ -54,12 +58,14 @@ const CF_REDIRECTS = [
 
 const { copied, copy } = useCopy();
 
-const MODE_HELP: Record<string, string> = {
-  external: 'A reverse proxy (Cloudflare Access, Authelia, Authentik) authenticates clients. Only use behind one.',
-  bearer: 'Clients send a token created under Clients & Tokens.',
-  oauth: 'Clients sign in through this server (OAuth 2.1 with PKCE) — what claude.ai connectors expect.',
-  'bearer+oauth': 'Either a bearer token or OAuth.',
+const METHOD_HELP: Record<AuthMethod, string> = {
+  bearer: "Clients send a token created under Clients & Tokens or on a user's profile.",
+  oauth:
+    'Clients sign in through this server with a portal account (OAuth 2.1 with PKCE). This is what claude.ai connectors expect.',
+  external:
+    'An identity provider in front of the MCP port signs clients in. Synoikia checks its signed assertion on each request.',
 };
+const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
 </script>
 
 <template>
@@ -78,38 +84,55 @@ const MODE_HELP: Record<string, string> = {
           log.
         </li>
         <li>
-          The settings below only decide <em>who can connect</em>, not what a client may do. Endpoints use the default
-          authentication unless they override it in their own Settings tab.
+          Client auth only decides <em>who can connect</em>, not what a client may do. Every endpoint accepts all the
+          methods enabled below, unless its own Settings tab limits it to some of them.
         </li>
         <li>
           Bearer tokens are created under <RouterLink to="/clients">Clients &amp; Tokens</RouterLink>. OAuth lets a
-          client sign in through this server with a portal account. External mode leaves authentication to a reverse
-          proxy in front of the server.
+          client sign in through this server with a portal account. External leaves sign-in to an identity provider in
+          front of the server, and each call runs as the matching portal user.
         </li>
       </ul>
     </section>
 
     <section class="card">
-      <h2>Default client authentication</h2>
-      <p class="small muted">Endpoints use this unless they override it in their own settings.</p>
-      <div class="field">
-        <select v-model="form.defaultAuthMode" aria-label="Default authentication mode" aria-describedby="m-mode-help">
-          <option v-for="m in AUTH_MODES" :key="m" :value="m">{{ AUTH_MODE_LABELS[m] }}</option>
-        </select>
-        <p id="m-mode-help" class="help">{{ MODE_HELP[form.defaultAuthMode] }}</p>
-      </div>
+      <h2>Client auth methods</h2>
+      <p id="m-methods-help" class="small muted">
+        Every endpoint accepts all enabled methods, unless the endpoint is limited to some of them in its own settings.
+      </p>
+      <fieldset class="methods" aria-describedby="m-methods-help">
+        <legend class="sr-only">Enabled client auth methods</legend>
+        <div v-for="m in AUTH_METHODS" :key="m" class="field check">
+          <label
+            ><input v-model="form.clientAuth[m]" type="checkbox" :aria-describedby="`m-${m}-help`" />
+            {{ AUTH_METHOD_LABELS[m] }}</label
+          >
+          <p :id="`m-${m}-help`" class="help">{{ METHOD_HELP[m] }}</p>
+        </div>
+      </fieldset>
+      <p v-if="noMethod" class="alert warn" data-warn="no-method">
+        Enable at least one method. Without one, no MCP client can connect.
+      </p>
+      <template v-if="form.clientAuth.external">
+        <div class="field provider">
+          <label for="m-provider">External provider</label>
+          <select id="m-provider" v-model="form.external.provider">
+            <option v-for="p in PROVIDERS" :key="p" :value="p">{{ EXTERNAL_PROVIDER_LABELS[p] }}</option>
+          </select>
+        </div>
+        <p class="alert warn" role="note" data-warn="external-approvals">
+          With external client auth, users approve their own calls on the approval page with the same provider identity.
+          A client that holds the user's identity could open the approval link itself. Approvals then protect against
+          agent mistakes, not against a hostile client.
+        </p>
+      </template>
       <p class="small">
         Public MCP URL: <span class="mono">{{ publicMcpUrl ?? 'not set — derived from each request' }}</span>
       </p>
     </section>
 
-    <section class="card">
+    <section v-if="form.clientAuth.oauth" class="card">
       <h2>OAuth</h2>
-      <p class="small muted">
-        Applies to endpoints set to <strong>{{ AUTH_MODE_LABELS.oauth }}</strong> and to endpoints set to
-        <strong>{{ AUTH_MODE_LABELS['bearer+oauth'] }}</strong
-        >.
-      </p>
       <p v-if="!publicMcpUrl" class="alert warn" data-warn="oauth-public-url">
         OAuth is off until <code>PUBLIC_MCP_URL</code> is set on the server to the address clients reach the MCP port
         on.
@@ -152,12 +175,12 @@ const MODE_HELP: Record<string, string> = {
       </div>
     </section>
 
-    <section class="card">
+    <section v-if="form.clientAuth.external && form.external.provider === 'cloudflare'" class="card">
       <h2>Cloudflare Access</h2>
       <p class="small muted">
-        Applies to endpoints using <strong>{{ AUTH_MODE_LABELS.external }}</strong
-        >. With both fields set, every MCP request must carry a valid Cloudflare Access token
-        (<code>Cf-Access-Jwt-Assertion</code>), which Synoikia checks itself; anything else gets a 401.
+        Every MCP request without a bearer token must carry a valid Cloudflare Access token
+        (<code>Cf-Access-Jwt-Assertion</code>), which Synoikia checks itself. The token's e-mail address names the
+        portal user; a user with that name signs in, or self-registration creates one. Service tokens are refused.
       </p>
       <div class="form-grid">
         <div class="field">
@@ -205,14 +228,8 @@ const MODE_HELP: Record<string, string> = {
           </p>
         </li>
         <li>
-          For clients that can't sign in with a browser, create a service token under
-          <strong>Access controls → Service credentials</strong> and add a <strong>Service Auth</strong> policy for it.
-          Those clients send <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code> headers.
-        </li>
-        <li>
-          Copy the team domain and the application's AUD tag into the fields above, save, and set the endpoints (or the
-          default above) to <strong>{{ AUTH_MODE_LABELS.external }}</strong
-          >.
+          Copy the team domain and the application's AUD tag into the fields above and save. Every endpoint then accepts
+          <strong>{{ AUTH_METHOD_LABELS.external }}</strong> unless its own settings leave it out.
         </li>
         <li>
           <span class="pill">Optional</span> <strong>MCP portal</strong>, to offer several endpoints from one address.
@@ -226,26 +243,10 @@ const MODE_HELP: Record<string, string> = {
       </ol>
     </section>
 
-    <section class="card">
-      <h2>Other reverse proxies</h2>
-      <p class="small muted">
-        For endpoints using <strong>{{ AUTH_MODE_LABELS.external }}</strong> behind Authelia, Authentik or similar, when
-        Cloudflare Access is not set up above. The proxy decides who gets in.
-      </p>
-      <div class="field">
-        <label for="m-hdr">Trusted identity header</label>
-        <input
-          id="m-hdr"
-          v-model="form.trustedIdentityHeader"
-          placeholder="Remote-User"
-          aria-describedby="m-hdr-help"
-        />
-        <p id="m-hdr-help" class="help">Used only to attribute calls in the audit log.</p>
-      </div>
-    </section>
-
     <p v-if="message" class="alert" :class="message.kind" :role="messageRole(message.kind)">{{ message.text }}</p>
-    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit" :disabled="noMethod || saving">Save</button>
+    </div>
   </form>
   <p v-else-if="message" class="alert error" role="alert">{{ message.text }}</p>
 </template>
@@ -292,5 +293,13 @@ h3 {
 }
 .note {
   margin: 8px 0 0;
+}
+.methods {
+  border: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.provider {
+  max-width: 320px;
 }
 </style>

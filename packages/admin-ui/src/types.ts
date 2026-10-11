@@ -1,7 +1,9 @@
 /** Admin API response shapes (design §8.4), mirrored from packages/core. */
 
-export type AuthMode = 'external' | 'bearer' | 'oauth' | 'bearer+oauth';
-export const AUTH_MODES: AuthMode[] = ['external', 'bearer', 'oauth', 'bearer+oauth'];
+/** A client auth method on the MCP port (design §6.2). */
+export type AuthMethod = 'bearer' | 'oauth' | 'external';
+export const AUTH_METHODS: AuthMethod[] = ['bearer', 'oauth', 'external'];
+export type ExternalProvider = 'cloudflare';
 export type Level = 'none' | 'read' | 'ask' | 'write';
 export const LEVELS: Level[] = ['none', 'read', 'ask', 'write'];
 export type Ceiling = 'read' | 'write';
@@ -85,7 +87,8 @@ export interface Instance {
   slug: string;
   displayName: string;
   enabled: boolean;
-  authMode: AuthMode | null;
+  /** The endpoint's own subset of methods; null accepts every globally enabled one. */
+  authMethods: AuthMethod[] | null;
   status: 'starting' | 'ready' | 'error' | 'stopped';
   statusError: string | null;
   upstreamVersion: string | null;
@@ -105,7 +108,8 @@ export interface Instance {
     attestation?: boolean;
   };
   endpointUrl?: string;
-  effectiveAuthMode?: AuthMode;
+  /** On the overview: the methods the endpoint accepts now (an empty list refuses every call). */
+  effectiveAuthMethods?: AuthMethod[];
 }
 
 export interface Overview {
@@ -387,10 +391,10 @@ export interface Settings {
     localSignup: boolean;
   };
   mcp: {
-    defaultAuthMode: AuthMode;
+    clientAuth: Record<AuthMethod, boolean>;
+    external: { provider: ExternalProvider };
     allowDynamicRegistration: boolean;
     cfAccess: { teamDomain: string; aud: string };
-    trustedIdentityHeader: string;
     accessTokenTtlMinutes: number;
     refreshTokenTtlDays: number;
   };
@@ -481,7 +485,8 @@ export interface MyEndpoint extends EndpointSwitches {
   slug: string;
   displayName: string;
   endpointUrl: string;
-  authMode: AuthMode;
+  /** The methods the endpoint accepts now (an empty list refuses every call). */
+  authMethods: AuthMethod[];
   status?: {
     enabled: boolean;
     state: Instance['status'];

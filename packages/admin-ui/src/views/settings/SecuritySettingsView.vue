@@ -158,8 +158,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
         </div>
       </div>
       <p id="s-approval-help" class="help">
-        The approval page asks for an authenticator code once per browser sign-in. Locked operations always ask for a
-        fresh one.
+        How long a sign-in on the approval page lasts. Locked operations also need a typed confirmation on each call.
       </p>
       <p
         v-if="messages.security"

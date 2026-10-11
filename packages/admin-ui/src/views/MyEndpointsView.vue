@@ -4,7 +4,7 @@ import { errorText } from '../api';
 import PageHeader from '../components/PageHeader.vue';
 import { useCopy } from '../composables/useCopy';
 import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
-import { AUTH_MODE_LABELS, ago } from '../format';
+import { ago, formatAuthMethods } from '../format';
 import { useSessionStore } from '../stores/session';
 
 /** Every user's home (design §6.4): the endpoints their role has, how to connect to them, and the
@@ -53,7 +53,10 @@ const uid = useId();
                   {{ copied === ep.endpointUrl ? 'Copied' : 'Copy' }}
                 </button>
               </td>
-              <td class="small">{{ AUTH_MODE_LABELS[ep.authMode] ?? ep.authMode }}</td>
+              <td class="small">
+                <span v-if="ep.authMethods.length === 0" class="pill danger">{{ formatAuthMethods([]) }}</span>
+                <template v-else>{{ formatAuthMethods(ep.authMethods) }}</template>
+              </td>
               <td v-if="ep.status" class="small">
                 <span class="dot" :class="ep.status.state" aria-hidden="true" /> {{ ep.status.state }}
                 <template v-if="!ep.status.enabled"> · disabled</template>

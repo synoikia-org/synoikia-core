@@ -4,7 +4,7 @@ import { errorText } from '../api';
 import PageHeader from '../components/PageHeader.vue';
 import { useCopy } from '../composables/useCopy';
 import { useOverviewQuery } from '../composables/useOverview';
-import { AUTH_MODE_LABELS, ago } from '../format';
+import { ago, formatAuthMethods } from '../format';
 
 const { data: overview, error: loadError, isPending: loading } = useOverviewQuery();
 const instances = computed(() => overview.value?.instances ?? []);
@@ -58,7 +58,10 @@ const uid = useId();
                 </span>
                 <div v-if="i.statusError" class="small err">{{ i.statusError }}</div>
               </td>
-              <td>{{ AUTH_MODE_LABELS[i.effectiveAuthMode ?? ''] ?? i.effectiveAuthMode }}</td>
+              <td>
+                <span v-if="i.effectiveAuthMethods?.length === 0" class="pill danger">{{ formatAuthMethods([]) }}</span>
+                <template v-else>{{ formatAuthMethods(i.effectiveAuthMethods) }}</template>
+              </td>
               <td>
                 {{ ago(i.lastSyncedAt) }}
                 <span v-if="i.lastSyncStatus === 'error'" class="pill danger">failed</span>
