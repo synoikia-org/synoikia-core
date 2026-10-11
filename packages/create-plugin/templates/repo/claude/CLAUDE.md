@@ -4,6 +4,10 @@ Plugins for [Synoikia](https://github.com/via-justa/synoikia-core). Authoring gu
 
 **A plugin only describes its upstream API; core decides what is allowed.** Core's sandbox, permission gate, approvals, redaction and audit apply to every plugin. A plugin supplies the catalog, the classification (read, write, locked), targets, summaries, confirmation literals and `sensitiveKeys`. It never adds its own allow/deny switch, approval prompt or secret handling.
 
+Every task that changes the repo starts with the `change-workflow` skill (`.claude/skills/change-workflow/`): size the task, go through plan mode for logical or big changes, and propose a work pattern (one PR, or a chain of child PRs into an integration branch run unattended) for the user to approve.
+
+Plugin code, `plugin.yaml`, manifest and test work follows the `plugin-development` skill (`.claude/skills/plugin-development/`): policy in YAML, SDK helpers before new code, fail closed, golden diffs reviewed as security changes. Load it before writing or reviewing a plugin change.
+
 ## Layout
 
 | Path                         | What                                                                                       |
@@ -35,4 +39,4 @@ pnpm check                                 # manifests, plugin.yaml and versions
 
 ## Security review
 
-Before opening a PR that touches a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, or `.github/workflows/`, run the `security-reviewer` subagent on the diff and address its findings.
+Before opening a PR that touches a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, `test/__golden__/`, or `.github/workflows/`, run the `security-reviewer` subagent on the diff and address its findings.

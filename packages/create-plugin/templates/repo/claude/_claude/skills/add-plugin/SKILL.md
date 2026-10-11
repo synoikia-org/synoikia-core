@@ -5,6 +5,8 @@ description: Scaffold a new Synoikia plugin under plugins/<id> with `pnpm new`, 
 
 # Add a plugin
 
+Write the code as the `plugin-development` skill says.
+
 ## 1. Settle the basics
 
 - **`<id>`**: lowercase, the directory name and manifest `id`; the sandbox namespace defaults to it in camelCase.

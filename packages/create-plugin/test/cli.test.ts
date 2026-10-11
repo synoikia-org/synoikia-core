@@ -85,7 +85,15 @@ describe('templates', () => {
   it('writes a repository with dotfiles, optional parts, and refuses a non-empty directory', () => {
     const dir = path.join(work(), 'my-plugins');
     createRepo({ dir, repository: 'me/my-plugins', claude: true, ranges: RANGES });
-    for (const f of ['.gitignore', '.github/workflows/ci.yml', '.claude/settings.json', 'CLAUDE.md', 'plugins'])
+    for (const f of [
+      '.gitignore',
+      '.github/workflows/ci.yml',
+      '.claude/settings.json',
+      '.claude/skills/change-workflow/SKILL.md',
+      '.claude/skills/plugin-development/SKILL.md',
+      'CLAUDE.md',
+      'plugins',
+    ])
       expect(existsSync(path.join(dir, f)), f).toBe(true);
     expect(existsSync(path.join(dir, '.github/workflows/release.yml'))).toBe(false);
     const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as Record<string, unknown>;
