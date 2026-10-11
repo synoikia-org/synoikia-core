@@ -14,7 +14,7 @@ import {
 import type { RoleRow } from '../../types';
 
 /** Roles (design §6.4): Admin is built in; each other role has endpoints, maximum levels (set on an
- * endpoint's Access page) and three switches. */
+ * endpoint's Access page) and role-wide switches. */
 const overviewQuery = useOverviewQuery();
 const rolesQuery = useRolesQuery();
 const createRole = useCreateRole();
@@ -35,19 +35,9 @@ const error = computed(() => {
 
 const SWITCHES = [
   {
-    key: 'canSetOwnLevels',
-    label: 'Set personal levels',
-    help: 'Users set personal levels for their own calls, up to the role maximum.',
-  },
-  {
-    key: 'canManageOwnRules',
-    label: 'Own pre-approval rules',
-    help: 'Users add rules that apply only to their own calls.',
-  },
-  {
-    key: 'canSeeStatus',
-    label: 'See endpoint status',
-    help: 'Users see health, plugin and sync state of their endpoints.',
+    key: 'canSeeOtherEndpoints',
+    label: 'See other endpoints',
+    help: 'Users see the endpoints their role does not have, without access to them.',
   },
 ] as const;
 

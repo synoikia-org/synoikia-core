@@ -8,23 +8,25 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-const role = (flags: Partial<Record<'canSetOwnLevels' | 'canManageOwnRules' | 'canSeeStatus', boolean>> = {}) => ({
-  id: 'r1',
-  name: 'Operators',
-  isAdmin: false,
+const role = () => ({ id: 'r1', name: 'Operators', isAdmin: false, canSeeOtherEndpoints: false });
+const asUser = () => ({
+  ...signedIn,
+  user: { ...signedIn.user, id: 'u2', username: 'olga', role: role() },
+});
+
+type Switches = Partial<Record<'canSetOwnLevels' | 'canManageOwnRules' | 'canSeeStatus', boolean>>;
+const endpoint = (id: string, slug: string, switches: Switches = {}) => ({
+  id,
+  slug,
+  displayName: 'Acme',
+  endpointUrl: `https://mcp.example/${slug}`,
+  authMode: 'bearer',
   canSetOwnLevels: false,
   canManageOwnRules: false,
   canSeeStatus: false,
-  ...flags,
+  ...switches,
 });
-const asUser = (flags: Parameters<typeof role>[0] = {}) => ({
-  ...signedIn,
-  user: { ...signedIn.user, id: 'u2', username: 'olga', role: role(flags) },
-});
-
-const mine = [
-  { id: 'i1', slug: 'nas', displayName: 'Acme', endpointUrl: 'https://mcp.example/nas', authMode: 'bearer' },
-];
+const mine = [endpoint('i1', 'nas')];
 const view = {
   groups: [{ key: 'app', label: 'Apps', endpointLevel: 'ask', roleLevel: 'ask', ownLevel: null }],
   operations: [
@@ -77,8 +79,8 @@ describe('a non-admin user', () => {
 
   it('sets their own level, capped by the role maximum', async () => {
     const { calls } = fakeApi({
-      'GET /api/session': asUser({ canSetOwnLevels: true, canManageOwnRules: true }),
-      'GET /api/me/endpoints': mine,
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': [endpoint('i1', 'nas', { canSetOwnLevels: true, canManageOwnRules: true })],
       'GET /api/me/endpoints/i1/access': view,
       'PUT /api/me/endpoints/i1/groups/app': view,
     });
@@ -95,6 +97,23 @@ describe('a non-admin user', () => {
       path: '/api/me/endpoints/i1/groups/app',
       body: { level: 'read' },
     });
+  });
+
+  it('gets the rules tab and own levels only on endpoints whose switches allow them', async () => {
+    fakeApi({
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': [endpoint('i1', 'nas'), endpoint('i2', 'lab', { canManageOwnRules: true })],
+      'GET /api/me/endpoints/i1/access': view,
+      'GET /api/me/endpoints/i2/access': view,
+      'GET /api/me/endpoints/i2/rules': [],
+    });
+    const { wrapper, router } = await mountAt('/my/i1');
+    await flushPromises();
+    expect(wrapper.text()).not.toContain('My pre-approval rules');
+    await router.push('/my/i2');
+    await flushPromises();
+    expect(wrapper.text()).toContain('My pre-approval rules');
+    expect(wrapper.find('[role="radiogroup"]').exists()).toBe(false);
   });
 });
 
@@ -118,8 +137,23 @@ describe('roles for admins', () => {
       'GET /api/session': signedIn,
       'GET /api/overview': { instances: [instance], plugins: [], warnings: [], publicMcpUrl: null },
       'GET /api/roles': [
-        { ...role(), id: 'admin', name: 'Admin', isAdmin: true, users: 1, instanceIds: [], isDefault: false },
-        { ...role(), users: 2, instanceIds: ['i1'], isDefault: false },
+        {
+          ...role(),
+          id: 'admin',
+          name: 'Admin',
+          isAdmin: true,
+          users: 1,
+          instanceIds: [],
+          endpoints: [],
+          isDefault: false,
+        },
+        {
+          ...role(),
+          users: 2,
+          instanceIds: ['i1'],
+          endpoints: [{ instanceId: 'i1', canSetOwnLevels: false, canManageOwnRules: false, canSeeStatus: false }],
+          isDefault: false,
+        },
       ],
       'GET /api/instances/i1/groups': [],
       'GET /api/instances/i1/operations': [],
@@ -141,6 +175,23 @@ describe('roles for admins', () => {
     expect(calls.find((c) => c.method === 'PUT')).toMatchObject({
       path: '/api/roles/r1/endpoints/i1/groups/app',
       body: { level: 'none' },
+    });
+  });
+
+  it('flips the role-wide “See other endpoints” switch', async () => {
+    const { calls } = roleApi({ 'PATCH /api/roles/r1': role() });
+    const { wrapper } = await mountAt('/settings/roles');
+    await flushPromises();
+    const box = wrapper
+      .get('[data-role="Operators"]')
+      .findAll('label')
+      .find((l) => l.text() === 'See other endpoints')!
+      .get('input');
+    await box.setValue(true);
+    await flushPromises();
+    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({
+      path: '/api/roles/r1',
+      body: { canSeeOtherEndpoints: true },
     });
   });
 
@@ -202,8 +253,8 @@ describe('own pre-approval rules', () => {
       operations: [{ ...view.operations[0]!, matchProfile: 'vol' }],
     };
     const { calls } = fakeApi({
-      'GET /api/session': asUser({ canManageOwnRules: true }),
-      'GET /api/me/endpoints': mine,
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': [endpoint('i1', 'nas', { canManageOwnRules: true })],
       'GET /api/me/endpoints/i1/access': own,
       'GET /api/me/endpoints/i1/rules': [],
       'GET /api/me/endpoints/i1/rule-form': {

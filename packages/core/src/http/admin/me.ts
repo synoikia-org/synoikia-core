@@ -22,8 +22,12 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const me = (c: Context<AdminEnv>) => c.get('user');
   const mcpBase = () => ctx.config.PUBLIC_MCP_URL?.replace(/\/$/, '') ?? '';
   const myInstance = (c: Context<AdminEnv>) => ctx.instances.get(ctx.users.ownEndpoint(me(c), c.req.param('id') ?? ''));
-  const need = (c: Context<AdminEnv>, cap: 'canSetOwnLevels' | 'canManageOwnRules') =>
-    ctx.users.assertAllowed(me(c), cap);
+  // The caller's endpoint, once the role's switch on that endpoint allows `cap`.
+  const need = (c: Context<AdminEnv>, cap: 'canSetOwnLevels' | 'canManageOwnRules') => {
+    const { id } = myInstance(c);
+    ctx.users.assertAllowed(me(c), id, cap);
+    return id;
+  };
   const owner = (c: Context<AdminEnv>, instanceId: string): RuleOwner => ({
     userId: me(c).id,
     operations: ctx.users.levels(me(c), instanceId).operations,
@@ -36,15 +40,13 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const Level = z.object({ level: z.enum(ACCESS_LEVELS).nullable() });
 
   app.put('/api/me/endpoints/:id/groups/:key', async (c) => {
-    need(c, 'canSetOwnLevels');
-    const { id } = myInstance(c);
+    const id = need(c, 'canSetOwnLevels');
     const { level } = await readJson(c, Level);
     return c.json(ctx.users.setOwnLevel(me(c), id, { group: c.req.param('key') }, level));
   });
 
   app.put('/api/me/endpoints/:id/operations/:opId', async (c) => {
-    need(c, 'canSetOwnLevels');
-    const { id } = myInstance(c);
+    const id = need(c, 'canSetOwnLevels');
     const { level } = await readJson(c, Level);
     return c.json(ctx.users.setOwnLevel(me(c), id, { operationId: c.req.param('opId') }, level));
   });
@@ -53,15 +55,13 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
 
   // What the rule editor needs from the manifest: the match fields and target scopes.
   app.get('/api/me/endpoints/:id/rule-form', (c) => {
-    need(c, 'canManageOwnRules');
-    const { manifest } = ctx.instances.runtime(myInstance(c).id);
+    const { manifest } = ctx.instances.runtime(need(c, 'canManageOwnRules'));
     return c.json({ matchProfiles: manifest.matchProfiles, targets: manifest.targets ?? null });
   });
 
   // The editor's pickers, limited to what a rule the caller may write can name (design §6.4).
   app.get('/api/me/endpoints/:id/options/:source', async (c) => {
-    need(c, 'canManageOwnRules');
-    const { id } = myInstance(c);
+    const id = need(c, 'canManageOwnRules');
     const source = c.req.param('source');
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(source))
       throw new NotFoundError('options_not_found', 'No such options source');
@@ -76,8 +76,7 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   });
 
   app.get('/api/me/endpoints/:id/registry', (c) => {
-    need(c, 'canManageOwnRules');
-    const { id } = myInstance(c);
+    const id = need(c, 'canManageOwnRules');
     const query = c.req.query();
     checkOwnRegistryKind(ctx.instances.runtime(id).manifest, owner(c, id), query.kind);
     // Only what the picker shows: attributes stay out, they can hold upstream secrets.
@@ -88,30 +87,26 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   });
 
   app.get('/api/me/endpoints/:id/rules', (c) => {
-    need(c, 'canManageOwnRules');
-    const { id } = myInstance(c);
+    const id = need(c, 'canManageOwnRules');
     return c.json(listOwnRules(ctx.db, id, owner(c, id)));
   });
 
   app.post('/api/me/endpoints/:id/rules', async (c) => {
-    need(c, 'canManageOwnRules');
-    const { id } = myInstance(c);
+    const id = need(c, 'canManageOwnRules');
     const raw = await readJson(c, z.unknown());
     const manifest = () => ctx.instances.runtime(id).manifest;
     return c.json(createOwnRule(ctx.db, manifest, id, raw, owner(c, id)), 201);
   });
 
   app.patch('/api/me/endpoints/:id/rules/:ruleId', async (c) => {
-    need(c, 'canManageOwnRules');
-    const { id } = myInstance(c);
+    const id = need(c, 'canManageOwnRules');
     const raw = await readJson(c, z.unknown());
     const manifest = () => ctx.instances.runtime(id).manifest;
     return c.json(updateOwnRule(ctx.db, manifest, id, c.req.param('ruleId'), raw, owner(c, id)));
   });
 
   app.delete('/api/me/endpoints/:id/rules/:ruleId', (c) => {
-    need(c, 'canManageOwnRules');
-    deleteOwnRule(ctx.db, myInstance(c).id, c.req.param('ruleId'), me(c).id);
+    deleteOwnRule(ctx.db, need(c, 'canManageOwnRules'), c.req.param('ruleId'), me(c).id);
     return c.body(null, 204);
   });
 

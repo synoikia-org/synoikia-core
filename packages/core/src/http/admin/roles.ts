@@ -25,6 +25,12 @@ export function registerRoleRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json({ instanceIds: ctx.roles.setInstances(c.req.param('id'), instanceIds, actor(c)) });
   });
 
+  app.patch('/api/roles/:id/endpoints/:instanceId', async (c) => {
+    ctx.instances.get(c.req.param('instanceId'));
+    const raw = await readJson(c, z.unknown());
+    return c.json(ctx.roles.setEndpointSwitches(c.req.param('id'), c.req.param('instanceId'), raw, actor(c)));
+  });
+
   app.get('/api/roles/:id/endpoints/:instanceId/access', (c) => {
     const role = ctx.roles.get(c.req.param('id'));
     ctx.instances.get(c.req.param('instanceId'));

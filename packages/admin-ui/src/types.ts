@@ -10,6 +10,11 @@ export interface PublicRole {
   id: string;
   name: string;
   isAdmin: boolean;
+  canSeeOtherEndpoints: boolean;
+}
+
+/** A role's switches on one of its endpoints (design §6.4). */
+export interface EndpointSwitches {
   canSetOwnLevels: boolean;
   canManageOwnRules: boolean;
   canSeeStatus: boolean;
@@ -19,6 +24,7 @@ export interface PublicRole {
 export interface RoleRow extends PublicRole {
   users: number;
   instanceIds: string[];
+  endpoints: (EndpointSwitches & { instanceId: string })[];
   isDefault: boolean;
 }
 
@@ -445,8 +451,8 @@ export interface LevelView {
   }[];
 }
 
-/** An endpoint of the signed-in user's role (`/api/me/endpoints`). */
-export interface MyEndpoint {
+/** An endpoint of the signed-in user's role (`/api/me/endpoints`), with the role's switches on it. */
+export interface MyEndpoint extends EndpointSwitches {
   id: string;
   slug: string;
   displayName: string;

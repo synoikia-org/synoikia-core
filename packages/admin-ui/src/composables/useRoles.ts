@@ -6,7 +6,7 @@ import { userKeys } from './useUsers';
 
 export const roleKeys = { all: ['roles'] as const };
 
-type RolePatch = Partial<Pick<RoleRow, 'name' | 'canSetOwnLevels' | 'canManageOwnRules' | 'canSeeStatus'>>;
+type RolePatch = Partial<Pick<RoleRow, 'name' | 'canSeeOtherEndpoints'>>;
 
 // Users show their role's name, so role writes refresh the users too.
 const changed = () => [roleKeys.all, userKeys.all];
