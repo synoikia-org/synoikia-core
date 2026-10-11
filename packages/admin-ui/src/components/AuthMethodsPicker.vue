@@ -72,6 +72,9 @@ function toggle(m: AuthMethod, on: boolean) {
   margin-bottom: 5px;
   padding: 0;
 }
+.methods input {
+  accent-color: var(--brand);
+}
 .methods label + label,
 .subset label + label {
   margin-top: 4px;
