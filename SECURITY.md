@@ -29,7 +29,8 @@ We're especially interested in reports touching:
 - The master key and per-instance secret encryption/handling
 - The permission gate, access levels, and human-approval flow
 - The `isolated-vm` sandbox boundary
-- Authentication (admin login, TOTP, OIDC, MCP OAuth/bearer tokens)
+- Authentication (admin login, TOTP, OIDC, MCP OAuth/bearer tokens,
+  Cloudflare Access)
 - Secret redaction in logs, the audit trail, and approval pages
 - Plugin isolation (child processes under the Node permission model) and
   plugin repository signature verification
