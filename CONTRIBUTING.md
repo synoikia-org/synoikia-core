@@ -4,20 +4,7 @@ Thanks for taking the time to contribute. Bug reports, feature requests and pull
 
 ## Development setup
 
-Requires [Node.js](https://nodejs.org/) 22 (≥ 22.12) or 24 and [pnpm](https://pnpm.io/) 10 (`corepack enable`).
-
-```sh
-pnpm install
-pnpm test        # all packages (workspace deps resolve to TS sources, no build needed)
-pnpm typecheck
-pnpm lint
-pnpm build
-DATA_DIR=./data pnpm start   # MCP on :8080, admin on :8081; creates ./data/synoikia.sqlite + master.key
-```
-
-Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @synoikia/admin-ui dev` in another. [Vite](https://vite.dev/) proxies `/api` and `/auth` to `:8081`.
-
-DB schema changes: edit `packages/core/src/db/schema.ts`, then `pnpm --filter @synoikia/core db:generate` ([Drizzle Kit](https://orm.drizzle.team/docs/kit-overview)).
+[DEVELOPMENT.md](DEVELOPMENT.md) covers the repository layout, local setup, running the server and the admin UI, and database schema changes. To write a plugin, see [docs/plugin-authoring.md](docs/plugin-authoring.md).
 
 For the architecture and design rationale behind core, the sandbox, the permission gate and the plugin protocol, see the software design description in [`docs/design/`](docs/design/README.md).
 
@@ -36,9 +23,11 @@ pnpm test
 
 Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature should come with tests covering it. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
 
+When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md) and the section of [`docs/design/`](docs/design/README.md) it belongs to.
+
 ## Releases
 
-This repo publishes two npm packages (`@synoikia/plugin-sdk`, `@synoikia/core`) and a Docker image, each versioned independently — see the README's [Publishing the plugin packages](README.md#publishing-the-plugin-packages) and [Publishing the Docker image](README.md#publishing-the-docker-image) sections. As a contributor you generally don't need to touch versions or releases yourself; a maintainer bumps the relevant `version` field when a change is ready to ship.
+This repo publishes three npm packages (`@synoikia/plugin-sdk`, `@synoikia/core`, `@synoikia/create-plugin`) and a Docker image, each versioned independently — see [Publishing the npm packages](DEVELOPMENT.md#publishing-the-npm-packages) and [Publishing the Docker image](DEVELOPMENT.md#publishing-the-docker-image) in DEVELOPMENT.md. A pull request that changes what a package or the image ships bumps its `version`; [CLAUDE.md](CLAUDE.md) › Releases says which bump. If you're unsure, leave it and a maintainer will bump it before merge.
 
 ## Code of Conduct
 

@@ -12,5 +12,5 @@
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm test` passes
 - [ ] Tests added/updated for the change, where applicable
-- [ ] Docs updated (README, `docs/design/`), where applicable
+- [ ] Docs updated (README, DEVELOPMENT, CONTRIBUTING, SECURITY, `docs/design/`), where applicable
 - [ ] Versions bumped where required (CLAUDE.md, "Releases")
