@@ -24,14 +24,13 @@ const DEFAULT_OIDC: Oidc = {
 
 const settingsQuery = useSettingsQuery();
 const rolesQuery = useRolesQuery();
-const saves = { security: useSaveSettings('security'), audit: useSaveSettings('audit') };
+const saveSecurityMutation = useSaveSettings('security');
 const saveOidcSettings = useSaveSettings('oidc');
 const { prompt } = useConfirm();
 // The page shows once both have loaded.
 const loaded = computed(() => (rolesQuery.data.value ? settingsQuery.data.value : undefined));
 const roles = computed(() => rolesQuery.data.value ?? []);
 const security = ref<Settings['security']>();
-const audit = ref<Settings['audit']>();
 const oidc = ref<Omit<Oidc, 'clientSecretSet'>>();
 const oidcSecretSet = computed(() => loaded.value?.oidc?.clientSecretSet ?? false);
 const oidcSecret = ref('');
@@ -50,11 +49,6 @@ watch(
   { immediate: true },
 );
 watch(
-  () => loaded.value?.audit,
-  (s) => s && (audit.value = structuredClone(toRaw(s))),
-  { immediate: true },
-);
-watch(
   () => loaded.value && (loaded.value.oidc ?? DEFAULT_OIDC),
   (s) => {
     if (!s) return;
@@ -66,7 +60,7 @@ watch(
 
 const setMsg = (key: string, message: Message) => (saved.value = { ...saved.value, [key]: message });
 
-async function saveSection(key: 'security' | 'audit' | 'registration') {
+async function saveSecurity(key: 'security' | 'registration') {
   // Anyone who can reach the sign-in page, or whom the proxy or the IdP lets through, becomes an admin.
   if (
     key === 'registration' &&
@@ -79,10 +73,9 @@ async function saveSection(key: 'security' | 'audit' | 'registration') {
     })) !== 'ADMIN'
   )
     return;
-  const section = key === 'registration' ? 'security' : key;
-  saves[section].mutate(section === 'security' ? security.value : audit.value, {
-    onSuccess: () => setMsg(section, { kind: 'ok', text: 'Saved.' }),
-    onError: (err) => setMsg(section, { kind: 'error', text: errorText(err) }),
+  saveSecurityMutation.mutate(security.value, {
+    onSuccess: () => setMsg('security', { kind: 'ok', text: 'Saved.' }),
+    onError: (err) => setMsg('security', { kind: 'error', text: errorText(err) }),
   });
 }
 
@@ -105,7 +98,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
   <div class="stack">
     <p v-if="messages.load" class="alert error" role="alert">{{ messages.load.text }}</p>
 
-    <form v-if="security" class="card" @submit.prevent="saveSection('security')">
+    <form v-if="security" class="card" @submit.prevent="saveSecurity('security')">
       <h2>Sign-in</h2>
       <div class="field check">
         <label
@@ -131,7 +124,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
           <input id="s-idle" v-model.number="security.sessionIdleMinutes" type="number" min="5" />
         </div>
         <div class="field">
-          <label for="s-abs">Session maximum (hours)</label>
+          <label for="s-abs">Max session authentication duration (hours)</label>
           <input id="s-abs" v-model.number="security.sessionAbsoluteHours" type="number" min="1" />
         </div>
         <div class="field">
@@ -171,10 +164,10 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
       <button class="btn btn-primary" type="submit">Save</button>
     </form>
 
-    <form v-if="security" class="card" @submit.prevent="saveSection('registration')">
+    <form v-if="security" class="card" @submit.prevent="saveSecurity('registration')">
       <h2>Self-registration</h2>
       <div class="field">
-        <label for="s-role">Role of new accounts</label>
+        <label for="s-role">Default role of new accounts</label>
         <select
           id="s-role"
           v-model="security.defaultRoleId"
@@ -213,97 +206,80 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
       <div class="field check">
         <label><input v-model="oidc.enabled" type="checkbox" /> Enabled</label>
       </div>
-      <div class="form-grid">
-        <div class="field">
-          <label for="o-iss">Issuer URL</label>
-          <input id="o-iss" v-model="oidc.issuer" placeholder="https://auth.example.com/application/o/mcp/" />
+      <template v-if="oidc.enabled">
+        <div class="form-grid">
+          <div class="field">
+            <label for="o-iss">Issuer URL</label>
+            <input id="o-iss" v-model="oidc.issuer" placeholder="https://auth.example.com/application/o/mcp/" />
+          </div>
+          <div class="field">
+            <label for="o-cid">Client ID</label>
+            <input id="o-cid" v-model="oidc.clientId" />
+          </div>
+          <div class="field">
+            <label for="o-sec">Client secret</label>
+            <input
+              id="o-sec"
+              v-model="oidcSecret"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="oidcSecretSet ? 'Set — leave empty to keep' : 'Not set'"
+            />
+          </div>
+          <div class="field">
+            <label for="o-lbl">Button label</label>
+            <input id="o-lbl" v-model="oidc.label" />
+          </div>
+          <div class="field">
+            <label for="o-sc">Scopes</label>
+            <input id="o-sc" v-model="oidc.scopes" />
+          </div>
         </div>
-        <div class="field">
-          <label for="o-cid">Client ID</label>
-          <input id="o-cid" v-model="oidc.clientId" />
-        </div>
-        <div class="field">
-          <label for="o-sec">Client secret</label>
-          <input
-            id="o-sec"
-            v-model="oidcSecret"
-            type="password"
-            autocomplete="new-password"
-            :placeholder="oidcSecretSet ? 'Set — leave empty to keep' : 'Not set'"
-          />
-        </div>
-        <div class="field">
-          <label for="o-lbl">Button label</label>
-          <input id="o-lbl" v-model="oidc.label" />
-        </div>
-        <div class="field">
-          <label for="o-sc">Scopes</label>
-          <input id="o-sc" v-model="oidc.scopes" />
-        </div>
-      </div>
-      <p class="small">
-        Redirect URI to register with your provider: <span class="mono">{{ callbackUrl() }}</span>
-      </p>
-      <h2>Who may sign in</h2>
-      <div class="field">
-        <label for="o-emails">Allowed emails</label>
-        <ChipsInput v-model="oidc.allowPolicy.emails" input-id="o-emails" placeholder="me@example.com" />
-      </div>
-      <div class="form-grid">
-        <div class="field">
-          <label for="o-grp">Required group</label>
-          <input id="o-grp" v-model="oidc.allowPolicy.group" placeholder="mcp-admins" />
-        </div>
-        <div class="field">
-          <label for="o-gc">Groups claim</label>
-          <input id="o-gc" v-model="oidc.allowPolicy.groupsClaim" />
-        </div>
-      </div>
-      <div class="field">
-        <label for="o-subjects">Allowed subjects</label>
-        <ChipsInput v-model="oidc.allowPolicy.subjects" input-id="o-subjects" placeholder="subject id" />
-      </div>
-      <div class="field check">
-        <label
-          ><input v-model="oidc.autoProvision" type="checkbox" aria-describedby="o-auto-help" /> Create an account on
-          first sign-in for anyone the policy allows</label
-        >
-        <p id="o-auto-help" class="help">
-          Otherwise each user must link single sign-on from their profile first. New accounts get the self-registration
-          role, so this works only while one is set.
+        <p class="small">
+          Redirect URI to register with your provider: <span class="mono">{{ callbackUrl() }}</span>
         </p>
-      </div>
+        <h2>Who may sign in</h2>
+        <div class="field">
+          <label for="o-emails">Allowed emails</label>
+          <ChipsInput
+            v-model="oidc.allowPolicy.emails"
+            input-id="o-emails"
+            placeholder="me@example.com or *@example.com"
+            aria-describedby="o-emails-help"
+          />
+          <p id="o-emails-help" class="help">
+            <span class="mono">*@example.com</span> allows every verified address in that domain.
+          </p>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="o-grp">Required group</label>
+            <input id="o-grp" v-model="oidc.allowPolicy.group" placeholder="mcp-admins" />
+          </div>
+          <div class="field">
+            <label for="o-gc">Groups claim</label>
+            <input id="o-gc" v-model="oidc.allowPolicy.groupsClaim" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="o-subjects">Allowed subjects</label>
+          <ChipsInput v-model="oidc.allowPolicy.subjects" input-id="o-subjects" placeholder="subject id" />
+        </div>
+        <div class="field check">
+          <label
+            ><input v-model="oidc.autoProvision" type="checkbox" aria-describedby="o-auto-help" /> Provision an account
+            on first sign-in for anyone the policy allows</label
+          >
+          <p id="o-auto-help" class="help">
+            Otherwise each user must link single sign-on from their profile first. Provisioned accounts get the default
+            role of new accounts, so this works only while one is set.
+          </p>
+        </div>
+      </template>
       <p v-if="messages.oidc" class="alert" :class="messages.oidc.kind" :role="messageRole(messages.oidc.kind)">
         {{ messages.oidc.text }}
       </p>
       <button class="btn btn-primary" type="submit">Save single sign-on</button>
-    </form>
-
-    <form v-if="audit" class="card" @submit.prevent="saveSection('audit')">
-      <h2>Audit log retention</h2>
-      <div class="field">
-        <label for="a-ret">Delete entries older than (days)</label>
-        <input
-          id="a-ret"
-          :value="audit.retentionDays ?? ''"
-          type="number"
-          min="7"
-          placeholder="Keep forever"
-          aria-describedby="a-ret-help"
-          @input="
-            audit.retentionDays = ($event.target as HTMLInputElement).value
-              ? Number(($event.target as HTMLInputElement).value)
-              : null
-          "
-        />
-        <p id="a-ret-help" class="help">
-          Empty keeps everything. The default is 90 days. Purges are themselves audited.
-        </p>
-      </div>
-      <p v-if="messages.audit" class="alert" :class="messages.audit.kind" :role="messageRole(messages.audit.kind)">
-        {{ messages.audit.text }}
-      </p>
-      <button class="btn btn-primary" type="submit">Save</button>
     </form>
   </div>
 </template>

@@ -281,6 +281,8 @@ export interface AuditRow {
   decision: string | null;
   actorKind: string;
   actorId: string | null;
+  /** The username of the actor, when the actor is a user. */
+  actorName: string | null;
   decidedBy: string | null;
   decidedVia: string | null;
   params: unknown;

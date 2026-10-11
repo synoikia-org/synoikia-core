@@ -19,12 +19,13 @@ import MyEndpointsView from './views/MyEndpointsView.vue';
 import NewEndpointView from './views/NewEndpointView.vue';
 import OverviewView from './views/OverviewView.vue';
 import PluginsView from './views/PluginsView.vue';
+import ProfileView from './views/ProfileView.vue';
 import ClientAuthView from './views/settings/ClientAuthView.vue';
 import NotificationsView from './views/settings/NotificationsView.vue';
-import ProfileView from './views/settings/ProfileView.vue';
-import SecuritySettingsView from './views/settings/SecuritySettingsView.vue';
 import SettingsLayout from './views/settings/SettingsLayout.vue';
 import RolesView from './views/settings/RolesView.vue';
+import ServerSettingsView from './views/settings/ServerSettingsView.vue';
+import UserAuthView from './views/settings/UserAuthView.vue';
 import UsersView from './views/settings/UsersView.vue';
 import SetupView from './views/SetupView.vue';
 
@@ -53,6 +54,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'my', component: MyEndpointsView, meta: { title: 'My endpoints' } },
       { path: 'my/:id', component: MyEndpointView, meta: { title: 'Endpoint' } },
       { path: 'my/:id/about', component: MyEndpointAboutView, meta: { title: 'Endpoint' } },
+      { path: 'profile', component: ProfileView, meta: { title: 'My profile' } },
       {
         path: 'endpoints/:slug',
         component: InstanceLayout,
@@ -65,18 +67,22 @@ const routes: RouteRecordRaw[] = [
           { path: 'settings', component: InstanceSettingsView, meta: { title: 'Endpoint Settings' } },
         ],
       },
+      // Core's single sign-on link flow returns here with ?linked or ?error; keep the query.
+      { path: 'settings/profile', redirect: (to) => ({ path: '/profile', query: to.query }) },
       {
         path: 'settings',
         component: SettingsLayout,
+        meta: { admin: true },
         children: [
           { path: '', redirect: '/settings/client-auth' },
           { path: 'mcp', redirect: '/settings/client-auth' },
-          { path: 'client-auth', component: ClientAuthView, meta: { title: 'Client auth', admin: true } },
-          { path: 'security', component: SecuritySettingsView, meta: { title: 'Admin UI settings', admin: true } },
-          { path: 'users', component: UsersView, meta: { title: 'Users', admin: true } },
-          { path: 'roles', component: RolesView, meta: { title: 'Roles', admin: true } },
-          { path: 'notifications', component: NotificationsView, meta: { title: 'Notifications', admin: true } },
-          { path: 'profile', component: ProfileView, meta: { title: 'My profile' } },
+          { path: 'client-auth', component: ClientAuthView, meta: { title: 'Client auth' } },
+          { path: 'security', redirect: '/settings/user-auth' },
+          { path: 'user-auth', component: UserAuthView, meta: { title: 'User auth' } },
+          { path: 'users', component: UsersView, meta: { title: 'Users' } },
+          { path: 'roles', component: RolesView, meta: { title: 'Roles' } },
+          { path: 'notifications', component: NotificationsView, meta: { title: 'Notifications' } },
+          { path: 'server', component: ServerSettingsView, meta: { title: 'Server settings' } },
         ],
       },
     ],

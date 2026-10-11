@@ -178,7 +178,7 @@ describe('My endpoint tabs', () => {
 describe('Radio groups', () => {
   it('My profile theme: arrows pick the next theme, with one tab stop', async () => {
     fakeApi({ 'GET /api/session': signedIn, 'GET /api/overview': overview, 'GET /api/profile': signedIn.user });
-    await mountAt('/settings/profile');
+    await mountAt('/profile');
     const group = document.querySelector('[role="radiogroup"][aria-label="Theme"]')!;
     expect(refText(group, 'aria-describedby')).toContain('Auto follows your system setting');
     const radios = byRole('radio', group);
@@ -495,5 +495,41 @@ describe('First admin setup', () => {
     await flushPromises();
     const alert = document.querySelector('[role="alert"]')!;
     expect(alert.textContent?.trim()).toBe('Already set up');
+  });
+});
+
+describe('User auth settings', () => {
+  it('name every control once single sign-on is on, and link the allowed emails hint', async () => {
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/roles': [],
+      'GET /api/settings': {
+        security: {
+          requireTotp: false,
+          disableLocalLogin: false,
+          sessionIdleMinutes: 60,
+          sessionAbsoluteHours: 24,
+          approvalSessionIdleHours: 12,
+          approvalSessionAbsoluteDays: 7,
+          defaultRoleId: null,
+          localSignup: false,
+        },
+        mcp: mcpSettings,
+        audit: { retentionDays: null },
+        oidc: null,
+        forceLocalLogin: false,
+        publicMcpUrl: null,
+        publicAdminUrl: null,
+      },
+    });
+    await mountAt('/settings/user-auth');
+    const enabled = [...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Enabled')!;
+    enabled.querySelector('input')!.click();
+    await flushPromises();
+    for (const el of document.querySelectorAll('main input:not([type="checkbox"]), main select')) {
+      expect(nameOf(el), el.outerHTML).toBeTruthy();
+    }
+    expect(refText(document.getElementById('o-emails')!, 'aria-describedby')).toContain('*@example.com');
   });
 });

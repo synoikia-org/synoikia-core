@@ -18,7 +18,7 @@ The Admin listener (port 8081) has its own sign-in.
 - Core makes ten single-use recovery codes and stores them as hashes.
 - With `security.requireTotp`, each user must enroll at the next sign-in.
 
-**OIDC (optional).** The admin configures it on Settings → Authentication:
+**OIDC (optional).** The admin configures it on Settings → User auth:
 
 - issuer URL (discovery), client id, client secret (encrypted), scopes;
 - an allow policy: allowed e-mail addresses, allowed `sub` values, and a required group claim value. An e-mail address counts only if the ID token has `email_verified: true`. A missing claim means "not verified".
@@ -184,7 +184,7 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 
 ## 6.5 Self-registration
 
-Self-registration is off by default. It is on while an admin sets a default role (Settings → Admin UI settings). The default role can be any role, also Admin. The portal then asks for a typed confirmation.
+Self-registration is off by default. It is on while an admin sets a default role (Settings → User auth). The default role can be any role, also Admin. The portal then asks for a typed confirmation.
 
 A user that self-registration makes gets the default role. Core records the source in `registered_via` and audits it as `user_registered`. User names are unique without regard to case. A name from the sign-up form or OIDC cannot contain `:`. The sign-up form gives one error for a taken name, and does not tell that the name exists.
 
