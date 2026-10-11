@@ -67,7 +67,7 @@ const routes: RouteRecordRaw[] = [
           { path: 'settings', component: InstanceSettingsView, meta: { title: 'Endpoint Settings' } },
         ],
       },
-      // Core's single sign-on link flow returns here with ?linked or ?error; keep the query.
+      // Old links to the profile page; keep the query.
       { path: 'settings/profile', redirect: (to) => ({ path: '/profile', query: to.query }) },
       {
         path: 'settings',

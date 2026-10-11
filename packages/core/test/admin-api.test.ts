@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
 import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
@@ -152,6 +152,29 @@ describe('setup, login and sessions', () => {
 
     updateSettings(t.ctx.db, 'security', { disableLocalLogin: false });
     expect((await b.patch(`/api/users/${sso.id}`, { disabled: true })).status).toBe(200);
+  });
+
+  it('returns an OIDC identity link to the profile page', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const { user } = (await (await b.get('/api/session')).json()) as { user: { id: string } };
+    const identity = { issuer: 'https://idp.example.com', subject: 'sub-1', groups: [] };
+    const state = {
+      purpose: 'admin_link' as const,
+      userId: user.id,
+      verifier: 'v',
+      state: 's',
+      nonce: 'n',
+      redirectUri: 'r',
+    };
+    vi.spyOn(t.ctx.oidc, 'complete').mockResolvedValue({ identity, state });
+    const allowed = vi.spyOn(t.ctx.oidc, 'isAllowed').mockReturnValue(false);
+    const location = async () => (await b.get('/auth/oidc/callback?code=c&state=s')).headers.get('location');
+
+    expect(await location()).toBe('/profile?error=oidc_not_allowed');
+    allowed.mockReturnValue(true);
+    expect(await location()).toBe('/profile?linked=1');
+    expect(t.ctx.users.get(user.id)).toMatchObject({ oidcSubject: 'sub-1' });
   });
 
   it('manages users; password changes sign out other sessions', async () => {

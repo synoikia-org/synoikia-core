@@ -73,7 +73,21 @@ async function saveSecurity(key: 'security' | 'registration') {
     })) !== 'ADMIN'
   )
     return;
-  saveSecurityMutation.mutate(security.value, {
+  const s = security.value;
+  if (!s) return;
+  // Each card sends only its own fields, so the Sign-in card never saves an unconfirmed default role.
+  const body =
+    key === 'registration'
+      ? { defaultRoleId: s.defaultRoleId, localSignup: s.localSignup }
+      : {
+          requireTotp: s.requireTotp,
+          disableLocalLogin: s.disableLocalLogin,
+          sessionIdleMinutes: s.sessionIdleMinutes,
+          sessionAbsoluteHours: s.sessionAbsoluteHours,
+          approvalSessionIdleHours: s.approvalSessionIdleHours,
+          approvalSessionAbsoluteDays: s.approvalSessionAbsoluteDays,
+        };
+  saveSecurityMutation.mutate(body, {
     onSuccess: () => setMsg('security', { kind: 'ok', text: 'Saved.' }),
     onError: (err) => setMsg('security', { kind: 'error', text: errorText(err) }),
   });

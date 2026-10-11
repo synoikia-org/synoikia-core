@@ -453,6 +453,35 @@ describe('Accepted client auth of an endpoint', () => {
     expect(patched(calls).authMethods).toEqual(['oauth']);
   });
 
+  it('lets a stored method that is off globally be cleared, so the endpoint can be narrowed', async () => {
+    const { calls } = api(['bearer', 'external']);
+    const { wrapper, body } = await mountAt('/endpoints/nas/settings');
+    const { set, option } = picker(body);
+    expect(option('External').element.checked).toBe(true);
+    expect(option('External').element.disabled).toBe(false);
+    expect(set.text()).toContain('(off under Client auth)');
+    await option('External').setValue(false);
+    expect(option('External').element.disabled).toBe(true);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(patched(calls).authMethods).toEqual(['bearer']);
+  });
+
+  it('keeps "Only these" disabled until the global settings load', async () => {
+    const { fetchMock } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': { ...overview, instances: [{ ...instance, authMethods: null, settings }] },
+    });
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).startsWith('/api/settings') ? new Promise<Response>(() => {}) : respond(input, init),
+    );
+    const { body } = await mountAt('/endpoints/nas/settings');
+    const { set, option } = picker(body);
+    expect(option('Only these').element.disabled).toBe(true);
+    expect(set.findAll('input[type="checkbox"]')).toHaveLength(0);
+  });
+
   it('warns when no accepted method is enabled, so the endpoint refuses every call', async () => {
     api(['external']);
     const { body } = await mountAt('/endpoints/nas/settings');
