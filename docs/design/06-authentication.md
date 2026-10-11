@@ -82,6 +82,7 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
   - Core refuses the assertion of a service token (an empty `sub`, or a `common_name` claim). A service token is not a user.
 - **User.** Core finds the user whose user name is the identity. Upper and lower case do not matter. Only a user that an admin made, or that `external` registered, can match. A user from the sign-up form or OIDC never matches, so nobody can take an external identity first. If there is no such user, self-registration (§6.5) creates one. If self-registration is off, the name is taken, or the identity is not a valid user name, core refuses the request with 403.
 - Core refuses a caller that the provider does not identify (401). Each call belongs to a user.
+- The approval page also uses the provider to identify the approver, without self-registration (§5.3).
 - Core does not read any other identity header.
 
 **Bearer tokens** (Clients & Tokens page):

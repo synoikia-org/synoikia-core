@@ -228,6 +228,8 @@ export interface ApprovalView {
   token: string;
   csrf: string;
   username: string;
+  /** The external provider that named the approver; absent for a page sign-in. */
+  via?: string;
   slug: string;
   instanceName: string;
   operationKey: string;
@@ -238,8 +240,6 @@ export interface ApprovalView {
   diff: unknown;
   expiresAt: Date;
   confirmLiteral: string | null;
-  /** Ask for a TOTP code with the decision (first approval in this browser, or a locked op). */
-  needsTotp: boolean;
   /** "Approve for this session" lengths (design §5.8); empty hides the option. */
   grantOptions: { value: string; label: string }[];
   /** The client's audit label, so the approver knows who a session grant covers. */
@@ -274,27 +274,16 @@ export function approvalPage(c: Context, v: ApprovalView, status: 200 | 400 = 20
       <pre>${pretty(v.params ?? {})}</pre>
       ${
         open
-          ? html`<p class="muted">Signed in as <strong>${v.username}</strong> · expires ${v.expiresAt.toISOString()}</p>
+          ? html`<p class="muted">
+                Signed in as <strong>${v.username}</strong>${v.via ? ` via ${v.via}` : ''} · expires
+                ${v.expiresAt.toISOString()}
+              </p>
               <form method="post" action="/a/${v.token}">
                 <input type="hidden" name="csrf" value="${v.csrf}" />
                 ${
                   v.confirmLiteral
                     ? html`<label for="confirm">Type <code>${v.confirmLiteral}</code> to approve</label
                         ><input id="confirm" type="text" name="confirm" autocomplete="off" />`
-                    : ''
-                }
-                ${
-                  v.needsTotp
-                    ? html`<label for="totp"
-                          >Authenticator code${v.locked ? ' (required to approve a locked operation)' : ''}</label
-                        ><input
-                          id="totp"
-                          type="text"
-                          name="totp"
-                          inputmode="numeric"
-                          autocomplete="one-time-code"
-                          pattern="[0-9]{6}"
-                        />`
                     : ''
                 }
                 ${v.error ? html`<p class="error" role="alert">${v.error}</p>` : ''}

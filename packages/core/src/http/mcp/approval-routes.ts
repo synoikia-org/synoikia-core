@@ -1,15 +1,20 @@
 import type { Context, Hono } from 'hono';
 import type { AppContext } from '../../app.js';
 import { grantOptions } from '../../approvals/grants.js';
-import { mayDecide as ownerMayDecide, needsTotpProof } from '../../approvals/service.js';
-import type { ValidSession } from '../../auth/sessions.js';
+import { mayDecide as ownerMayDecide } from '../../approvals/service.js';
+import type { ApproverSignIn } from '../../approvals/service.js';
+import { externalProvider } from '../../auth/external.js';
+import type { UserRow } from '../../auth/users.js';
 import { ServiceError } from '../../errors.js';
+import { effectiveAuthMethods } from '../../instances/manager.js';
+import { getSettings } from '../../settings.js';
+import { sha256 } from '../../auth/tokens.js';
 import { clientIp } from '../common.js';
-import { checkUiCsrf, recordTotpProof, renderLogin, uiCsrf, uiSession } from './oauth-routes.js';
+import { boundCsrf, checkBoundCsrf, renderLogin, uiSession } from './oauth-routes.js';
 import { approvalPage, errorPage } from './pages.js';
 
-/** The approval page (design §5.3): deciding needs a signed-in user with a TOTP proof in this browser
- * (fresh for locked ops) and a CSRF-protected POST, so neither the link holder nor a prefetch decides. */
+/** The approval page (design §5.3): deciding needs the call's owner, signed in on this page or named by the
+ * endpoint's external provider, and a CSRF-protected POST, so neither the link holder nor a prefetch decides. */
 export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
   const gone = (c: Context) =>
     errorPage(c, 'Link expired', 'This approval request has expired or was already decided.', 404);
@@ -25,6 +30,12 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     return row ? { link, ...row } : null;
   };
   type Loaded = NonNullable<ReturnType<typeof load>>;
+  interface Approver {
+    user: UserRow;
+    signIn: ApproverSignIn;
+    /** The external provider's name, shown on the page. */
+    via?: string;
+  }
 
   /** Locked and typed-confirmation operations never get a session grant. */
   const grantsFor = (data: Loaded) =>
@@ -32,19 +43,33 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
       ? []
       : grantOptions(ctx.now(), ctx.instances.settingsOf(data.instance).sessionGrantMaxHours);
 
-  const needsTotp = (session: ValidSession, data: Loaded) =>
-    needsTotpProof(data.op.locked, ctx.sessions.sinceTotpProof(session.idHash));
+  /** A page sign-in wins; else, on an endpoint that allows `external`, the provider names an existing,
+   * enabled user (no self-registration here). The provider checks every request, so no session is kept. */
+  const approver = async (c: Context, data: Loaded): Promise<Approver | null> => {
+    const session = uiSession(ctx, c, 'approval');
+    if (session) return { user: session.user, signIn: 'session' };
+    if (!effectiveAuthMethods(ctx.db, data.instance.authMethods).includes('external')) return null;
+    const settings = getSettings(ctx.db, 'mcp');
+    const provider = externalProvider(settings);
+    if (!provider.configured(settings)) return null;
+    const found = await provider.identify(c.req.raw.headers, settings);
+    if (!found.ok) {
+      ctx.log.debug('Approval page: external provider did not identify the browser', { reason: found.reason });
+      return null;
+    }
+    const user = ctx.users.byExternalIdentity(found.identity);
+    if (!user || user.disabled) {
+      ctx.log.info('Approval page: no enabled user matches the external identity', { provider: provider.id });
+      return null;
+    }
+    return { user, signIn: 'external', via: provider.name };
+  };
 
-  const noTotp = (c: Context) =>
-    errorPage(
-      c,
-      'Two-factor authentication required',
-      'Approving calls needs an authenticator app on your account. Set it up in the admin portal under Profile, then open this link again.',
-      403,
-    );
+  /** The form's CSRF field fits only this approval link and this approver. */
+  const formBinding = (token: string, who: Approver) => ({ a: sha256(token), u: who.user.id });
 
-  const mayDecide = (session: ValidSession, data: Loaded) =>
-    ownerMayDecide(data.approval, session.user.id, ctx.users.isAdmin(session.user));
+  const mayDecide = (who: Approver, data: Loaded) =>
+    ownerMayDecide(data.approval, who.user.id, ctx.users.isAdmin(who.user));
 
   const notYours = (c: Context) =>
     errorPage(
@@ -54,13 +79,14 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
       403,
     );
 
-  const render = (c: Context, token: string, data: Loaded, session: ValidSession, error?: string) =>
+  const render = (c: Context, token: string, data: Loaded, who: Approver, error?: string) =>
     approvalPage(
       c,
       {
         token,
-        csrf: uiCsrf(ctx, c),
-        username: session.user.username,
+        csrf: boundCsrf(ctx, c, formBinding(token, who), data.approval.expiresAt.getTime() - ctx.now().getTime()),
+        username: who.user.username,
+        via: who.via,
         slug: data.instance.slug,
         instanceName: data.instance.displayName,
         operationKey: data.op.key,
@@ -71,7 +97,6 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
         diff: data.approval.diff,
         expiresAt: data.approval.expiresAt,
         confirmLiteral: data.approval.confirmLiteral,
-        needsTotp: needsTotp(session, data),
         grantOptions: grantsFor(data).map(({ value, label }) => ({ value, label })),
         client: data.approval.clientId,
         status: data.approval.status,
@@ -80,15 +105,14 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
       error ? 400 : 200,
     );
 
-  app.get('/a/:token', (c) => {
+  app.get('/a/:token', async (c) => {
     const token = c.req.param('token');
     const data = load(c, token);
     if (!data) return gone(c);
-    const session = uiSession(ctx, c, 'approval');
-    if (!session) return renderLogin(ctx, c, `/a/${token}`, 'Sign in to review this approval request.');
-    if (!mayDecide(session, data)) return notYours(c);
-    if (!session.user.totpEnabled) return noTotp(c);
-    return render(c, token, data, session);
+    const who = await approver(c, data);
+    if (!who) return renderLogin(ctx, c, `/a/${token}`, 'Sign in to review this approval request.');
+    if (!mayDecide(who, data)) return notYours(c);
+    return render(c, token, data, who);
   });
 
   app.post('/a/:token', async (c) => {
@@ -96,46 +120,29 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     const body = await c.req.parseBody();
     const data = load(c, token);
     if (!data) return gone(c);
-    const session = uiSession(ctx, c, 'approval');
-    if (!session) return renderLogin(ctx, c, `/a/${token}`, 'Your sign-in expired. Sign in again to decide.');
-    if (!mayDecide(session, data)) return notYours(c);
-    if (!session.user.totpEnabled) return noTotp(c);
-    if (!checkUiCsrf(c, body.csrf)) return render(c, token, data, session, 'The form expired; try again.');
+    const who = await approver(c, data);
+    if (!who) return renderLogin(ctx, c, `/a/${token}`, 'Your sign-in expired. Sign in again to decide.');
+    if (!mayDecide(who, data)) return notYours(c);
+    if (!checkBoundCsrf(ctx, c, body.csrf, formBinding(token, who)))
+      return render(c, token, data, who, 'The form expired; try again.');
     const approve = body.decision === 'approve' || body.decision === 'approve_session';
-    if (!approve && body.decision !== 'deny') return render(c, token, data, session, 'Choose approve or deny.');
+    if (!approve && body.decision !== 'deny') return render(c, token, data, who, 'Choose approve or deny.');
     let sessionGrantUntil: Date | undefined;
     if (body.decision === 'approve_session') {
       sessionGrantUntil = grantsFor(data).find((o) => o.value === body.grant)?.until;
-      if (!sessionGrantUntil) return render(c, token, data, session, 'Choose a session length.');
-    }
-
-    if (approve && needsTotp(session, data)) {
-      const user = session.user;
-      if (ctx.throttle.lockedFor(user.username, 'mcp') > 0)
-        return render(c, token, data, session, 'Too many attempts; try again later.');
-      // TOTP only: a recovery code typed here must neither count nor be used up.
-      if (!ctx.users.verifyTotpCode(user.id, String(body.totp ?? ''))) {
-        if (ctx.throttle.fail(user.username, 'mcp'))
-          ctx.events.emit('auth.lockout', {
-            username: user.username,
-            ip: clientIp(c, ctx.config.TRUST_PROXY),
-            surface: 'mcp',
-          });
-        return render(c, token, data, session, 'Enter a valid authenticator code to approve.');
-      }
-      ctx.throttle.succeed(user.username, 'mcp');
-      recordTotpProof(ctx, session.idHash);
+      if (!sessionGrantUntil) return render(c, token, data, who, 'Choose a session length.');
     }
 
     try {
       ctx.approvals.decide(data.approval.id, {
         approve,
         confirm: typeof body.confirm === 'string' ? body.confirm : undefined,
-        decidedBy: session.user.username,
+        decidedBy: who.user.username,
+        signIn: who.signIn,
         sessionGrantUntil,
       });
     } catch (err) {
-      if (err instanceof ServiceError) return render(c, token, data, session, err.message);
+      if (err instanceof ServiceError) return render(c, token, data, who, err.message);
       throw err;
     }
     const granted = sessionGrantUntil

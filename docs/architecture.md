@@ -40,7 +40,7 @@ port stays on the LAN (§2, §11).
 flowchart LR
   subgraph People
     admin(["Admin<br/>(portal user)"])
-    approver(["Approver<br/>(portal user with TOTP)"])
+    approver(["Approver<br/>(owner of the call)"])
   end
 
   subgraph Clients["MCP clients"]
@@ -191,6 +191,7 @@ flowchart TB
 
   subgraph Auth["auth/"]
     mcpAuth["mcp-auth.ts<br/>external · bearer · oauth"]
+    external["external.ts<br/>provider harness"]
     tokens["mcp-tokens.ts"]
     oauth["oauth.ts"]
     users["users.ts (argon2id)"]
@@ -235,9 +236,9 @@ flowchart TB
   endpoint --> mcpAuth
   endpoint --> runtime
   endpoint --> instances
-  mcpAuth --> tokens & oauth
+  mcpAuth --> tokens & oauth & external
   oauthR --> oauth & users & totp & oidc & sessions
-  apprR --> approvals & sessions & totp
+  apprR --> approvals & sessions & users & external
   admapp --> admAuth & admInst & admSys
   admAuth --> users & totp & oidc & sessions & throttle
   admInst --> instances & catalog & approvals
@@ -568,7 +569,7 @@ flowchart TD
   rd -- no --> ceil{"principal ceiling == read?"}
   ceil -- yes --> h2["hidden: token_read_only"]
   ceil -- no --> askq{"level == ask<br/>or op locked?"}
-  askq -- yes --> ap2["approve<br/>(locked: typed literal + fresh TOTP)"]
+  askq -- yes --> ap2["approve<br/>(locked: typed literal)"]
   askq -- no --> ack{"write acknowledged?"}
   ack -- no --> ap3["approve (pendingReview)"]
   ack -- yes --> auto["auto (runs without asking)"]
@@ -606,8 +607,8 @@ sequenceDiagram
     AP->>C: elicitInput(mode url, PUBLIC_MCP_URL/a/token)
     C->>H: "open this link"
     H->>PG: GET /a/token
-    PG->>H: sign in (password + TOTP, or OIDC + TOTP code)
-    H->>PG: POST decision (CSRF)<br/>locked: typed literal + TOTP ≤ 5 min
+    PG->>H: sign in (password [+ TOTP], or OIDC), or external provider identifies the owner
+    H->>PG: POST decision (CSRF)<br/>locked: typed literal
     PG->>AP: approve / deny, decided_by=user, via=url
     AP->>C: notifications/elicitation/complete
   else form elicitation opted in and plain write
@@ -1267,7 +1268,7 @@ flowchart LR
     gate --> dbk
   end
 
-  approver(["Approver + TOTP"]) -- "B4: approval page only,<br/>never the calling client" --> gate
+  approver(["Approver"]) -- "B4: approval page only,<br/>never the calling client" --> gate
   gate -- "B5: invoke only after the gate passes" --> child
   child["plugin child<br/>permission model, scrubbed env,<br/>own secrets only"] --> up(["upstream"])
   repo(["plugin repository"]) -- "B6: pinned version, sha256,<br/>pinned-key signature, prebuilt only,<br/>arrives disabled" --> child

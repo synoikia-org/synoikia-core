@@ -342,7 +342,7 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json({ status: 'ok' });
   });
 
-  // Approval browsers (design §5.3): MCP-port sign-ins that approve without a new TOTP code.
+  // Approval browsers (design §5.3): MCP-port sign-ins that open approval pages without a new sign-in.
   app.get('/api/profile/approval-sessions', (c) => c.json(ctx.sessions.listKind(c.get('user').id, 'approval_ui')));
 
   app.post('/api/profile/approval-sessions/revoke', (c) => {
@@ -354,7 +354,7 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/profile/totp/confirm', async (c) => {
     const { code } = await readJson(c, z.object({ code: z.string() }));
     const recoveryCodes = ctx.users.confirmTotp(c.get('user').id, code);
-    // A new authenticator: approval browsers proved the old one (or none) and must sign in again.
+    // A new authenticator: approval browsers signed in without it and must sign in again.
     ctx.sessions.revokeKind(c.get('user').id, 'approval_ui');
     return c.json({ recoveryCodes });
   });

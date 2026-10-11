@@ -402,6 +402,7 @@ export function createGateBindings(
           if (parked) opts.park!.settled(request.id, { outcome: approval.outcome, decidedBy: approval.decidedBy });
           audit.decidedBy = approval.decidedBy;
           audit.decidedVia = approval.via;
+          if (approval.signIn) audit.detail.approverSignIn = approval.signIn;
           if (approval.outcome === 'cancelled' && signal.aborted) ensureRunning();
           if (approval.outcome !== 'approved') {
             const label = approval.outcome === 'timed_out' ? 'timed-out' : 'denied';
