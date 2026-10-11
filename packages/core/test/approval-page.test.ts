@@ -9,8 +9,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { UrlPromptRequest } from '../src/approvals/service.js';
 import { currentStep, totpAt } from '../src/auth/totp.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
-import { updateSettings } from '../src/settings.js';
-import { auditLog, operations, pluginInstances } from '../src/db/schema.js';
+import { getSettings, updateSettings } from '../src/settings.js';
+import { sha256, signPayload } from '../src/auth/tokens.js';
+import { auditLog, operations, pluginInstances, settings, users } from '../src/db/schema.js';
 import { createMcpApp } from '../src/http/mcp-app.js';
 import { executeCode } from '../src/runtime/index.js';
 import { createTestApp } from './helpers.js';
@@ -172,6 +173,7 @@ async function withPendingCall(
       formBrowser(mcpApp, { 'cf-access-jwt-assertion': assertion }, shared ? jar : new Map()),
     signIn,
     page: opened[0]!.path,
+    jar,
     adminId: admin.id,
     instanceId: instance.id,
     advance: (ms: number) => (clock += ms),
@@ -254,6 +256,32 @@ describe('approval page', () => {
     await expect(t.run).resolves.toMatchObject({ ok: true, value: 'echo.set' });
     const [row] = t.ctx.db.select().from(auditLog).where(eq(auditLog.decidedVia, 'url')).all();
     expect(row).toMatchObject({ decidedBy: 'admin', detail: expect.objectContaining({ approverSignIn: 'session' }) });
+  });
+
+  it('accepts only a CSRF field made for this approval, this approver and this browser', async () => {
+    const t = await withPendingCall(`return (await echo.call('echo.set', { name: 'vol/a' })).key;`, { totp: false });
+    await t.signIn(t.page);
+    await t.browse(t.page);
+    const cookie = t.jar.get('syn_mcp_csrf')!;
+    const token = t.page.slice('/a/'.length);
+    const field = (bind: { a: string; u: string; c: string }) =>
+      signPayload(t.ctx.keys.state, bind, 60_000, t.ctx.now().getTime());
+    const right = { a: sha256(token), u: t.adminId, c: sha256(cookie) };
+    for (const csrf of [
+      cookie, // the bare double-submit value
+      field({ ...right, a: sha256('another-approval-token') }),
+      field({ ...right, u: 'another-user-id' }),
+      field({ ...right, c: sha256('a-planted-cookie') }),
+      `${field(right)}x`,
+    ]) {
+      const res = await t.browse(t.page, { decision: 'approve', csrf });
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('The form expired');
+    }
+    expect(await (await t.browse(t.page, { decision: 'approve', csrf: field(right) })).text()).toContain(
+      'was approved',
+    );
+    await expect(t.run).resolves.toMatchObject({ ok: true });
   });
 
   it('enforces "require two-factor" on the MCP-port sign-in (it faces the internet)', async () => {
@@ -532,6 +560,26 @@ describe('approval page', () => {
       const res = await t.accessBrowser(await owner())(t.page);
       expect(await res.text()).toContain('Sign in to review this approval request');
       await settle(t);
+    });
+
+    it('ignores the assertion when the provider has no configuration', async () => {
+      const t = await pending();
+      // Straight to the row: a save through updateSettings refuses `external` without a configuration.
+      const mcp = { ...getSettings(t.ctx.db, 'mcp'), cfAccess: { teamDomain: '', aud: '' } };
+      t.ctx.db.update(settings).set({ value: mcp }).where(eq(settings.key, 'mcp')).run();
+      const res = await t.accessBrowser(await owner())(t.page);
+      expect(await res.text()).toContain('Sign in to review this approval request');
+      await settle(t);
+    });
+
+    it('never matches an owner from the sign-up form or OIDC, even with the same name', async () => {
+      for (const registeredVia of ['signup', 'oidc'] as const) {
+        const t = await pending();
+        t.ctx.db.update(users).set({ registeredVia }).where(eq(users.id, t.adminId)).run();
+        const res = await t.accessBrowser(await owner())(t.page);
+        expect(await res.text()).toContain('Sign in to review this approval request');
+        await settle(t);
+      }
     });
 
     it('lets a page sign-in win over the assertion', async () => {

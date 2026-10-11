@@ -8,8 +8,9 @@ import type { UserRow } from '../../auth/users.js';
 import { ServiceError } from '../../errors.js';
 import { effectiveAuthMethods } from '../../instances/manager.js';
 import { getSettings } from '../../settings.js';
+import { sha256 } from '../../auth/tokens.js';
 import { clientIp } from '../common.js';
-import { checkUiCsrf, renderLogin, uiCsrf, uiSession } from './oauth-routes.js';
+import { boundCsrf, checkBoundCsrf, renderLogin, uiSession } from './oauth-routes.js';
 import { approvalPage, errorPage } from './pages.js';
 
 /** The approval page (design §5.3): deciding needs the call's owner, signed in on this page or named by the
@@ -64,6 +65,9 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     return { user, signIn: 'external', via: provider.name };
   };
 
+  /** The form's CSRF field fits only this approval link and this approver. */
+  const formBinding = (token: string, who: Approver) => ({ a: sha256(token), u: who.user.id });
+
   const mayDecide = (who: Approver, data: Loaded) =>
     ownerMayDecide(data.approval, who.user.id, ctx.users.isAdmin(who.user));
 
@@ -80,7 +84,7 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
       c,
       {
         token,
-        csrf: uiCsrf(ctx, c),
+        csrf: boundCsrf(ctx, c, formBinding(token, who), data.approval.expiresAt.getTime() - ctx.now().getTime()),
         username: who.user.username,
         via: who.via,
         slug: data.instance.slug,
@@ -119,7 +123,8 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     const who = await approver(c, data);
     if (!who) return renderLogin(ctx, c, `/a/${token}`, 'Your sign-in expired. Sign in again to decide.');
     if (!mayDecide(who, data)) return notYours(c);
-    if (!checkUiCsrf(c, body.csrf)) return render(c, token, data, who, 'The form expired; try again.');
+    if (!checkBoundCsrf(ctx, c, body.csrf, formBinding(token, who)))
+      return render(c, token, data, who, 'The form expired; try again.');
     const approve = body.decision === 'approve' || body.decision === 'approve_session';
     if (!approve && body.decision !== 'deny') return render(c, token, data, who, 'Choose approve or deny.');
     let sessionGrantUntil: Date | undefined;
