@@ -53,14 +53,11 @@ function closeMenu(e: KeyboardEvent) {
 const endpoints = computed(() => overview.value?.instances ?? []);
 const ISSUES_URL = 'https://github.com/via-justa/synoikia-core/issues';
 
-const globalNav = [
-  { to: '/', label: 'Overview' },
-  { to: '/audit', label: 'Audit Log' },
-];
 const adminNav = [
   { to: '/plugins', label: 'Plugins' },
   { to: '/clients', label: 'Clients & Tokens' },
   { to: '/settings', label: 'Settings' },
+  { to: '/audit', label: 'Audit Log' },
 ];
 
 onMounted(() => {
@@ -118,12 +115,10 @@ async function logout() {
         </RouterLink>
         <div v-if="mine.length === 0" class="nav-empty">No endpoints for your role</div>
         <div class="nav-section" />
-        <RouterLink to="/settings/profile" class="nav-item" active-class="active">My profile</RouterLink>
+        <RouterLink to="/profile" class="nav-item" active-class="active">My profile</RouterLink>
       </nav>
       <nav v-else id="app-nav" aria-label="Main">
-        <RouterLink v-for="item in globalNav" :key="item.to" :to="item.to" class="nav-item" exact-active-class="active">
-          <span>{{ item.label }}</span>
-        </RouterLink>
+        <RouterLink to="/" class="nav-item" exact-active-class="active"><span>Overview</span></RouterLink>
 
         <div class="nav-section">Endpoints</div>
         <RouterLink
@@ -151,6 +146,8 @@ async function logout() {
         >
           {{ item.label }}
         </RouterLink>
+        <div class="nav-section" />
+        <RouterLink to="/profile" class="nav-item" active-class="active">My profile</RouterLink>
       </nav>
 
       <div class="about">
@@ -171,7 +168,7 @@ async function logout() {
         </a>
       </div>
       <div class="footer">
-        <RouterLink to="/settings/profile" class="me">{{ session.username ?? 'admin' }}</RouterLink>
+        <RouterLink to="/profile" class="me">{{ session.username ?? 'admin' }}</RouterLink>
         <button class="link" type="button" @click="logout">Log out</button>
       </div>
     </aside>

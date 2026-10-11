@@ -764,7 +764,7 @@ describe('Shell and settings', () => {
 
   it('switches between auto, light and dark on My profile and remembers the choice', async () => {
     fakeApi({ 'GET /api/session': signedIn, 'GET /api/overview': overview, 'GET /api/profile': signedIn.user });
-    const { wrapper } = await mountAt('/settings/profile');
+    const { wrapper } = await mountAt('/profile');
     const pick = (label: string) =>
       wrapper
         .findAll('[aria-label="Theme"] button')
@@ -781,18 +781,32 @@ describe('Shell and settings', () => {
     expect(localStorage.getItem('synoikia.theme')).toBeNull();
   });
 
-  it('names the tabs Client auth and Admin UI settings, and explains MCP access', async () => {
+  it('names the six settings tabs in order, and explains MCP access', async () => {
     fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
       'GET /api/settings': { mcp: mcpSettings, publicMcpUrl: 'https://mcp.example.com' },
     });
     const { wrapper } = await mountAt('/settings/client-auth');
-    const tabs = wrapper.get('.tabs').text();
-    expect(tabs).toContain('Client auth');
-    expect(tabs).not.toContain('MCP access');
-    expect(tabs).toContain('Admin UI settings');
-    expect(tabs).not.toContain('Sign-in & security');
+    const tabs = wrapper.findAll('.tabs a');
+    expect(tabs.map((t) => t.text())).toEqual([
+      'Client auth',
+      'User auth',
+      'Users',
+      'Roles',
+      'Notifications',
+      'Server settings',
+    ]);
+    expect(tabs.map((t) => t.attributes('href'))).toEqual([
+      '/settings/client-auth',
+      '/settings/user-auth',
+      '/settings/users',
+      '/settings/roles',
+      '/settings/notifications',
+      '/settings/server',
+    ]);
+    expect(wrapper.get('.tabs').text()).not.toContain('Admin UI settings');
+    expect(wrapper.get('.tabs').text()).not.toContain('My profile');
     expect(document.title).toBe('Client auth · Synoikia');
     const about = wrapper.get('.card.about');
     expect(about.text()).toContain('https://mcp.example.com/<slug>');

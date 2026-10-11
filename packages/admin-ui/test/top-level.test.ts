@@ -207,6 +207,27 @@ describe('New endpoint', () => {
 });
 
 describe('Audit log', () => {
+  it('shows the actor username with its id as a hint, else the id, else the kind', async () => {
+    const at = '2026-01-01T00:00:00Z';
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/audit': {
+        rows: [
+          { id: 1, at, kind: 'call', decision: 'ok', actorKind: 'user', actorId: 'u-123', actorName: 'alice' },
+          { id: 2, at, kind: 'call', decision: 'ok', actorKind: 'token', actorId: 't-456', actorName: null },
+          { id: 3, at, kind: 'config', decision: null, actorKind: 'system', actorId: null, actorName: null },
+        ],
+        total: 3,
+      },
+    });
+    const { wrapper } = await mountAt('/audit');
+    const actors = wrapper.findAll('tbody tr').map((r) => r.findAll('td').at(-1)!);
+    expect(actors.map((c) => c.text())).toEqual(['alice', 't-456', 'system']);
+    expect(actors[0]!.get('span').attributes('title')).toBe('u-123');
+    expect(actors[1]!.find('[title]').exists()).toBe(false);
+  });
+
   it('applies the filters on submit and pages through the results', async () => {
     const row = (id: number) => ({ id, at: '2026-01-01T00:00:00Z', kind: 'call', decision: 'ok', actorKind: 'user' });
     const { calls } = fakeApi({

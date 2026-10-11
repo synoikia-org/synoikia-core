@@ -92,7 +92,7 @@ const DECISION_CLASS = (d: string | null) =>
       </div>
       <div class="field">
         <label for="a-act">Actor</label>
-        <input id="a-act" v-model="filters.actor" />
+        <input id="a-act" v-model="filters.actor" placeholder="username or id" />
       </div>
       <div class="field">
         <label for="a-tgt">Target contains</label>
@@ -143,7 +143,8 @@ const DECISION_CLASS = (d: string | null) =>
                 <span class="pill" :class="DECISION_CLASS(r.decision)">{{ r.decision }}</span>
               </td>
               <td>
-                {{ r.actorId ?? r.actorKind }}
+                <span v-if="r.actorName" :title="r.actorId ?? undefined">{{ r.actorName }}</span>
+                <template v-else>{{ r.actorId ?? r.actorKind }}</template>
                 <div v-if="r.decidedBy" class="small muted">decided by {{ r.decidedBy }} via {{ r.decidedVia }}</div>
               </td>
             </tr>

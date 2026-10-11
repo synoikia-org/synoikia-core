@@ -61,12 +61,35 @@ describe('a non-admin user', () => {
     const nav = wrapper.get('nav').text();
     expect(nav).toContain('/nas');
     expect(nav).toContain('My profile');
+    const profile = wrapper.findAll('nav a').find((a) => a.text() === 'My profile')!;
+    expect(profile.attributes('href')).toBe('/profile');
+    expect(wrapper.get('.footer a').attributes('href')).toBe('/profile');
     expect(nav).not.toContain('Plugins');
     expect(nav).not.toContain('Settings');
     expect(wrapper.text()).toContain('https://mcp.example/nas');
     // Admin pages send them back.
     await router.push('/settings/users');
     expect(router.currentRoute.value.path).toBe('/my');
+    await router.push('/settings');
+    expect(router.currentRoute.value.path).toBe('/my');
+    await router.push('/settings/server');
+    expect(router.currentRoute.value.path).toBe('/my');
+  });
+
+  it('opens My profile at /profile, also from the old address', async () => {
+    fakeApi({
+      'GET /api/session': asUser(),
+      'GET /api/me/endpoints': mine,
+      'GET /api/profile': { ...asUser().user, createdAt: '2026-01-01T00:00:00Z', lastLoginAt: null },
+      'GET /api/profile/approval-sessions': [],
+      'GET /api/me/tokens': [],
+      'GET /api/me/grants': [],
+    });
+    const { wrapper, router } = await mountAt('/settings/profile');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/profile');
+    expect(wrapper.get('h1').text()).toBe('My profile');
+    expect(wrapper.find('nav[aria-label="Settings sections"]').exists()).toBe(false);
   });
 
   it('sees unassigned endpoints only when there are some, and opens their about page', async () => {

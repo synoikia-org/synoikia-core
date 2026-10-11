@@ -88,6 +88,24 @@ describe('App shell', () => {
     expect(document.body.querySelector('nav[aria-label="Settings sections"]')).not.toBeNull();
   });
 
+  it('lists Audit Log after Settings, then My profile after a divider, for an admin', async () => {
+    const { router } = await mountShell('/');
+    const nav = document.getElementById('app-nav')!;
+    const names = [...nav.querySelectorAll('a')].map((a) => a.textContent?.trim());
+    expect(names[0]).toBe('Overview');
+    expect(names.slice(-4)).toEqual(['Clients & Tokens', 'Settings', 'Audit Log', 'My profile']);
+    const profile = link('My profile');
+    expect(profile.getAttribute('href')).toBe('/profile');
+    expect(profile.previousElementSibling?.classList.contains('nav-section')).toBe(true);
+    expect(document.body.querySelector('.footer a')?.getAttribute('href')).toBe('/profile');
+
+    await router.push('/profile');
+    await flushPromises();
+    expect(profile.getAttribute('aria-current')).toBe('page');
+    expect(link('Settings').hasAttribute('aria-current')).toBe(false);
+    expect(document.body.querySelector('nav[aria-label="Settings sections"]')).toBeNull();
+  });
+
   it('closes the mobile menu on Escape and returns focus to its button', async () => {
     await mountShell('/');
     const menu = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Menu')!;

@@ -1191,10 +1191,11 @@ flowchart TB
     en["/enroll-totp"]
     subgraph Main["AppLayout (sidebar)"]
       ov["Overview"]
-      au["Audit Log"]
       pl["Plugins<br/>Installed · Available · Repositories"]
       cl["Clients &amp; Tokens"]
       ne["New endpoint"]
+      au["Audit Log"]
+      pr["/profile<br/>My profile"]
       subgraph Inst["/endpoints/:slug"]
         con["Connection"]
         acc["Access"]
@@ -1203,10 +1204,11 @@ flowchart TB
       end
       subgraph Set["/settings"]
         sm["Client auth"]
-        ss["Admin UI security"]
+        ss["User auth"]
         su["Users"]
+        sr["Roles"]
         sn["Notifications"]
-        sp["Profile"]
+        sv["Server settings"]
       end
     end
     stores["Pinia stores<br/>session · app"]

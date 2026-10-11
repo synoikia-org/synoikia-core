@@ -106,7 +106,7 @@ describe('the Roles page', () => {
   });
 });
 
-describe('Admin UI settings', () => {
+describe('the User auth settings', () => {
   it('asks for ADMIN before opening self-registration to administrators', async () => {
     const promptSpy = vi.spyOn(window, 'prompt');
     const { calls } = fakeApi({
@@ -116,7 +116,7 @@ describe('Admin UI settings', () => {
       'GET /api/roles': roles,
       'PUT /api/settings/security': (b: unknown) => b,
     });
-    const { wrapper, body } = await mountAt('/settings/security');
+    const { wrapper, body } = await mountAt('/settings/user-auth');
     await wrapper.get('select#s-role').setValue('admin');
     const registration = wrapper.findAll('form').find((f) => f.text().includes('Self-registration'))!;
     await registration.trigger('submit');
@@ -141,23 +141,101 @@ describe('Admin UI settings', () => {
     expect(promptSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps the other sections’ drafts when one section saves', async () => {
+  it('names the sign-in fields and has no audit retention', async () => {
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'GET /api/roles': roles,
+    });
+    const { wrapper } = await mountAt('/settings/user-auth');
+    expect(document.title).toBe('User auth · Synoikia');
+    expect(wrapper.findAll('form h2').map((h) => h.text())).toEqual([
+      'Sign-in',
+      'Self-registration',
+      'Single sign-on (OIDC)',
+    ]);
+    expect(wrapper.get('label[for="s-abs"]').text()).toBe('Max session authentication duration (hours)');
+    expect(wrapper.get('label[for="s-role"]').text()).toBe('Default role of new accounts');
+    expect(wrapper.find('#a-ret').exists()).toBe(false);
+  });
+
+  it('shows only Enabled until single sign-on is on, keeps typed values, and saves it off', async () => {
     const { calls } = fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
       'GET /api/settings': settings,
       'GET /api/roles': roles,
-      'PUT /api/settings/audit': { retentionDays: 30 },
+      'PUT /api/settings/oidc': (b: unknown) => ({ ...(b as object), clientSecretSet: false }),
     });
-    const { wrapper } = await mountAt('/settings/security');
+    const { wrapper } = await mountAt('/settings/user-auth');
+    const form = wrapper.findAll('form').find((f) => f.text().includes('Single sign-on (OIDC)'))!;
+    const enabled = form.get<HTMLInputElement>('input[type="checkbox"]');
+    expect(form.findAll('input').length).toBe(1);
+    expect(form.text()).not.toContain('Who may sign in');
+    expect(form.find('button[type="submit"]').exists()).toBe(true);
+
+    await enabled.setValue(true);
+    expect(form.text()).toContain('Who may sign in');
+    expect(form.get('#o-emails-help').text()).toContain('*@example.com');
+    expect(form.text()).toContain('Provision an account on first sign-in for anyone the policy allows');
+    await form.get('#o-iss').setValue('https://idp.example.com/');
     await wrapper.get('input#s-idle').setValue('90');
-    await wrapper.get('input#a-ret').setValue('30');
-    const auditForm = wrapper.findAll('form').find((f) => f.text().includes('Audit log retention'))!;
-    await auditForm.trigger('submit');
+    await enabled.setValue(false);
+    expect(form.find('#o-iss').exists()).toBe(false);
+    await enabled.setValue(true);
+    expect(form.get<HTMLInputElement>('#o-iss').element.value).toBe('https://idp.example.com/');
+
+    await enabled.setValue(false);
+    await form.trigger('submit');
     await flushPromises();
-    expect(writes(calls)).toEqual([{ method: 'PUT', path: '/api/settings/audit', body: { retentionDays: 30 } }]);
-    expect(auditForm.text()).toContain('Saved.');
+    expect(writes(calls)).toEqual([
+      {
+        method: 'PUT',
+        path: '/api/settings/oidc',
+        body: expect.objectContaining({ enabled: false, issuer: 'https://idp.example.com/' }),
+      },
+    ]);
+    expect(form.text()).toContain('Saved.');
+    // Another card's draft survives the save.
     expect(wrapper.get<HTMLInputElement>('input#s-idle').element.value).toBe('90');
+  });
+
+  it('sends the old security address to User auth', async () => {
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'GET /api/roles': roles,
+    });
+    const { router } = await mountAt('/settings/security');
+    expect(router.currentRoute.value.path).toBe('/settings/user-auth');
+  });
+});
+
+describe('the Server settings', () => {
+  it('saves the audit log retention, or shows why it failed', async () => {
+    let fail = true;
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'PUT /api/settings/audit': () =>
+        fail ? json(400, { error: 'invalid', message: 'Too short' }) : { retentionDays: 30 },
+    });
+    const { wrapper } = await mountAt('/settings/server');
+    expect(document.title).toBe('Server settings · Synoikia');
+    expect(wrapper.get('#a-ret-help').text()).toContain('The default is 90 days.');
+    await wrapper.get('input#a-ret').setValue('30');
+    const form = wrapper.get('form');
+    await form.trigger('submit');
+    await flushPromises();
+    expect(form.get('[role="alert"]').text()).toBe('Too short');
+    fail = false;
+    await form.trigger('submit');
+    await flushPromises();
+    expect(writes(calls).at(-1)).toEqual({ method: 'PUT', path: '/api/settings/audit', body: { retentionDays: 30 } });
+    expect(form.get('[role="status"]').text()).toBe('Saved.');
   });
 });
 
@@ -327,13 +405,22 @@ describe('My profile', () => {
       ...extra,
     });
 
+  it('opens at /profile without the settings tabs, and keeps the old address with its query', async () => {
+    profileApi({ 'GET /api/profile': { ...me, oidcLinked: true } });
+    const { wrapper, router } = await mountAt('/settings/profile?linked=1');
+    expect(router.currentRoute.value.fullPath).toBe('/profile?linked=1');
+    expect(wrapper.get('h1').text()).toBe('My profile');
+    expect(wrapper.find('nav[aria-label="Settings sections"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Single sign-on linked.');
+  });
+
   it('revokes a token or a grant only after the dialog confirms it', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const { calls } = profileApi({
       'DELETE /api/me/tokens/t1': { ok: true },
       'DELETE /api/me/grants/g1': { ok: true },
     });
-    await mountAt('/settings/profile');
+    await mountAt('/profile');
     const revoke = () => [...document.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Revoke');
     revoke()[0]!.click();
     await flushPromises();
@@ -366,7 +453,7 @@ describe('My profile', () => {
         return { recoveryCodes: ['r-1', 'r-2'] };
       },
     });
-    const { wrapper } = await mountAt('/settings/profile');
+    const { wrapper } = await mountAt('/profile');
     await click('Set up two-factor authentication');
     await wrapper.get('input[aria-label="Code"]').setValue('123456');
     await wrapper.get<HTMLInputElement>('input[aria-label="Code"]').element.form!.requestSubmit();
@@ -380,7 +467,7 @@ describe('My profile', () => {
     const { calls } = profileApi({
       'POST /api/profile/password': json(400, { error: 'weak', message: 'Password too common' }),
     });
-    const { wrapper } = await mountAt('/settings/profile');
+    const { wrapper } = await mountAt('/profile');
     await wrapper.get('input#p-new').setValue('correct horse battery');
     await wrapper.get('input#p-conf').setValue('different horse battery');
     const form = wrapper.findAll('form').find((f) => f.text().includes('Change password'))!;
