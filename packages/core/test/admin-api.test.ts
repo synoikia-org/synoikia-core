@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
+import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
 import { users } from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
@@ -169,6 +170,34 @@ describe('setup, login and sessions', () => {
 
     const me = (await (await b.get('/api/profile')).json()) as { id: string };
     expect((await b.patch(`/api/users/${me.id}`, { disabled: true })).status).toBe(409);
+  });
+});
+
+describe('audit log', () => {
+  it('names user actors, filters by username and exports the name', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const admin = t.ctx.db.select().from(users).where(eq(users.username, 'admin')).get()!;
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe_user', actorKind: 'user', actorId: admin.id });
+    writeAudit(t.ctx.db, { kind: 'call', decision: 'probe_client', actorKind: 'mcp_client', actorId: admin.id });
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe_system', actorKind: 'system', actorId: 'admin' });
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe_gone', actorKind: 'user', actorId: 'deleted-user' });
+
+    type Row = { decision: string; actorId: string | null; actorName: string | null };
+    const list = async (query: string) =>
+      ((await (await b.get(`/api/audit?decision=probe_${query}`)).json()) as { rows: Row[] }).rows;
+    const byDecision = Object.fromEntries((await list('')).map((r) => [r.decision, r.actorName]));
+    expect(byDecision).toEqual({ probe_user: 'admin', probe_client: null, probe_system: null, probe_gone: null });
+
+    const decisions = async (actor: string) => (await list(`&actor=${actor}`)).map((r) => r.decision).sort();
+    expect(await decisions('ADMIN')).toEqual(['probe_user']);
+    expect(await decisions('admin')).toEqual(['probe_system', 'probe_user']);
+    expect(await decisions(admin.id)).toEqual(['probe_client', 'probe_user']);
+    expect(await decisions('deleted-user')).toEqual(['probe_gone']);
+
+    const csv = (await (await b.get('/api/audit/export.csv?decision=probe_user')).text()).split('\n');
+    expect(csv[0]).toContain(',actorKind,actorId,actorName,decidedBy,');
+    expect(csv[1]).toContain(`,user,${admin.id},admin,`);
   });
 });
 

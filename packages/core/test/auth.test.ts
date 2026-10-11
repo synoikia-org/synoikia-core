@@ -402,6 +402,31 @@ describe('OidcService', () => {
     expect(await service.resolveUser(t.users, identity)).toMatchObject({ oidcSubject: 'u-ok' });
   });
 
+  it('matches allowed emails exactly or by a whole *@domain entry', async () => {
+    const t = setup();
+    const idp = await fakeIdp();
+    const service = new OidcService(t.db, t.box, randomBytes(32), true);
+    const policy = (emails: string[]) => ({ emails, subjects: [], group: '', groupsClaim: 'groups' });
+    const save = (emails: string[]) =>
+      service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal', allowPolicy: policy(emails) });
+    for (const bad of ['*@', '*.example.com', 'a*@x.com', '*@*', '*@-x.com', '*@x..com', '*@x.com@y.com'])
+      expect(() => save([bad]), bad).toThrow(ValidationError);
+
+    save(['Admin@Example.com', '*@Corp.Example']);
+    expect(service.getSettings()?.allowPolicy.emails).toEqual(['Admin@Example.com', '*@corp.example']);
+    const allowed = (email: string) => service.isAllowed({ issuer: idp.issuer, subject: 's', email, groups: [] });
+    expect(allowed('admin@example.COM')).toBe(true);
+    expect(allowed('other@example.com')).toBe(false);
+    expect(allowed('Anyone@CORP.example')).toBe(true);
+    for (const email of ['a@other.example', 'a@sub.corp.example', 'a@corp.example.evil.com', 'corp.example@evil.com'])
+      expect(allowed(email), email).toBe(false);
+
+    const unverified = await signIn(service, idp, { sub: 'u-1', email: 'a@corp.example', emailVerified: false });
+    expect(service.isAllowed(unverified.identity)).toBe(false);
+    const verified = await signIn(service, idp, { sub: 'u-2', email: 'a@corp.example' });
+    expect(service.isAllowed(verified.identity)).toBe(true);
+  });
+
   it('rejects tampered or replayed state', async () => {
     const t = setup();
     const idp = await fakeIdp();

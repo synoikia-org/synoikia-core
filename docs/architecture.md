@@ -863,7 +863,7 @@ flowchart TD
   d1 & d2 & d3 & d4 & d5 & d6 & d7 --> serve
 
   hk(["hourly housekeeping"]) --> h1["purge pre_approval_hits, expired sessions,<br/>OAuth codes/tokens, approval links,<br/>decided approvals > 7 days"]
-  hk --> h2["optional audit.retentionDays"]
+  hk --> h2["audit rows older than audit.retentionDays<br/>(default 90 days; null keeps forever)"]
   ri(["daily"]) --> h3["plugin repo index refresh<br/>(never installs)"]
 ```
 

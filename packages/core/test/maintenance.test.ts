@@ -9,9 +9,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { currentStep, totpAt } from '../src/auth/totp.js';
 import { rotateMasterKeyCommand } from '../src/cli.js';
 import { acquireServerLock, LOCK_FILENAME } from '../src/lock.js';
-import { auditLog, preApprovalHits, sessions } from '../src/db/schema.js';
+import { auditLog, preApprovalHits, sessions, settings } from '../src/db/schema.js';
 import { runHousekeeping } from '../src/maintenance.js';
-import { updateSettings } from '../src/settings.js';
+import { getSettings, updateSettings } from '../src/settings.js';
 import { createTestApp } from './helpers.js';
 
 const PASSWORD = 'correct horse battery';
@@ -31,7 +31,7 @@ async function open(dataDir: string, extra: Record<string, string> = {}, now?: (
 }
 
 describe('housekeeping', () => {
-  it('purges expired state and applies audit retention only when configured', async () => {
+  it('purges expired state and audit rows past the retention, which defaults to 90 days', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-maint-'));
     cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
     let now = new Date(); // audit rows are stamped with the real clock
@@ -43,19 +43,25 @@ describe('housekeeping', () => {
     ctx.db.$client.exec(`PRAGMA foreign_keys = OFF`);
     ctx.db.insert(preApprovalHits).values({ ruleId: rule.id, occurredAt: now }).run();
     ctx.db.$client.exec(`PRAGMA foreign_keys = ON`);
-    const auditBefore = ctx.db.select().from(auditLog).all().length;
+    expect(getSettings(ctx.db, 'audit').retentionDays).toBe(90);
 
     now = new Date(now.getTime() + 30 * 86_400_000);
     expect(runHousekeeping(ctx)).toMatchObject({ sessions: 1, preApprovalHits: 1, audit: 0 });
     expect(ctx.db.select().from(sessions).all()).toHaveLength(0);
+
+    // An explicit null keeps every row.
+    updateSettings(ctx.db, 'audit', { retentionDays: null }, {});
+    const auditBefore = ctx.db.select().from(auditLog).all().length;
+    now = new Date(now.getTime() + 70 * 86_400_000);
+    expect(runHousekeeping(ctx).audit).toBe(0);
     expect(ctx.db.select().from(auditLog).all().length).toBe(auditBefore);
 
-    updateSettings(ctx.db, 'audit', { retentionDays: 7 }, {});
-    const res = runHousekeeping(ctx);
-    expect(res.audit).toBeGreaterThanOrEqual(auditBefore);
+    // A stored section without the key (never saved) takes the 90-day default.
+    ctx.db.update(settings).set({ value: {} }).where(eq(settings.key, 'audit')).run();
+    expect(runHousekeeping(ctx).audit).toBeGreaterThanOrEqual(auditBefore);
     const left = ctx.db.select().from(auditLog).all();
     expect(left.map((a) => a.decision)).toContain('audit_purged');
-    expect(left.every((a) => a.at.getTime() > now.getTime() - 7 * 86_400_000)).toBe(true);
+    expect(left.every((a) => a.at.getTime() > now.getTime() - 90 * 86_400_000)).toBe(true);
   });
 });
 

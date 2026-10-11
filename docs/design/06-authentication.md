@@ -22,6 +22,8 @@ The Admin listener (port 8081) has its own sign-in.
 
 - issuer URL (discovery), client id, client secret (encrypted), scopes;
 - an allow policy: allowed e-mail addresses, allowed `sub` values, and a required group claim value. An e-mail address counts only if the ID token has `email_verified: true`. A missing claim means "not verified".
+  - An e-mail entry is an exact address or `*@domain`. Core compares both without case.
+  - A `*@domain` entry accepts an address whose part after the last `@` is that domain. It does not accept subdomains. Core refuses all other wildcard forms.
 - The flow is the authorization code flow with PKCE, `state` and `nonce`.
 - `autoProvision` is off by default. Then an OIDC identity must be linked to a local user first (Profile → "Link OIDC identity"). If it is on and self-registration is on (§6.5), core creates a user for each identity that the allow policy accepts.
 
