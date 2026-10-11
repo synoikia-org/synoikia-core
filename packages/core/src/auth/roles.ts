@@ -34,8 +34,14 @@ export const toPublicRole = (r: RoleRow): PublicRole => ({
   canSeeStatus: r.canSeeStatus,
 });
 
-const RoleInput = z.object({
-  name: z.string().trim().min(1).max(64),
+// No defaults on the patch: zod applies `.default()` inside `.partial()`, which would reset unsent switches.
+const RolePatch = z.object({
+  name: z.string().trim().min(1).max(64).optional(),
+  canSetOwnLevels: z.boolean().optional(),
+  canManageOwnRules: z.boolean().optional(),
+  canSeeStatus: z.boolean().optional(),
+});
+const RoleCreate = RolePatch.required({ name: true }).extend({
   canSetOwnLevels: z.boolean().default(false),
   canManageOwnRules: z.boolean().default(false),
   canSeeStatus: z.boolean().default(false),
@@ -75,7 +81,7 @@ export class RoleService {
   }
 
   create(raw: unknown, actor: { userId?: string } = {}): PublicRole {
-    const input = RoleInput.parse(raw);
+    const input = RoleCreate.parse(raw);
     const id = randomUUID();
     this.db.transaction((tx) => {
       if (tx.select({ id: roles.id }).from(roles).where(eq(roles.name, input.name)).get())
@@ -97,7 +103,7 @@ export class RoleService {
   update(id: string, raw: unknown, actor: { userId?: string } = {}): PublicRole {
     const before = this.get(id);
     if (before.builtIn) throw new ConflictError('built_in_role', 'The Admin role cannot be changed');
-    const input = RoleInput.partial().parse(raw);
+    const input = RolePatch.parse(raw);
     this.db.transaction((tx) => {
       if (input.name && input.name !== before.name) {
         if (tx.select({ id: roles.id }).from(roles).where(eq(roles.name, input.name)).get())
