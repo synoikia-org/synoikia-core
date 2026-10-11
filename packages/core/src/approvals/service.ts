@@ -12,11 +12,15 @@ import type { ApprovalLinkService } from './links.js';
 
 export type DecisionOutcome = 'approved' | 'denied' | 'timed_out' | 'cancelled';
 export type DecisionChannel = 'elicitation' | 'url';
+/** How the approval page knew the approver (design §5.3). */
+export type ApproverSignIn = 'session' | 'external';
 
 export interface Decision {
   outcome: DecisionOutcome;
   via?: DecisionChannel;
   decidedBy?: string;
+  /** Set for decisions on the approval page. */
+  signIn?: ApproverSignIn;
   reason?: string;
   /** The approver also granted this client the endpoint's Ask operations until then (§5.8). */
   sessionGrantUntil?: Date;
@@ -96,13 +100,6 @@ export interface ApprovalRequestInput {
   /** Present when the execution can park; used only when no client prompt applies. */
   park?: ParkHook;
 }
-
-/** A locked operation needs a TOTP code proved this recently (design §5.3). */
-const LOCKED_TOTP_MAX_AGE_MS = 5 * 60_000;
-
-/** Every approval needs a TOTP proof in the deciding session (OIDC sign-ins have none); locked ops a fresh one. */
-export const needsTotpProof = (locked: boolean, sinceProofMs: number) =>
-  locked ? sinceProofMs > LOCKED_TOTP_MAX_AGE_MS : sinceProofMs === Infinity;
 
 /** Only the credential's owner decides (design §5.3); a call without one, only an admin. */
 export const mayDecide = (approval: { ownerUserId: string | null }, userId: string, isAdmin: boolean) =>
@@ -293,7 +290,7 @@ export class ApprovalService {
   /** The approval page's decision. A wrong typed confirmation is rejected so the approver can retry. */
   decide(
     id: string,
-    input: { approve: boolean; confirm?: string; decidedBy: string; sessionGrantUntil?: Date },
+    input: { approve: boolean; confirm?: string; decidedBy: string; signIn?: ApproverSignIn; sessionGrantUntil?: Date },
   ): Decision {
     const live = this.live.get(id);
     if (!live) {
@@ -308,6 +305,7 @@ export class ApprovalService {
       outcome: input.approve ? 'approved' : 'denied',
       via: 'url',
       decidedBy: input.decidedBy,
+      ...(input.signIn ? { signIn: input.signIn } : {}),
       ...(input.approve && input.sessionGrantUntil ? { sessionGrantUntil: input.sessionGrantUntil } : {}),
     };
     live.settle(decision);

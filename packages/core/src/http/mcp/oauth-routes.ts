@@ -70,10 +70,6 @@ export const checkUiCsrf = (c: Context, submitted: unknown) => {
   return !!cookie && typeof submitted === 'string' && safeEqual(cookie, submitted);
 };
 
-/** Proofs live no longer than the longest approval-browser session. */
-export const recordTotpProof = (ctx: AppContext, idHash: string) =>
-  ctx.sessions.recordTotpProof(idHash, uiLimits(ctx, 'approval').absoluteMs);
-
 function startUiSession(ctx: AppContext, c: Context, userId: string, method: string, continueTo: string) {
   const purpose = purposeOf(continueTo);
   const { cookie, kind, path } = UI_SESSIONS[purpose];
@@ -82,7 +78,6 @@ function startUiSession(ctx: AppContext, c: Context, userId: string, method: str
     ip: clientIp(c, ctx.config.TRUST_PROXY),
     userAgent: c.req.header('user-agent'),
   });
-  if (method === 'password+totp') recordTotpProof(ctx, ctx.sessions.hashId(raw));
   // Lax: the browser must send it when an OIDC provider redirects back into the consent flow.
   setCookie(c, cookie, raw, {
     httpOnly: true,

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { Hono } from 'hono';
-import { afterEach, describe, expect, it } from 'vitest';
+import { exportJWK, createLocalJWKSet, generateKeyPair, SignJWT } from 'jose';
+import type { JWTVerifyGetKey } from 'jose';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { UrlPromptRequest } from '../src/approvals/service.js';
 import { currentStep, totpAt } from '../src/auth/totp.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
@@ -14,16 +16,45 @@ import { executeCode } from '../src/runtime/index.js';
 import { createTestApp } from './helpers.js';
 
 const PASSWORD = 'correct horse battery';
+const CF_TEAM = 'approvals.cloudflareaccess.com';
+const CF_AUD = 'approvals-aud';
+
+const cf = vi.hoisted(() => ({ keys: undefined as JWTVerifyGetKey | undefined }));
+vi.mock('jose', async (importOriginal) => {
+  const jose = await importOriginal<typeof import('jose')>();
+  const createRemoteJWKSet = ((url: URL) =>
+    url.hostname === 'approvals.cloudflareaccess.com'
+      ? (...args: Parameters<JWTVerifyGetKey>) => cf.keys!(...args)
+      : jose.createRemoteJWKSet(url)) as typeof jose.createRemoteJWKSet;
+  return { ...jose, createRemoteJWKSet };
+});
+
+let signAssertion: (claims: Record<string, unknown>) => Promise<string>;
+beforeAll(async () => {
+  const { publicKey, privateKey } = await generateKeyPair('RS256');
+  cf.keys = createLocalJWKSet({ keys: [{ ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' }] });
+  signAssertion = (claims) =>
+    new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(`https://${CF_TEAM}`)
+      .setAudience(CF_AUD)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+});
 
 const cleanup: (() => unknown)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-function formBrowser(app: Pick<Hono, 'request'>) {
-  const jar = new Map<string, string>();
+function formBrowser(
+  app: Pick<Hono, 'request'>,
+  extraHeaders: Record<string, string> = {},
+  jar = new Map<string, string>(),
+) {
   return async (url: string, fields?: Record<string, string>) => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
     if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (fields) headers['content-type'] = 'application/x-www-form-urlencoded';
     const res = await app.request(url, {
@@ -46,7 +77,14 @@ const hidden = (page: string, name: string) => new RegExp(`name="${name}" value=
 /** An echo endpoint at Ask, an admin (with TOTP unless `totp: false`) and one call awaiting approval. */
 async function withPendingCall(
   code: string,
-  opts: { totp?: boolean; lockedAsk?: boolean; ownedByOther?: boolean; ownerless?: boolean } = {},
+  opts: {
+    totp?: boolean;
+    lockedAsk?: boolean;
+    ownedByOther?: boolean;
+    ownerless?: boolean;
+    external?: boolean;
+    username?: string;
+  } = {},
 ) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-approval-'));
   cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -54,15 +92,20 @@ async function withPendingCall(
   const ctx = await createTestApp({ DATA_DIR: dataDir }, { memoryDb: true, now: () => new Date(clock) });
   cleanup.push(() => ctx.stop());
 
-  const admin = await ctx.users.create({ username: 'admin', password: PASSWORD });
+  const username = opts.username ?? 'admin';
+  const admin = await ctx.users.create({ username, password: PASSWORD });
   let secret = '';
-  let recoveryCodes: string[] = [];
   const step = currentStep();
   if (opts.totp !== false) {
     secret = ctx.users.beginTotp(admin.id).secret;
-    recoveryCodes = ctx.users.confirmTotp(admin.id, totpAt(secret, step - 1));
+    ctx.users.confirmTotp(admin.id, totpAt(secret, step - 1));
   }
 
+  if (opts.external)
+    updateSettings(ctx.db, 'mcp', {
+      clientAuth: { bearer: true, oauth: true, external: true },
+      cfAccess: { teamDomain: CF_TEAM, aud: CF_AUD },
+    });
   const instance = await ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
   await ctx.instances.syncNow(instance.id);
   setGroupLevel(ctx.db, instance.id, 'echo', 'ask');
@@ -97,14 +140,16 @@ async function withPendingCall(
     code,
   );
   for (let i = 0; i < 200 && opened.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
-  const browse = formBrowser(createMcpApp(ctx));
+  const mcpApp = createMcpApp(ctx);
+  const jar = new Map<string, string>();
+  const browse = formBrowser(mcpApp, {}, jar);
 
   /** Signs in through the MCP-port login (password, then the current TOTP step). */
   const signIn = async (page: string) => {
     const login = await (await browse(page)).text();
     expect(login).toContain('Sign in to review this approval request');
     const afterPassword = await browse('/oauth/login', {
-      username: 'admin',
+      username,
       password: PASSWORD,
       csrf: hidden(login, 'csrf'),
       continue: page,
@@ -122,17 +167,19 @@ async function withPendingCall(
     ctx,
     run,
     browse,
+    /** A browser behind Cloudflare Access: every request carries the assertion (and, if `shared`, `browse`'s cookies). */
+    accessBrowser: (assertion: string, shared = false) =>
+      formBrowser(mcpApp, { 'cf-access-jwt-assertion': assertion }, shared ? jar : new Map()),
     signIn,
     page: opened[0]!.path,
-    nextCode: () => totpAt(secret, step + 1),
-    recoveryCodes,
     adminId: admin.id,
+    instanceId: instance.id,
     advance: (ms: number) => (clock += ms),
   };
 }
 
 describe('approval page', () => {
-  it('needs a signed-in user with TOTP and a POST: opening the link alone decides nothing', async () => {
+  it('needs a signed-in user and a POST: opening the link alone decides nothing', async () => {
     const t = await withPendingCall(
       `return (await echo.call('echo.set', { name: 'vol/a', password: 'hunter2' })).key;`,
     );
@@ -147,7 +194,7 @@ describe('approval page', () => {
     expect(pageHtml).toContain('echo.set');
     expect(pageHtml).not.toContain('hunter2');
     expect(pageHtml).toContain('Signed in as <strong>admin</strong>');
-    expect(pageHtml).not.toContain('Authenticator code'); // this session already proved TOTP
+    expect(pageHtml).not.toContain('name="totp"');
 
     // Without the CSRF field the POST is refused.
     expect((await t.browse(t.page, { decision: 'approve' })).status).toBe(400);
@@ -161,64 +208,52 @@ describe('approval page', () => {
     expect((await t.browse(t.page)).status).toBe(404);
   });
 
-  it('asks locked operations for a fresh TOTP and the typed confirmation, and can deny', async () => {
+  it('asks locked operations for the typed confirmation only, and can deny', async () => {
     const t = await withPendingCall(`return (await echo.call('echo.delete', { name: 'vol/x' })).key;`, {
       lockedAsk: true,
     });
     await t.signIn(t.page);
-    // Sign-in proved TOTP a moment ago: no second code yet.
-    expect(await (await t.browse(t.page)).text()).not.toContain('Authenticator code');
-
     t.advance(6 * 60_000);
     const pageHtml = await (await t.browse(t.page)).text();
     expect(pageHtml).toContain('Type <code>vol/x</code> to approve');
-    expect(pageHtml).toContain('Authenticator code');
+    expect(pageHtml).not.toContain('name="totp"');
+    expect(pageHtml).not.toContain('Authenticator code');
     const csrf = hidden(pageHtml, 'csrf');
 
-    const noCode = await t.browse(t.page, { decision: 'approve', confirm: 'vol/x', csrf });
-    expect(noCode.status).toBe(400);
-    expect(await noCode.text()).toContain('valid authenticator code');
+    for (const confirm of [undefined, 'nope', 'VOL/X']) {
+      const res = await t.browse(t.page, { decision: 'approve', csrf, ...(confirm ? { confirm } : {}) });
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('exactly to approve');
+    }
 
-    const wrongLiteral = await t.browse(t.page, { decision: 'approve', confirm: 'nope', totp: t.nextCode(), csrf });
-    expect(wrongLiteral.status).toBe(400);
-    expect(await wrongLiteral.text()).toContain('exactly to approve');
-
-    // The code above was accepted, so only the decision is left; deny it.
     expect(await (await t.browse(t.page, { decision: 'deny', csrf })).text()).toContain('was denied');
     await expect(t.run).resolves.toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
   });
 
-  it('never accepts or uses up a recovery code in place of a TOTP code', async () => {
+  it('approves a locked operation with the typed confirmation', async () => {
     const t = await withPendingCall(`return (await echo.call('echo.delete', { name: 'vol/x' })).key;`, {
       lockedAsk: true,
+      totp: false,
     });
     await t.signIn(t.page);
-    t.advance(6 * 60_000);
     const csrf = hidden(await (await t.browse(t.page)).text(), 'csrf');
-    const before = t.ctx.users.get(t.adminId).recoveryCodesHash?.length;
-    const res = await t.browse(t.page, {
-      decision: 'approve',
-      confirm: 'vol/x',
-      totp: t.recoveryCodes[0]!,
-      csrf,
-    });
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain('valid authenticator code');
-    expect(t.ctx.users.get(t.adminId).recoveryCodesHash?.length).toBe(before);
-    // Still good for signing in.
-    expect(t.ctx.users.verifySecondFactor(t.adminId, t.recoveryCodes[0]!)).toBe('recovery');
-    t.ctx.approvals.cancelAll();
-    await t.run;
+    const res = await t.browse(t.page, { decision: 'approve', confirm: 'vol/x', csrf });
+    expect(await res.text()).toContain('was approved');
+    await expect(t.run).resolves.toMatchObject({ ok: true, value: 'echo.delete' });
   });
 
-  it('refuses users without TOTP', async () => {
-    const t = await withPendingCall(`await echo.call('echo.set', { name: 'x' });`, { totp: false });
-    await t.signIn(t.page);
+  it('lets users without TOTP approve', async () => {
+    const t = await withPendingCall(`return (await echo.call('echo.set', { name: 'x' })).key;`, { totp: false });
+    expect((await t.signIn(t.page)).status).toBe(303);
     const res = await t.browse(t.page);
-    expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Two-factor authentication required');
-    t.ctx.approvals.cancelAll();
-    await t.run;
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain('name="totp"');
+    const done = await t.browse(t.page, { decision: 'approve', csrf: hidden(html, 'csrf') });
+    expect(await done.text()).toContain('was approved');
+    await expect(t.run).resolves.toMatchObject({ ok: true, value: 'echo.set' });
+    const [row] = t.ctx.db.select().from(auditLog).where(eq(auditLog.decidedVia, 'url')).all();
+    expect(row).toMatchObject({ decidedBy: 'admin', detail: expect.objectContaining({ approverSignIn: 'session' }) });
   });
 
   it('enforces "require two-factor" on the MCP-port sign-in (it faces the internet)', async () => {
@@ -328,7 +363,7 @@ describe('approval page', () => {
     await off.run;
   });
 
-  it('keeps the approval browser signed in for hours and asks for TOTP only once', async () => {
+  it('keeps the approval browser signed in for hours', async () => {
     const t = await withPendingCall(`return (await echo.call('echo.set', { name: 'vol/a' })).key;`);
     await t.signIn(t.page);
     const html = await (await t.browse(t.page)).text();
@@ -351,7 +386,6 @@ describe('approval page', () => {
     for (let i = 0; i < 200 && opened.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
     const second = await (await t.browse(opened[0]!.path)).text();
     expect(second).toContain('Signed in as <strong>admin</strong>');
-    expect(second).not.toContain('Authenticator code');
     await t.browse(opened[0]!.path, { csrf: hidden(second, 'csrf'), decision: 'approve' });
     expect(await run).toMatchObject({ ok: true });
 
@@ -401,5 +435,115 @@ describe('approval page', () => {
     expect((await t.browse('/a/short')).status).toBe(404);
     t.ctx.approvals.cancelAll();
     await t.run;
+  });
+
+  describe('with an external provider', () => {
+    const OWNER = 'me@example.com';
+    const owner = () => signAssertion({ sub: 'u-1', email: OWNER });
+    const pending = (opts: { ownedByOther?: boolean; external?: boolean } = {}) =>
+      withPendingCall(`return (await echo.call('echo.set', { name: 'vol/a' })).key;`, {
+        external: true,
+        username: OWNER,
+        totp: false,
+        ...opts,
+      });
+    const settle = async (t: Awaited<ReturnType<typeof withPendingCall>>) => {
+      t.ctx.approvals.cancelAll();
+      await t.run;
+    };
+
+    it("signs the owner in from the provider's assertion: GET renders, POST with CSRF decides", async () => {
+      const t = await pending();
+      const browse = t.accessBrowser(await owner());
+      const res = await browse(t.page);
+      expect(res.status).toBe(200);
+      expect(res.headers.getSetCookie().some((c) => c.startsWith('syn_mcp_csrf='))).toBe(true);
+      // No approval session is kept: the provider vouches for every request.
+      expect(res.headers.getSetCookie().some((c) => c.startsWith('syn_mcp_approve='))).toBe(false);
+      const html = await res.text();
+      expect(html).toContain(`Signed in as <strong>${OWNER}</strong> via Cloudflare Access`);
+      expect(html).not.toContain('name="totp"');
+
+      // Without the CSRF field the POST is refused.
+      const forged = await browse(t.page, { decision: 'approve' });
+      expect(forged.status).toBe(400);
+      expect(await forged.text()).toContain('The form expired');
+
+      const done = await browse(t.page, { decision: 'approve', csrf: hidden(html, 'csrf') });
+      expect(await done.text()).toContain('was approved');
+      await expect(t.run).resolves.toMatchObject({ ok: true, value: 'echo.set' });
+      const [row] = t.ctx.db.select().from(auditLog).where(eq(auditLog.decidedVia, 'url')).all();
+      expect(row).toMatchObject({ decidedBy: OWNER, detail: expect.objectContaining({ approverSignIn: 'external' }) });
+    });
+
+    it("refuses another user's assertion", async () => {
+      const t = await pending({ ownedByOther: true });
+      const browse = t.accessBrowser(await owner());
+      const res = await browse(t.page);
+      expect(res.status).toBe(403);
+      expect(await res.text()).toContain('belongs to another user');
+      expect((await browse(t.page, { decision: 'approve', csrf: 'x' })).status).toBe(403);
+      await settle(t);
+    });
+
+    it('shows the sign-in page for a service token, a missing or invalid assertion, or an unknown user', async () => {
+      const t = await pending();
+      const assertions = [
+        await signAssertion({ sub: '', common_name: 'abc.access' }),
+        'not-a-jwt',
+        (await owner()).slice(0, -4) + 'AAAA',
+        await signAssertion({ sub: 'u-2', email: 'nobody@example.com' }),
+      ];
+      for (const browse of [t.browse, ...assertions.map((a) => t.accessBrowser(a))]) {
+        const res = await browse(t.page);
+        expect(res.status).toBe(200);
+        expect(await res.text()).toContain('Sign in to review this approval request');
+        expect((await browse(t.page, { decision: 'approve', csrf: 'x' })).status).toBe(200);
+      }
+      // Self-registration does not apply here: the unknown identity got no account.
+      expect(t.ctx.users.byUsernameInsensitive('nobody@example.com')).toBeUndefined();
+      await settle(t);
+    });
+
+    it('ignores the assertion for a disabled owner', async () => {
+      const t = await pending();
+      await t.ctx.users.create({ username: 'other-admin', password: PASSWORD });
+      t.ctx.users.setDisabled(t.adminId, true);
+      const res = await t.accessBrowser(await owner())(t.page);
+      expect(await res.text()).toContain('Sign in to review this approval request');
+      await settle(t);
+    });
+
+    it('ignores the assertion on an endpoint without the external method', async () => {
+      const t = await pending();
+      t.ctx.db
+        .update(pluginInstances)
+        .set({ authMethods: ['bearer'] })
+        .where(eq(pluginInstances.id, t.instanceId))
+        .run();
+      const res = await t.accessBrowser(await owner())(t.page);
+      expect(await res.text()).toContain('Sign in to review this approval request');
+      await settle(t);
+    });
+
+    it('ignores the assertion when the external method is off globally', async () => {
+      const t = await pending();
+      updateSettings(t.ctx.db, 'mcp', { clientAuth: { bearer: true, oauth: true, external: false } });
+      const res = await t.accessBrowser(await owner())(t.page);
+      expect(await res.text()).toContain('Sign in to review this approval request');
+      await settle(t);
+    });
+
+    it('lets a page sign-in win over the assertion', async () => {
+      const t = await pending();
+      await t.ctx.users.create({ username: 'eve@example.com', password: PASSWORD });
+      expect((await t.signIn(t.page)).status).toBe(303);
+      // Alone, eve's assertion is refused; with the owner's page sign-in, the session decides.
+      const eve = await signAssertion({ sub: 'u-3', email: 'eve@example.com' });
+      expect((await t.accessBrowser(eve)(t.page)).status).toBe(403);
+      const html = await (await t.accessBrowser(eve, true)(t.page)).text();
+      expect(html).toContain(`Signed in as <strong>${OWNER}</strong> ·`);
+      await settle(t);
+    });
   });
 });
