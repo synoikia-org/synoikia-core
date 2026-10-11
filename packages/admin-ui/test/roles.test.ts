@@ -85,6 +85,7 @@ describe('a non-admin user', () => {
     const { wrapper } = await mountAt('/my/i1');
     await flushPromises();
     expect(wrapper.text()).toContain('My pre-approval rules');
+    expect(wrapper.find('select.bulk').exists()).toBe(false);
     const control = wrapper.get('[aria-label="Access for Apps"]');
     const button = (label: string) => control.findAll('button').find((b) => b.text() === label)!;
     expect(button('Write').attributes('disabled')).toBeDefined();
@@ -98,22 +99,22 @@ describe('a non-admin user', () => {
 });
 
 describe('roles for admins', () => {
-  it('offers the role selector on the Access page and edits a role’s maximums', async () => {
-    const instance = {
-      id: 'i1',
-      slug: 'nas',
-      displayName: 'Acme',
-      enabled: true,
-      authMode: null,
-      status: 'ready',
-      statusError: null,
-      upstreamVersion: null,
-      lastSyncedAt: null,
-      lastSyncStatus: 'ok',
-      settings: {},
-      plugin: { id: 'p1', pluginId: 'acme', name: 'Acme', enabled: true, status: 'ok' },
-    };
-    const { calls } = fakeApi({
+  const instance = {
+    id: 'i1',
+    slug: 'nas',
+    displayName: 'Acme',
+    enabled: true,
+    authMode: null,
+    status: 'ready',
+    statusError: null,
+    upstreamVersion: null,
+    lastSyncedAt: null,
+    lastSyncStatus: 'ok',
+    settings: {},
+    plugin: { id: 'p1', pluginId: 'acme', name: 'Acme', enabled: true, status: 'ok' },
+  };
+  const roleApi = (routes: Record<string, unknown>) =>
+    fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': { instances: [instance], plugins: [], warnings: [], publicMcpUrl: null },
       'GET /api/roles': [
@@ -123,8 +124,11 @@ describe('roles for admins', () => {
       'GET /api/instances/i1/groups': [],
       'GET /api/instances/i1/operations': [],
       'GET /api/roles/r1/endpoints/i1/access': view,
-      'PUT /api/roles/r1/endpoints/i1/groups/app': view,
+      ...routes,
     });
+
+  it('offers the role selector on the Access page and edits a role’s maximums', async () => {
+    const { calls } = roleApi({ 'PUT /api/roles/r1/endpoints/i1/groups/app': view });
     const { wrapper } = await mountAt('/endpoints/nas/access?role=r1');
     await flushPromises();
     expect(wrapper.get('select#access-role').text()).toContain('Operators');
@@ -137,6 +141,24 @@ describe('roles for admins', () => {
     expect(calls.find((c) => c.method === 'PUT')).toMatchObject({
       path: '/api/roles/r1/endpoints/i1/groups/app',
       body: { level: 'none' },
+    });
+  });
+
+  it('sets every group of a role through the role’s bulk route', async () => {
+    const { calls } = roleApi({ 'POST /api/roles/r1/endpoints/i1/bulk-level': view });
+    const { wrapper, body } = await mountAt('/endpoints/nas/access?role=r1');
+    await flushPromises();
+    await wrapper.get('select.bulk').setValue('read');
+    await flushPromises();
+    await body
+      .get('[role="dialog"]')
+      .findAll('button')
+      .find((b) => b.text() === 'Set all groups')!
+      .trigger('click');
+    await flushPromises();
+    expect(calls.find((c) => c.method === 'POST')).toMatchObject({
+      path: '/api/roles/r1/endpoints/i1/bulk-level',
+      body: { level: 'read' },
     });
   });
 });
