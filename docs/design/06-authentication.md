@@ -125,25 +125,27 @@ Each user has one role. A role decides what the user can reach and change.
 
 **Other roles.** An admin makes them on the Roles page. Each role has:
 
-| Part                | Meaning                                                                                                   |
-| ------------------- | --------------------------------------------------------------------------------------------------------- |
-| Endpoints           | The endpoints that the role has. Other endpoints are not visible to its users. Their credentials get 403. |
-| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                         |
-| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See §5.2.1.   |
-| See other endpoints | A role-wide switch. It is off by default.                                                                 |
+| Part                | Meaning                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| Endpoints           | The endpoints that the role has. For other endpoints, the credentials of its users get 403.             |
+| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                       |
+| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See §5.2.1. |
+| See other endpoints | A role-wide switch. Users see the other endpoints by name. It is off by default.                        |
 
 Each switch applies only on its endpoint. The Admin role has all switches on, on each endpoint.
 
-| Endpoint switch        | Meaning                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| Set personal levels    | Users set a personal level for each group or operation, at most the role maximum. |
-| Own pre-approval rules | Users add pre-approval rules that apply only to their own calls (§5.2).           |
-| See endpoint status    | Users see the state, plugin, upstream version and last sync of the endpoint.      |
+| Endpoint switch        | Meaning                                                                                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Set personal levels    | Users set a personal level for each group or operation, at most the role maximum.                                                               |
+| Own pre-approval rules | Users add pre-approval rules that apply only to their own calls (§5.2).                                                                         |
+| See endpoint status    | Users see the state, plugin, upstream version and last sync of the endpoint. They also see all its groups and operations, also those at `none`. |
 
 **What each user gets.**
 
 - Their profile, their own bearer tokens and their own OAuth grants.
 - A read-only list of the endpoints of their role, the operations that they can call, and the level in force for each.
+- With "See endpoint status" on an endpoint, also the operations that they cannot call. These show as off, with no level to set.
+- With "See other endpoints", a list of the other endpoints. Each shows only its slug, display name, plugin name and plugin description, and the name of their role. An admin has no other endpoints.
 - On each endpoint, the parts that the switches of their role on that endpoint allow. Core refuses the other parts with 403.
 - An approval page for their own calls only (§5.3).
 
@@ -154,8 +156,10 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 - A change to a role or to a role maximum applies to the next call. It also applies to a parked execution before it continues.
 - When an admin removes an endpoint from a role, core deletes the role maximums for that endpoint.
 - Core refuses to delete a role that a user has (409 `role_in_use`), or that is the default role (409 `default_role`).
+- A user can write own rules only for operations that they can call. Their rule editor offers only these operations.
 - The rule editor of a user gets option lists and registry entries only for the match fields of the operations that the user can write rules for. Registry entries come without their attributes. Core refuses a manifest in which a match field and a connection-form field use the same options source.
 - If an admin turns off "Set personal levels" on an endpoint, core ignores the personal levels on that endpoint and keeps them. It does the same for own rules.
+- "See other endpoints" gives no access. Core answers 404 for the levels, rules and status of such an endpoint, and 403 to MCP calls.
 - An admin rule is not inert while a role can reach its operation at `ask`. It is also not inert while a role reaches the operation at `write` and has "Set personal levels" on for the endpoint.
 
 ## 6.5 Self-registration
