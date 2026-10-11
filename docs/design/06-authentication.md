@@ -125,12 +125,12 @@ Each user has one role. A role decides what the user can reach and change.
 
 **Other roles.** An admin makes them on the Roles page. Each role has:
 
-| Part                | Meaning                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| Endpoints           | The endpoints that the role has. For other endpoints, the credentials of its users get 403.             |
-| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                       |
-| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See §5.2.1. |
-| See other endpoints | A role-wide switch. Users see the other endpoints by name. It is off by default.                        |
+| Part                | Meaning                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| Endpoints           | The endpoints that the role has. For other endpoints, the credentials of its users get 403.              |
+| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                        |
+| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See §5.2.1.  |
+| See other endpoints | A role-wide switch. Users see the other endpoints by name and description, without access. Default: off. |
 
 Each switch applies only on its endpoint. The Admin role has all switches on, on each endpoint.
 

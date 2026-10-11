@@ -153,6 +153,7 @@ describe('roles: admin API', () => {
       { instanceId: t.instanceId, canSetOwnLevels: false, canManageOwnRules: true, canSeeStatus: true },
       { instanceId: t.otherId, canSetOwnLevels: false, canManageOwnRules: false, canSeeStatus: false },
     ]);
+    expect(list.find((r) => r.id === t.roleId)).not.toHaveProperty('instanceIds');
   });
 
   it('never leaves the server without an enabled admin', async () => {

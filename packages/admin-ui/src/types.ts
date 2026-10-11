@@ -20,11 +20,15 @@ export interface EndpointSwitches {
   canSeeStatus: boolean;
 }
 
+/** One endpoint of a role, with the role's switches on it. */
+export interface RoleEndpoint extends EndpointSwitches {
+  instanceId: string;
+}
+
 /** A role as the Roles page lists it. */
 export interface RoleRow extends PublicRole {
   users: number;
-  instanceIds: string[];
-  endpoints: (EndpointSwitches & { instanceId: string })[];
+  endpoints: RoleEndpoint[];
   isDefault: boolean;
 }
 
