@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { resolveAccess } from '../src/catalog/groups.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
-import { operations, plugins } from '../src/db/schema.js';
+import { auditLog, operations, plugins } from '../src/db/schema.js';
 import { evaluatePreApproval } from '../src/gate/preapproval.js';
 import { createAdminApp } from '../src/http/admin-app.js';
 import { updateSettings } from '../src/settings.js';
@@ -23,8 +24,9 @@ type LevelView = {
   operations: { id: string; key: string; level: string; roleMax: string; reachable: boolean }[];
 };
 
-/** An admin, one echo endpoint, and a role "Operators" holding it, with a signed-in user of that role. */
-async function setup(flags: Record<string, boolean> = {}) {
+/** An admin, two echo endpoints, and a role "Operators" holding the first with `switches` on it, with a
+ * signed-in user of that role. */
+async function setup(switches: Record<string, boolean> = {}) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-roles-'));
   cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
   const ctx = await createTestApp({ DATA_DIR: dataDir }, { memoryDb: true });
@@ -40,8 +42,10 @@ async function setup(flags: Record<string, boolean> = {}) {
   ).json()) as { id: string };
   await ctx.instances.syncNow(inst.id);
   await ctx.instances.syncNow(other.id);
-  const role = (await (await admin.post('/api/roles', { name: 'Operators', ...flags })).json()) as { id: string };
+  const role = (await (await admin.post('/api/roles', { name: 'Operators' })).json()) as { id: string };
   expect((await admin.put(`/api/roles/${role.id}/instances`, { instanceIds: [inst.id] })).status).toBe(200);
+  if (Object.keys(switches).length)
+    expect((await admin.patch(`/api/roles/${role.id}/endpoints/${inst.id}`, switches)).status).toBe(200);
   const created = await admin.post('/api/users', { username: 'olga', password: PASSWORD, roleId: role.id });
   expect(created.status).toBe(201);
   const user = await browser(app).init();
@@ -94,25 +98,50 @@ describe('roles: admin API', () => {
 
   it('changes only the switches a patch names', async () => {
     const t = await setup({ canSetOwnLevels: true });
-    const patch = async (body: Record<string, unknown>) =>
+    const role = async (body: Record<string, unknown>) =>
       (await (await t.admin.patch(`/api/roles/${t.roleId}`, body)).json()) as Record<string, unknown>;
-    expect(await patch({ canManageOwnRules: true })).toMatchObject({
+    expect(await role({ canSeeOtherEndpoints: true })).toMatchObject({ name: 'Operators', canSeeOtherEndpoints: true });
+    expect(await role({ name: 'Ops' })).toMatchObject({ name: 'Ops', canSeeOtherEndpoints: true });
+    expect((await t.admin.patch(`/api/roles/${t.roleId}`, { canSeeOtherEndpoints: 'yes' })).status).toBe(400);
+
+    const base = `/api/roles/${t.roleId}/endpoints/${t.instanceId}`;
+    const endpoint = async (body: Record<string, unknown>) =>
+      (await (await t.admin.patch(base, body)).json()) as Record<string, unknown>;
+    expect(await endpoint({ canManageOwnRules: true })).toEqual({
       canSetOwnLevels: true,
       canManageOwnRules: true,
       canSeeStatus: false,
     });
-    expect(await patch({ canSeeStatus: true })).toMatchObject({
-      canSetOwnLevels: true,
-      canManageOwnRules: true,
-      canSeeStatus: true,
-    });
-    expect(await patch({ name: 'Ops', canSetOwnLevels: false })).toMatchObject({
-      name: 'Ops',
+    expect(await endpoint({ canSeeStatus: true, canSetOwnLevels: false })).toEqual({
       canSetOwnLevels: false,
       canManageOwnRules: true,
       canSeeStatus: true,
     });
-    expect((await t.admin.patch(`/api/roles/${t.roleId}`, { canSeeStatus: 'yes' })).status).toBe(400);
+    expect((await t.admin.patch(base, { canSeeStatus: 'yes' })).status).toBe(400);
+    expect((await t.admin.patch(base, {})).status).toBe(400);
+    expect(
+      await (await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.otherId}`, { canSeeStatus: true })).json(),
+    ).toMatchObject({
+      error: 'not_in_role',
+    });
+    expect((await t.admin.patch(`/api/roles/${t.roleId}/endpoints/nope`, { canSeeStatus: true })).status).toBe(404);
+    expect((await t.admin.patch(`/api/roles/nope/endpoints/${t.instanceId}`, { canSeeStatus: true })).status).toBe(404);
+    expect(
+      await (await t.admin.patch(`/api/roles/admin/endpoints/${t.instanceId}`, { canSeeStatus: false })).json(),
+    ).toMatchObject({ error: 'built_in_role' });
+    const audit = t.ctx.db.select().from(auditLog).where(eq(auditLog.decision, 'role_endpoint_changed')).all();
+    expect(audit.at(-1)).toMatchObject({
+      instanceId: t.instanceId,
+      detail: { changes: { canSeeStatus: true, canSetOwnLevels: false } },
+    });
+
+    // A new endpoint starts with every switch off; the role's others keep theirs.
+    await t.admin.put(`/api/roles/${t.roleId}/instances`, { instanceIds: [t.instanceId, t.otherId] });
+    const list = (await (await t.admin.get('/api/roles')).json()) as { id: string; endpoints: unknown[] }[];
+    expect(list.find((r) => r.id === t.roleId)?.endpoints).toEqual([
+      { instanceId: t.instanceId, canSetOwnLevels: false, canManageOwnRules: true, canSeeStatus: true },
+      { instanceId: t.otherId, canSetOwnLevels: false, canManageOwnRules: false, canSeeStatus: false },
+    ]);
   });
 
   it('never leaves the server without an enabled admin', async () => {
@@ -166,9 +195,47 @@ describe('roles: what a user sees and changes', () => {
     expect((await t.user.put(`/api/me/endpoints/${t.instanceId}/groups/echo`, { level: 'none' })).status).toBe(403);
     expect((await t.user.get(`/api/me/endpoints/${t.instanceId}/rules`)).status).toBe(403);
 
-    await t.admin.patch(`/api/roles/${t.roleId}`, { canSeeStatus: true });
-    const withStatus = (await (await t.user.get('/api/me/endpoints')).json()) as { status?: { enabled: boolean } }[];
-    expect(withStatus[0]!.status).toMatchObject({ enabled: true });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canSeeStatus: true });
+    const withStatus = (await (await t.user.get('/api/me/endpoints')).json()) as {
+      status?: { enabled: boolean };
+      canSeeStatus: boolean;
+      canSetOwnLevels: boolean;
+    }[];
+    expect(withStatus[0]).toMatchObject({ canSeeStatus: true, canSetOwnLevels: false, status: { enabled: true } });
+  });
+
+  it('applies each switch on its own endpoint only', async () => {
+    const t = await setup();
+    await t.admin.put(`/api/roles/${t.roleId}/instances`, { instanceIds: [t.instanceId, t.otherId] });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.otherId}`, {
+      canSetOwnLevels: true,
+      canManageOwnRules: true,
+      canSeeStatus: true,
+    });
+    for (const id of [t.instanceId, t.otherId])
+      await t.admin.put(`/api/roles/${t.roleId}/endpoints/${id}/groups/echo`, { level: 'ask' });
+    const endpoints = (await (await t.user.get('/api/me/endpoints')).json()) as { id: string; status?: unknown }[];
+    expect(endpoints.map((e) => [e.id, !!e.status])).toEqual([
+      [t.instanceId, false],
+      [t.otherId, true],
+    ]);
+    const own = (id: string) => t.user.put(`/api/me/endpoints/${id}/groups/echo`, { level: 'read' });
+    expect((await own(t.instanceId)).status).toBe(403);
+    expect((await own(t.otherId)).status).toBe(200);
+    expect((await t.user.get(`/api/me/endpoints/${t.instanceId}/rules`)).status).toBe(403);
+    expect((await t.user.get(`/api/me/endpoints/${t.otherId}/rules`)).status).toBe(200);
+    // Own levels count in the gate only where the endpoint's switch is on.
+    const reachable = async (id: string) =>
+      ((await (await t.user.get(`/api/me/endpoints/${id}/access`)).json()) as LevelView).operations.find(
+        (o) => o.key === 'echo.set',
+      )?.reachable ?? false;
+    expect(await reachable(t.otherId)).toBe(false);
+    expect(await reachable(t.instanceId)).toBe(true);
+    const gate = () =>
+      resolveAccess(t.ctx.db, t.otherId, 'echo.set', { ceiling: 'write', roleId: t.roleId, userId: t.userId });
+    expect(gate()).toMatchObject({ reachable: false });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.otherId}`, { canSetOwnLevels: false });
+    expect(gate()).toMatchObject({ reachable: true, level: 'ask' });
   });
 
   it('sets own levels up to the role maximum', async () => {
@@ -275,7 +342,7 @@ describe('own pre-approval rules in the gate', () => {
     expect(evaluate()).toEqual({ kind: 'no_match' });
     const me = (await (await t.admin.get('/api/profile')).json()) as { id: string };
     expect(evaluate(me.id)).toEqual({ kind: 'no_match' });
-    await t.admin.patch(`/api/roles/${t.roleId}`, { canManageOwnRules: false });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canManageOwnRules: false });
     expect(evaluate(t.userId)).toEqual({ kind: 'no_match' });
   });
 });
@@ -295,6 +362,11 @@ describe('admin rules and roles', () => {
         .inert;
     expect(await inert()).toBe('level_write');
     await t.admin.put(`/api/roles/${t.roleId}/endpoints/${t.instanceId}/groups/echo`, { level: 'ask' });
+    expect(await inert()).toBeNull();
+    // At Write, only a role whose switch lets its users lower the operation to Ask keeps the rule live.
+    await t.admin.put(`/api/roles/${t.roleId}/endpoints/${t.instanceId}/groups/echo`, { level: 'write' });
+    expect(await inert()).toBe('level_write');
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canSetOwnLevels: true });
     expect(await inert()).toBeNull();
   });
 });
@@ -371,7 +443,7 @@ describe('own-rule pickers', () => {
     t.ctx.db.update(plugins).set({ manifest }).where(eq(plugins.id, pluginRow.id)).run();
     expect((await t.user.get(`${base}/registry?kind=volume`)).status).toBe(404);
 
-    await t.admin.patch(`/api/roles/${t.roleId}`, { canManageOwnRules: false });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canManageOwnRules: false });
     expect((await t.user.get(`${base}/registry?kind=volume`)).status).toBe(403);
     expect((await t.user.get(`${base}/options/names`)).status).toBe(403);
   });

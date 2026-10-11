@@ -4,7 +4,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { writeAudit } from '../audit.js';
 import type { Db } from '../db/index.js';
-import { operations, preApprovalRules, roleInstances, roles, users } from '../db/schema.js';
+import { operations, preApprovalRules, roleInstances, users } from '../db/schema.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import { FULL_ACCESS } from '../gate/access.js';
 import type { AccessPrincipal } from '../gate/access.js';
@@ -83,14 +83,13 @@ function checkMatchAgainstProfile(manifest: Manifest, op: OperationRow, match: R
 /** Whether some role that has the endpoint can reach the operation at Ask, or lower it to Ask itself. */
 function firesForSomeRole(db: Db, instanceId: string, key: string): boolean {
   return db
-    .select({ role: roles })
+    .select({ roleId: roleInstances.roleId, canSetOwnLevels: roleInstances.canSetOwnLevels })
     .from(roleInstances)
-    .innerJoin(roles, eq(roleInstances.roleId, roles.id))
     .where(eq(roleInstances.instanceId, instanceId))
     .all()
-    .some(({ role }) => {
-      const access = resolveAccess(db, instanceId, key, { ceiling: 'write', roleId: role.id });
-      return access.reachable && (access.level === 'ask' || (role.canSetOwnLevels && access.level === 'write'));
+    .some(({ roleId, canSetOwnLevels }) => {
+      const access = resolveAccess(db, instanceId, key, { ceiling: 'write', roleId });
+      return access.reachable && (access.level === 'ask' || (canSetOwnLevels && access.level === 'write'));
     });
 }
 

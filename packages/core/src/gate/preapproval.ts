@@ -1,7 +1,8 @@
 import type { ResolvedTarget } from '@synoikia/plugin-sdk';
 import { and, asc, count, eq, gt, isNull, or } from 'drizzle-orm';
 import type { Db, DbLike } from '../db/index.js';
-import { preApprovalHits, preApprovalRules, roles, users } from '../db/schema.js';
+import { roleEndpointSwitches } from '../catalog/role-levels.js';
+import { preApprovalHits, preApprovalRules, users } from '../db/schema.js';
 import { conditionsHold, coversAllParams, MatchSchema } from './match.js';
 
 export type PreApprovalOutcome =
@@ -10,15 +11,10 @@ export type PreApprovalOutcome =
   | { kind: 'rate_limited'; ruleIds: string[] }
   | { kind: 'no_match' };
 
-function ownRulesOn(db: DbLike, userId: string | undefined): boolean {
+function ownRulesOn(db: DbLike, userId: string | undefined, instanceId: string): boolean {
   if (!userId) return false;
-  const row = db
-    .select({ on: roles.canManageOwnRules })
-    .from(users)
-    .innerJoin(roles, eq(users.roleId, roles.id))
-    .where(eq(users.id, userId))
-    .get();
-  return !!row?.on;
+  const user = db.select({ roleId: users.roleId }).from(users).where(eq(users.id, userId)).get();
+  return !!user && !!roleEndpointSwitches(db, user.roleId, instanceId)?.canManageOwnRules;
 }
 
 /** Finds a matching, unexpired rule with budget left and records the hit, in one transaction. Never
@@ -32,7 +28,7 @@ export function evaluatePreApproval(
     targets: readonly ResolvedTarget[];
     /** The params subtrees a `$targets` condition covers (the profile field's `covers`), for strict matching. */
     targetCovers?: readonly string[];
-    /** The caller's user: their own rules apply too while their role allows own rules (design §6.4). */
+    /** The caller's user: their own rules apply too while their role allows own rules on the endpoint (design §6.4). */
     userId?: string;
   },
   now = new Date(),
@@ -46,7 +42,7 @@ export function evaluatePreApproval(
           eq(preApprovalRules.instanceId, input.instanceId),
           eq(preApprovalRules.operationId, input.operationId),
           eq(preApprovalRules.enabled, true),
-          ownRulesOn(tx, input.userId)
+          ownRulesOn(tx, input.userId, input.instanceId)
             ? or(isNull(preApprovalRules.ownerUserId), eq(preApprovalRules.ownerUserId, input.userId!))
             : isNull(preApprovalRules.ownerUserId),
         ),

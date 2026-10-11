@@ -7,7 +7,7 @@ import { asc, count, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { PublicRole } from '../auth/roles.js';
 import { applyRegistrySync } from '../catalog/registry.js';
-import { roleInstanceIds } from '../catalog/role-levels.js';
+import { roleEndpointSwitches } from '../catalog/role-levels.js';
 import { applyCatalogSync } from '../catalog/sync.js';
 import type { SyncSummary } from '../catalog/sync.js';
 import { aad } from '../crypto/index.js';
@@ -152,32 +152,37 @@ export class InstanceManager {
       .map(({ instance, plugin }) => this.describe(instance, plugin));
   }
 
-  /** The role's endpoints at `mcpBase`, with live status only where the role shows it (design §6.4). */
+  /** The role's endpoints at `mcpBase`, each with the role's switches on it and live status only where
+   * its switch shows it (design §6.4). */
   listForRole(role: PublicRole, mcpBase: string) {
-    const mine = role.isAdmin ? null : new Set(roleInstanceIds(this.db, role.id));
     const mode = getSettings(this.db, 'mcp').defaultAuthMode;
-    return this.list()
-      .filter((i) => !mine || mine.has(i.id))
-      .map((i) => ({
-        id: i.id,
-        slug: i.slug,
-        displayName: i.displayName,
-        endpointUrl: `${mcpBase}/${i.slug}`,
-        authMode: i.authMode ?? mode,
-        ...(role.isAdmin || role.canSeeStatus
-          ? {
-              status: {
-                enabled: i.enabled,
-                state: i.status,
-                error: i.statusError,
-                plugin: i.plugin.name,
-                upstreamVersion: i.upstreamVersion,
-                lastSyncedAt: i.lastSyncedAt,
-                lastSyncStatus: i.lastSyncStatus,
-              },
-            }
-          : {}),
-      }));
+    return this.list().flatMap((i) => {
+      const switches = roleEndpointSwitches(this.db, role.id, i.id);
+      if (!switches) return [];
+      return [
+        {
+          id: i.id,
+          slug: i.slug,
+          displayName: i.displayName,
+          endpointUrl: `${mcpBase}/${i.slug}`,
+          authMode: i.authMode ?? mode,
+          ...switches,
+          ...(switches.canSeeStatus
+            ? {
+                status: {
+                  enabled: i.enabled,
+                  state: i.status,
+                  error: i.statusError,
+                  plugin: i.plugin.name,
+                  upstreamVersion: i.upstreamVersion,
+                  lastSyncedAt: i.lastSyncedAt,
+                  lastSyncStatus: i.lastSyncStatus,
+                },
+              }
+            : {}),
+        },
+      ];
+    });
   }
 
   get(id: string) {

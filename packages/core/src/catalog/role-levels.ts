@@ -60,6 +60,29 @@ export function roleHasInstance(db: DbLike, roleId: string, instanceId: string):
     .get();
 }
 
+export type EndpointSwitches = Pick<
+  typeof roleInstances.$inferSelect,
+  'canSetOwnLevels' | 'canManageOwnRules' | 'canSeeStatus'
+>;
+
+const ALL_ON: EndpointSwitches = { canSetOwnLevels: true, canManageOwnRules: true, canSeeStatus: true };
+
+/** A role's switches on one endpoint (design §6.4); null when the role lacks it. The Admin role has every one on. */
+export function roleEndpointSwitches(db: DbLike, roleId: string, instanceId: string): EndpointSwitches | null {
+  if (roleId === ADMIN_ROLE_ID) return ALL_ON;
+  return (
+    db
+      .select({
+        canSetOwnLevels: roleInstances.canSetOwnLevels,
+        canManageOwnRules: roleInstances.canManageOwnRules,
+        canSeeStatus: roleInstances.canSeeStatus,
+      })
+      .from(roleInstances)
+      .where(and(eq(roleInstances.roleId, roleId), eq(roleInstances.instanceId, instanceId)))
+      .get() ?? null
+  );
+}
+
 /** The caps a principal's role and own levels put on one endpoint's operations; undefined for admins. */
 export function loadCaps(
   db: DbLike,
@@ -67,17 +90,17 @@ export function loadCaps(
   principal: AccessPrincipal,
 ): ((op: Pick<OperationRow, 'id' | 'groupId'>) => AccessCaps) | undefined {
   if (principal.roleId === ADMIN_ROLE_ID) return undefined;
-  const role = db.select().from(roles).where(eq(roles.id, principal.roleId)).get();
-  if (!role || !roleHasInstance(db, role.id, instanceId)) return () => ({ role: null });
+  const switches = roleEndpointSwitches(db, principal.roleId, instanceId);
+  if (!switches) return () => ({ role: null });
   const roleRows = toLayers(
     db
       .select()
       .from(roleLevels)
-      .where(and(eq(roleLevels.roleId, role.id), eq(roleLevels.instanceId, instanceId)))
+      .where(and(eq(roleLevels.roleId, principal.roleId), eq(roleLevels.instanceId, instanceId)))
       .all(),
   );
   const ownRows =
-    role.canSetOwnLevels && principal.userId
+    switches.canSetOwnLevels && principal.userId
       ? toLayers(
           db
             .select()
@@ -307,7 +330,7 @@ export function setRoleBulkLevel(
   for (const g of groups) setRoleLevel(db, roleId, instanceId, { group: g.key }, level, opts);
 }
 
-/** A user's own level (design §6.4): only with the role's switch, on the role's endpoints, and never
+/** A user's own level (design §6.4): only with the endpoint's switch, on the role's endpoints, and never
  * above the role's maximum. */
 export function setOwnLevel(
   db: Db,
@@ -320,9 +343,11 @@ export function setOwnLevel(
   const user = db.select().from(users).where(eq(users.id, userId)).get();
   if (!user) throw new NotFoundError('user_not_found', 'No such user');
   const role = db.select().from(roles).where(eq(roles.id, user.roleId)).get();
-  if (!role?.canSetOwnLevels || role.id === ADMIN_ROLE_ID)
-    throw new ConflictError('own_levels_off', 'Your role does not let you set your own levels');
-  if (!roleHasInstance(db, role.id, instanceId)) throw new NotFoundError('instance_not_found', 'No such endpoint');
+  const offError = () => new ConflictError('own_levels_off', 'Your role does not let you set your own levels here');
+  if (!role || role.id === ADMIN_ROLE_ID) throw offError();
+  const switches = roleEndpointSwitches(db, role.id, instanceId);
+  if (!switches) throw new NotFoundError('instance_not_found', 'No such endpoint');
+  if (!switches.canSetOwnLevels) throw offError();
   if (level !== null) assertLevel(level);
   db.transaction((tx) => {
     const { group, op } = resolveTarget(tx, instanceId, target);

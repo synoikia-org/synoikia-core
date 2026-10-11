@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { writeAudit } from '../audit.js';
-import { levelView, setRoleBulkLevel, setRoleLevel } from '../catalog/role-levels.js';
-import type { LevelTarget, LevelView } from '../catalog/role-levels.js';
+import { levelView, roleEndpointSwitches, setRoleBulkLevel, setRoleLevel } from '../catalog/role-levels.js';
+import type { EndpointSwitches, LevelTarget, LevelView } from '../catalog/role-levels.js';
 import type { Db, DbLike } from '../db/index.js';
 import { pluginInstances, roleInstances, roleLevels, roles, users } from '../db/schema.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
@@ -11,8 +11,8 @@ import { ADMIN_ROLE_ID } from '../gate/access.js';
 import type { AccessLevel } from '../gate/access.js';
 import { getSettings } from '../settings.js';
 
-/** Roles (design §6.4): the built-in Admin role plus admin-defined ones, each with its endpoints, its
- * maximum levels (`catalog/role-levels.ts`) and three switches. */
+/** Roles (design §6.4): the built-in Admin role plus admin-defined ones, each with its endpoints (three
+ * switches on each), its maximum levels (`catalog/role-levels.ts`) and a role-wide switch. */
 
 export type RoleRow = typeof roles.$inferSelect;
 
@@ -20,32 +20,31 @@ export interface PublicRole {
   id: string;
   name: string;
   isAdmin: boolean;
-  canSetOwnLevels: boolean;
-  canManageOwnRules: boolean;
-  canSeeStatus: boolean;
+  canSeeOtherEndpoints: boolean;
 }
 
 export const toPublicRole = (r: RoleRow): PublicRole => ({
   id: r.id,
   name: r.name,
   isAdmin: r.id === ADMIN_ROLE_ID,
-  canSetOwnLevels: r.canSetOwnLevels,
-  canManageOwnRules: r.canManageOwnRules,
-  canSeeStatus: r.canSeeStatus,
+  canSeeOtherEndpoints: r.canSeeOtherEndpoints,
 });
 
 // No defaults on the patch: zod applies `.default()` inside `.partial()`, which would reset unsent switches.
 const RolePatch = z.object({
   name: z.string().trim().min(1).max(64).optional(),
-  canSetOwnLevels: z.boolean().optional(),
-  canManageOwnRules: z.boolean().optional(),
-  canSeeStatus: z.boolean().optional(),
+  canSeeOtherEndpoints: z.boolean().optional(),
 });
 const RoleCreate = RolePatch.required({ name: true }).extend({
-  canSetOwnLevels: z.boolean().default(false),
-  canManageOwnRules: z.boolean().default(false),
-  canSeeStatus: z.boolean().default(false),
+  canSeeOtherEndpoints: z.boolean().default(false),
 });
+const EndpointSwitchesPatch = z
+  .object({
+    canSetOwnLevels: z.boolean().optional(),
+    canManageOwnRules: z.boolean().optional(),
+    canSeeStatus: z.boolean().optional(),
+  })
+  .refine((p) => Object.keys(p).length > 0, 'Send at least one switch');
 
 export class RoleService {
   constructor(private readonly db: Db) {}
@@ -75,7 +74,14 @@ export class RoleService {
       .map((r) => ({
         ...toPublicRole(r),
         users: members.get(r.id) ?? 0,
-        instanceIds: endpoints.filter((e) => e.roleId === r.id).map((e) => e.instanceId),
+        endpoints: endpoints
+          .filter((e) => e.roleId === r.id)
+          .map(({ instanceId, canSetOwnLevels, canManageOwnRules, canSeeStatus }) => ({
+            instanceId,
+            canSetOwnLevels,
+            canManageOwnRules,
+            canSeeStatus,
+          })),
         isDefault: r.id === defaultRoleId,
       }));
   }
@@ -143,7 +149,30 @@ export class RoleService {
     });
   }
 
-  /** Sets the endpoints a role has; levels on a removed endpoint go with it. */
+  /** Sets a role's switches on one of its endpoints; unsent switches keep their value. */
+  setEndpointSwitches(id: string, instanceId: string, raw: unknown, actor: { userId?: string } = {}): EndpointSwitches {
+    const role = this.get(id);
+    if (role.builtIn) throw new ConflictError('built_in_role', 'The Admin role has every switch on');
+    const input = EndpointSwitchesPatch.parse(raw);
+    const scope = and(eq(roleInstances.roleId, id), eq(roleInstances.instanceId, instanceId));
+    return this.db.transaction((tx) => {
+      const before = roleEndpointSwitches(tx, id, instanceId);
+      if (!before) throw new ConflictError('not_in_role', 'Add the endpoint to the role first');
+      tx.update(roleInstances).set(input).where(scope).run();
+      writeAudit(tx, {
+        kind: 'config',
+        instanceId,
+        decision: 'role_endpoint_changed',
+        actorKind: 'user',
+        actorId: actor.userId,
+        detail: { id, before, changes: input },
+      });
+      return { ...before, ...input };
+    });
+  }
+
+  /** Sets the endpoints a role has; levels on a removed endpoint go with it. New ones start with every
+   * switch off. */
   setInstances(id: string, instanceIds: string[], actor: { userId?: string } = {}) {
     const role = this.get(id);
     if (role.builtIn) throw new ConflictError('built_in_role', 'The Admin role has every endpoint');
