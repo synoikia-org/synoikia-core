@@ -135,10 +135,32 @@ describe('the User auth settings', () => {
     await body.get('[role="dialog"] input').setValue('ADMIN');
     await click('Save', dialog()!);
     expect(writes(calls)).toEqual([
-      { method: 'PUT', path: '/api/settings/security', body: { ...settings.security, defaultRoleId: 'admin' } },
+      { method: 'PUT', path: '/api/settings/security', body: { defaultRoleId: 'admin', localSignup: false } },
     ]);
     expect(registration.text()).toContain('Saved.');
     expect(promptSpy).not.toHaveBeenCalled();
+  });
+
+  it('saves only the Sign-in fields from the Sign-in card, so an unconfirmed admin role is not sent', async () => {
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'GET /api/roles': roles,
+      'PUT /api/settings/security': (b: unknown) => ({ ...settings.security, ...(b as object) }),
+    });
+    const { wrapper } = await mountAt('/settings/user-auth');
+    await wrapper.get('select#s-role').setValue('admin');
+    await wrapper.get('input#s-idle').setValue(30);
+    const signIn = wrapper.findAll('form').find((f) => f.find('h2').text() === 'Sign-in')!;
+    await signIn.trigger('submit');
+    await flushPromises();
+    expect(dialog()).toBeNull();
+    const { defaultRoleId: _role, localSignup: _signup, ...signInFields } = settings.security;
+    expect(writes(calls)).toEqual([
+      { method: 'PUT', path: '/api/settings/security', body: { ...signInFields, sessionIdleMinutes: 30 } },
+    ]);
+    expect(signIn.text()).toContain('Saved.');
   });
 
   it('names the sign-in fields and has no audit retention', async () => {

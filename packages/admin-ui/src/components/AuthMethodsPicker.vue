@@ -14,8 +14,8 @@ const props = defineProps<{
 const uid = useId();
 const limited = computed({
   get: () => methods.value !== null,
-  // Limiting starts from what the endpoint accepts now, so nothing changes until a box is cleared.
-  set: (on) => (methods.value = on ? [...(props.enabled ?? AUTH_METHODS)] : null),
+  // Limiting starts from the globally enabled methods; the radio stays disabled until they load.
+  set: (on) => (methods.value = on ? [...(props.enabled ?? [])] : null),
 });
 const effective = computed(() =>
   props.enabled ? (methods.value ?? AUTH_METHODS).filter((m) => props.enabled?.includes(m)) : undefined,
@@ -34,14 +34,15 @@ function toggle(m: AuthMethod, on: boolean) {
       ><input v-model="limited" type="radio" :name="`${uid}-mode`" :value="false" /> All enabled methods</label
     >
     <label class="row small"
-      ><input v-model="limited" type="radio" :name="`${uid}-mode`" :value="true" /> Only these</label
+      ><input v-model="limited" type="radio" :name="`${uid}-mode`" :value="true" :disabled="!enabled" /> Only
+      these</label
     >
     <div v-if="limited" class="subset">
       <label v-for="m in AUTH_METHODS" :key="m" class="row small">
         <input
           type="checkbox"
           :checked="methods?.includes(m)"
-          :disabled="!!enabled && !enabled.includes(m)"
+          :disabled="!!enabled && !enabled.includes(m) && !methods?.includes(m)"
           @change="toggle(m, ($event.target as HTMLInputElement).checked)"
         />
         {{ AUTH_METHOD_LABELS[m] }}
