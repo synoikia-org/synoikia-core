@@ -7,9 +7,10 @@ import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
 import { AUTH_MODE_LABELS, ago } from '../format';
 import { useSessionStore } from '../stores/session';
 
-/** Every user's home (design §6.4): the endpoints their role has, and how to connect to them. */
+/** Every user's home (design §6.4): the endpoints their role has, how to connect to them, and the
+ * others by name where the role may see them. */
 const session = useSessionStore();
-const { endpoints: mine, error: loadError, isPending: loading } = useMyEndpointsQuery();
+const { endpoints: mine, unassigned, error: loadError, isPending: loading } = useMyEndpointsQuery();
 const error = computed(() => (loadError.value ? errorText(loadError.value) : undefined));
 
 const { copied, copy } = useCopy();
@@ -24,8 +25,9 @@ const uid = useId();
     />
     <div class="stack">
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
+      <h2 :id="`${uid}-assigned`">Assigned endpoints</h2>
       <div class="table-card">
-        <table class="table" aria-label="My endpoints" :aria-busy="loading">
+        <table class="table" :aria-labelledby="`${uid}-assigned`" :aria-busy="loading">
           <thead>
             <tr>
               <th>Endpoint</th>
@@ -62,6 +64,29 @@ const uid = useId();
         </table>
         <div v-if="!mine.length" class="empty">Your role has no endpoints yet. Ask an administrator.</div>
       </div>
+      <template v-if="unassigned.length">
+        <h2 :id="`${uid}-unassigned`">Unassigned endpoints</h2>
+        <p class="small muted">Endpoints your role doesn't have. Open one to see what it is.</p>
+        <div class="table-card">
+          <table class="table" :aria-labelledby="`${uid}-unassigned`">
+            <thead>
+              <tr>
+                <th>Endpoint</th>
+                <th>Plugin</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="ep in unassigned" :key="ep.id">
+                <td>
+                  <RouterLink :to="`/my/${ep.id}/about`" class="mono">/{{ ep.slug }}</RouterLink>
+                  <div class="small muted">{{ ep.displayName }}</div>
+                </td>
+                <td class="small">{{ ep.plugin }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
   </div>
 </template>

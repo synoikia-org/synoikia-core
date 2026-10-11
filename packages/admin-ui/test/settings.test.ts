@@ -266,7 +266,7 @@ describe('My profile', () => {
       'GET /api/profile/approval-sessions': [],
       'GET /api/me/tokens': [token],
       'GET /api/me/grants': [grant],
-      'GET /api/me/endpoints': [],
+      'GET /api/me/endpoints': { assigned: [], unassigned: [] },
       ...extra,
     });
 
