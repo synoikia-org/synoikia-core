@@ -110,7 +110,7 @@ Read or write comes from the upstream API, through the plugin. For example, a RE
 | ------ | ---------------------- | -------------------------------------------------------------------- |
 | read   | `none`, `read`, `ask`  | off · runs · each call asks                                          |
 | write  | `none`, `ask`, `write` | off · each call asks · runs without a question after acknowledgement |
-| locked | `none`, `ask`          | off · each call asks, with typed confirmation and a new TOTP code    |
+| locked | `none`, `ask`          | off · each call asks, with typed confirmation                        |
 
 **Roles.** The levels above are the levels of the endpoint. They apply to the Admin role. For a user with another role (§6.4), two more layers limit them:
 
@@ -141,7 +141,7 @@ effectiveAccess(op, group, principal):
 - They never follow their group into `ask` or `write`.
 - A locked operation is callable only when the admin sets its own level to `ask`.
 - Core refuses `write` for a locked operation: 409 from the API, disabled in the portal.
-- Each call needs a human, a typed confirmation and a new TOTP code (§5.3).
+- Each call needs a human and a typed confirmation (§5.3).
 - A pre-approval rule can never apply to a locked operation.
 
 **Acknowledgement.** At level `write`, calls run without a question. When the admin selects `write`, they acknowledge this. There is no other confirmation step.
@@ -182,18 +182,19 @@ A human must make an approval, not the client that made the call. The answer to 
    - **Link.** The client has no channel above. The execution parks (§5.6). Core makes the same single-use page token and returns the page link in the tool result. The approval card (§5.7) shows it, or the agent shows it as text. The human decides on the page.
    - **No channel.** A caller that cannot park, for example a script through the test harness, has no channel. Core denies the call at once: `client_cannot_approve` for a client with forms only, `no_approval_path` for a client without prompts. Over the parked limits, core denies with `too_many_parked`.
 3. **Approval page** (`/a/:token` on the MCP listener). The page needs:
-   - a signed-in portal user with TOTP;
-   - a TOTP proof in this browser session, given once (a password and TOTP sign-in counts; after an OIDC sign-in, the first approval asks for a code). The session lasts `approvalSessionIdleHours` without use (12 h by default) and at most `approvalSessionAbsoluteDays` (7 days by default). A restart of core clears the proofs, so the next approval asks for a code again. A TOTP reset, a new enrollment or turning TOTP off signs out all approval sessions of the user. A lower setting also shortens the sessions that exist;
-   - for a locked operation, a TOTP code from the last 5 minutes;
-   - a POST with a CSRF token. A GET or a prefetch decides nothing.
-     `decided_by` is the user name. `decided_via` is `url`. The page has three choices: **Deny**, **Approve once** and **Approve for this session** (§5.8).
+   - an approver that core identifies in one of these two ways:
+     - **Page sign-in.** The user signs in on the MCP listener with a password, or with OIDC. A user with TOTP also gives a TOTP code at this sign-in. The session lasts `approvalSessionIdleHours` without use (12 h by default) and at most `approvalSessionAbsoluteDays` (7 days by default). A lower setting also shortens the sessions that exist. A TOTP reset, a new enrollment or turning TOTP off signs out all approval sessions of the user.
+     - **External provider.** This applies only when there is no page sign-in and the effective methods of the endpoint include `external`. The external provider (§6.2) identifies the request of the browser. With Cloudflare Access, this is a verified user assertion; core refuses service tokens. The identity must match an enabled user, as for the `external` method. Self-registration does not apply here. Core keeps no session, because the provider identifies each request.
+   - a POST with a CSRF token. The token is signed with the double-submit cookie, the approval link and the approver, so a token from another form or another user fails. A GET or a prefetch decides nothing.
+     A page sign-in has priority over the external provider. If core cannot identify an approver, the page shows the sign-in form.
+     `decided_by` is the user name. `decided_via` is `url`. The audit `detail.approverSignIn` is `session` or `external`. The page has three choices: **Deny**, **Approve once** and **Approve for this session** (§5.8).
 4. **Typed confirmation.** For an operation with typed confirmation, the approver must type `confirm_literal` exactly. Otherwise core returns 400 and the approver can try again. `summarize` gets redacted parameters, so the summary and the literal cannot hold a secret. If such an operation has no literal, core refuses the call.
 5. **Targets checked again.** For plugins with `targets`, core resolves the targets again after the approval. If they are not the targets that the approver saw, core refuses the call (`TARGETS_CHANGED`). The plugin gets the approved targets in `InvokeContext.targets`.
 6. **Access checked again.** If the admin lowered the level while the approval was open, core refuses the call (`access_changed`).
 7. **Single use.** An approval allows one `invoke` of exactly its `params_hash`. A new call makes a new approval.
 8. **Timeout.** An approval that times out is denied and logged as `timed-out`. Core never allows a call on timeout.
 9. **Tool annotations.** `search` has `readOnlyHint: true`. `execute` has `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. Clients that confirm tool calls themselves use these hints. The gate does not depend on them.
-10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403 and does not see the call, also if that user is an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides. The approver must sign in on the MCP listener with TOTP. Each decision records who made it.
+10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403 and does not see the call, also if that user is an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides. Core identifies the approver as item 3 tells. Each decision records who made it.
 11. **Redacted values.** The approval page shows the same redacted parameters as the audit log. A value under a sensitive key shows as `[REDACTED]`. The approval page must not show secrets. A plugin summary for such an operation tells what changes without the value.
 
 **Approval states.**
@@ -328,7 +329,7 @@ The approval card is an MCP Apps view (extension `io.modelcontextprotocol/ui`). 
 - **Tools.** `execute` and `resume` set `_meta.ui.resourceUri` to the card. Two tools have `_meta.ui.visibility: ["app"]`, so the model does not see them:
   - `approval_status(executionId)` returns the state of a parked execution: `pending`, `approved`, `denied`, `timed_out`, `cancelled`, `running` or `done`, with `expiresAt` and the last decision. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
   - `session_grant_revoke(grantId)` ends a session grant of the same principal and endpoint.
-- **The card never decides.** It has no approve control and takes no TOTP code. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
+- **The card never decides.** It has no approve control and no confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
 - **Continue.** When the state is final, the card sends one `ui/message` to the chat ("Approved, continue."). The agent then calls `resume`. If the host refuses the message, the card asks the user to say "continue".
 - **Session grant.** When a session grant is active, the result has `sessionGrant` (`id`, `expiresAt`). The card shows it with a **Revoke** control.
 - A host without MCP Apps ignores the card. The agent shows the link from the text result.

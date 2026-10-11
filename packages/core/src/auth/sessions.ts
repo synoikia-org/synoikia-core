@@ -26,9 +26,6 @@ export interface ValidSession {
 const TOUCH_EVERY_MS = 60_000;
 
 export class SessionService {
-  /** When each MCP-port session last proved TOTP (design §5.3); in memory, so a restart asks again. */
-  private readonly totpProofs = new Map<string, number>();
-
   constructor(
     private readonly db: Db,
     private readonly pepper: Buffer,
@@ -141,19 +138,6 @@ export class SessionService {
       });
       return count;
     });
-  }
-
-  /** Proofs older than `maxAgeMs` are dropped on the way. */
-  recordTotpProof(idHash: string, maxAgeMs: number) {
-    const now = this.now().getTime();
-    for (const [k, at] of this.totpProofs) if (now - at > maxAgeMs) this.totpProofs.delete(k);
-    this.totpProofs.set(idHash, now);
-  }
-
-  /** Milliseconds since this session last proved TOTP, or Infinity if it never did. */
-  sinceTotpProof(idHash: string): number {
-    const at = this.totpProofs.get(idHash);
-    return at === undefined ? Infinity : this.now().getTime() - at;
   }
 
   purgeExpired(): number {

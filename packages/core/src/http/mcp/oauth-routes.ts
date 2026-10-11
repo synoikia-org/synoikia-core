@@ -70,9 +70,20 @@ export const checkUiCsrf = (c: Context, submitted: unknown) => {
   return !!cookie && typeof submitted === 'string' && safeEqual(cookie, submitted);
 };
 
-/** Proofs live no longer than the longest approval-browser session. */
-export const recordTotpProof = (ctx: AppContext, idHash: string) =>
-  ctx.sessions.recordTotpProof(idHash, uiLimits(ctx, 'approval').absoluteMs);
+/** CSRF for a form that acts on one subject: the double-submit cookie, signed together with `bind`, so a
+ * cookie planted by a sibling host is not enough and a field from another form does not fit. */
+export function boundCsrf(ctx: AppContext, c: Context, bind: Record<string, string>, ttlMs: number): string {
+  return signPayload(ctx.keys.state, { ...bind, c: sha256(uiCsrf(ctx, c)) }, ttlMs, ctx.now().getTime());
+}
+
+export function checkBoundCsrf(ctx: AppContext, c: Context, submitted: unknown, bind: Record<string, string>) {
+  const cookie = getCookie(c, UI_CSRF_COOKIE);
+  const form =
+    typeof submitted === 'string'
+      ? verifyPayload<Record<string, unknown>>(ctx.keys.state, submitted, ctx.now().getTime())
+      : null;
+  return !!cookie && !!form && form.c === sha256(cookie) && Object.entries(bind).every(([k, v]) => form[k] === v);
+}
 
 function startUiSession(ctx: AppContext, c: Context, userId: string, method: string, continueTo: string) {
   const purpose = purposeOf(continueTo);
@@ -82,7 +93,6 @@ function startUiSession(ctx: AppContext, c: Context, userId: string, method: str
     ip: clientIp(c, ctx.config.TRUST_PROXY),
     userAgent: c.req.header('user-agent'),
   });
-  if (method === 'password+totp') recordTotpProof(ctx, ctx.sessions.hashId(raw));
   // Lax: the browser must send it when an OIDC provider redirects back into the consent flow.
   setCookie(c, cookie, raw, {
     httpOnly: true,
