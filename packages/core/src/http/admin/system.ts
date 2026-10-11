@@ -5,6 +5,7 @@ import type { AppContext } from '../../app.js';
 import { auditCsvChunks, queryAudit } from '../../audit-query.js';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors.js';
 import { CORE_EVENT_NAMES } from '../../events.js';
+import { effectiveAuthMethods } from '../../instances/manager.js';
 import { getSettings, isSettingsSection, updateSettings } from '../../settings.js';
 import { CORE_VERSION } from '../../version.js';
 import { readJson } from '../common.js';
@@ -17,11 +18,10 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const mcpBase = () => ctx.config.PUBLIC_MCP_URL?.replace(/\/$/, '') ?? '';
 
   app.get('/api/overview', (c) => {
-    const mcpSettings = getSettings(ctx.db, 'mcp');
     const instances = ctx.instances.list().map((i) => ({
       ...i,
       endpointUrl: `${mcpBase()}/${i.slug}`,
-      effectiveAuthMode: i.authMode ?? mcpSettings.defaultAuthMode,
+      effectiveAuthMethods: effectiveAuthMethods(ctx.db, i.authMethods),
     }));
     return c.json({
       instances,

@@ -113,6 +113,13 @@
       "when": 1791724999834,
       "tag": "0015_endpoint_switches",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791742756179,
+      "tag": "0016_client_auth_methods",
+      "breakpoints": true
     }
   ]
 }

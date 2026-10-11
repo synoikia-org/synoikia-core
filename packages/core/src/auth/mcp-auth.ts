@@ -1,7 +1,5 @@
 import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
-import type { JWTVerifyGetKey } from 'jose';
 import type { AppContext } from '../app.js';
 import { roleHasInstance } from '../catalog/role-levels.js';
 import { users } from '../db/schema.js';
@@ -11,11 +9,13 @@ import { McpTokenService, TOKEN_PREFIX } from './mcp-tokens.js';
 import { ACCESS_PREFIX, canonicalResource } from './oauth.js';
 import type { OAuthService } from './oauth.js';
 import type { AccessCeiling } from '../gate/access.js';
-import type { AuthMode } from '../instances/manager.js';
+import { effectiveAuthMethods } from '../instances/manager.js';
+import { externalProvider } from './external.js';
+import { claimedIssuer } from './external-cloudflare.js';
 import { requestOrigin } from '../http/common.js';
 
-/** Authentication for `/{slug}` (design §6.2): the instance's mode or the global default; every accepted
- * request yields an identity recorded on each audited call. */
+/** Authentication for `/{slug}` (design §6.2): the endpoint's client auth methods narrowed to the enabled
+ * ones; every accepted request yields an identity recorded on each audited call. */
 
 export interface McpIdentity {
   kind: 'token' | 'oauth' | 'external';
@@ -24,9 +24,9 @@ export interface McpIdentity {
   /** Human-readable, shown in audit and approvals: `token:Claude Code`, `oauth:Claude for admin`. */
   label: string;
   /** Ceiling on what this principal can reach (design §6.3): from OAuth consent or the bearer token;
-   * `external` mode is not limited here. */
+   * `external` is not limited here. */
   access: AccessCeiling;
-  /** The user who owns the credential, or whom the proxy named; their role decides the reach (§6.4). */
+  /** The user who owns the credential, or whom the external provider named; their role decides the reach (§6.4). */
   userId: string;
   roleId: string;
 }
@@ -51,90 +51,12 @@ export function publicMcpBase(ctx: AppContext, c: Context): string {
 
 export const resourceUrl = (base: string, slug: string) => canonicalResource(`${base}/${slug}`);
 
-export function effectiveAuthMode(ctx: AppContext, instanceAuthMode: string | null): AuthMode {
-  return (instanceAuthMode as AuthMode | null) ?? getSettings(ctx.db, 'mcp').defaultAuthMode;
-}
-
 /** The endpoints that accept OAuth (design §6.2), with their resource URLs under `base`. */
 export function oauthEndpoints(ctx: AppContext, base: string) {
   return ctx.instances
     .list()
-    .filter((i) => {
-      const mode = effectiveAuthMode(ctx, i.authMode);
-      return mode === 'oauth' || mode === 'bearer+oauth';
-    })
+    .filter((i) => effectiveAuthMethods(ctx.db, i.authMethods).includes('oauth'))
     .map((i) => ({ resource: resourceUrl(base, i.slug), slug: i.slug, name: i.displayName, id: i.id }));
-}
-
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-const MAX_CLAIM = 120;
-const clip = (v: string) => (v.length > MAX_CLAIM ? `${v.slice(0, MAX_CLAIM)}…` : v);
-
-/** A JWT's claimed issuer and audience, unverified, only to explain a rejection: strings only, clipped. */
-function claimedIssuer(token: string): { iss?: string; aud?: string } | null {
-  let payload: Record<string, unknown>;
-  try {
-    payload = decodeJwt(token);
-  } catch {
-    return null;
-  }
-  const { iss, aud } = payload;
-  const auds = (Array.isArray(aud) ? aud : [aud]).filter((a): a is string => typeof a === 'string');
-  return {
-    iss: typeof iss === 'string' ? clip(iss) : undefined,
-    aud: auds.length ? clip(auds.join(',')) : undefined,
-  };
-}
-
-/** Verifies a `Cf-Access-Jwt-Assertion` (signature, issuer, audience, expiry) and returns who it names
- * or why it was rejected. `keys` replaces the team's key set (tests). */
-export async function checkCloudflareAccess(
-  teamDomain: string,
-  aud: string,
-  assertion: string,
-  keys?: JWTVerifyGetKey,
-): Promise<{ ok: true; who: string } | { ok: false; reason: string }> {
-  const domain = teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  let jwks = keys ?? jwksCache.get(domain);
-  if (!jwks) {
-    const remote = createRemoteJWKSet(new URL(`https://${domain}/cdn-cgi/access/certs`));
-    jwksCache.set(domain, remote);
-    jwks = remote;
-  }
-  const issuer = `https://${domain}`;
-  try {
-    const { payload } = await jwtVerify(assertion, jwks, { issuer, audience: aud });
-    // A service token's assertion has an empty `sub` and names the token's client ID in `common_name`.
-    // An email must contain `@`, so it can't pose as a service token; one that names nobody is refused.
-    const named = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-    const email = named(payload.email);
-    const service = named(payload.common_name);
-    const who = (email?.includes('@') ? email : undefined) ?? (service && `service:${service}`) ?? named(payload.sub);
-    return who
-      ? { ok: true, who }
-      : { ok: false, reason: 'valid assertion that names nobody (no email, common_name or sub)' };
-  } catch (err) {
-    const why = err instanceof Error ? err.message : String(err);
-    const claimed = claimedIssuer(assertion);
-    if (!claimed) return { ok: false, reason: `${why} (not a JWT)` };
-    // The AUD tag and team domain are not secrets: every assertion Access issues carries them.
-    return {
-      ok: false,
-      reason: `${why} (assertion iss=${claimed.iss ?? '-'} aud=${claimed.aud ?? '-'}; expected iss=${issuer} aud=${aud})`,
-    };
-  }
-}
-
-/** {@link checkCloudflareAccess}, returning who the assertion names, or null. */
-export async function verifyCloudflareAccess(
-  teamDomain: string,
-  aud: string,
-  assertion: string,
-  keys?: JWTVerifyGetKey,
-): Promise<string | null> {
-  const result = await checkCloudflareAccess(teamDomain, aud, assertion, keys);
-  return result.ok ? result.who : null;
 }
 
 /** What kind of bearer token this is, for the log: never any part of its value. */
@@ -176,7 +98,7 @@ function owned(ctx: AppContext, base: Unowned, userId: string | null | undefined
   return { ok: true, identity: { ...base, userId: user.id, roleId: user.roleId } };
 }
 
-/** A user named by the proxy: matched by username, else registered with the default role (design §6.5). */
+/** A user named by the external provider: matched by username, else registered with the default role (design §6.5). */
 async function externalUser(ctx: AppContext, name: string): Promise<string | undefined> {
   const found = ctx.users.byExternalIdentity(name);
   if (found) return found.id;
@@ -216,63 +138,55 @@ const unknownUser = (base: Unowned) =>
     `${base.label}: no user has that username and self-registration is off or the name is not a valid username`,
   );
 
+/** The configured external provider names the caller, who must match an enabled user (design §6.2, §6.5). */
+async function authenticateExternal(ctx: AppContext, c: Context, instanceId: string): Promise<McpAuthResult> {
+  const settings = getSettings(ctx.db, 'mcp');
+  const provider = externalProvider(settings);
+  if (!provider.configured(settings))
+    return refuse(401, 'unauthorized', 'Authentication required', `${provider.name} is not configured`);
+  const found = await provider.identify(c.req.raw.headers, settings);
+  // Every call belongs to a user (design §6.4): a caller the provider didn't name is refused.
+  if (!found.ok) return refuse(401, 'unauthorized', `${provider.name} did not identify the caller`, found.reason);
+  const who = found.identity;
+  const base: Unowned = {
+    kind: 'external',
+    principal: `${provider.id}:${who}`,
+    label: `external:${who}`,
+    access: 'write',
+  };
+  const userId = await externalUser(ctx, who);
+  if (!userId) return unknownUser(base);
+  return owned(ctx, base, userId, instanceId);
+}
+
 export async function authenticateMcp(
   ctx: AppContext,
   oauth: OAuthService,
   c: Context,
-  instance: { id: string; slug: string; authMode: string | null },
+  instance: { id: string; slug: string; authMethods: unknown },
 ): Promise<McpAuthResult> {
-  const mode = effectiveAuthMode(ctx, instance.authMode);
-  const settings = getSettings(ctx.db, 'mcp');
+  const methods = effectiveAuthMethods(ctx.db, instance.authMethods);
+  const auth = c.req.header('authorization');
 
-  if (mode === 'external') {
-    const { teamDomain, aud } = settings.cfAccess;
-    if (teamDomain && aud) {
-      const assertion = c.req.header('cf-access-jwt-assertion');
-      const checked = assertion ? await checkCloudflareAccess(teamDomain, aud, assertion) : null;
-      if (!checked?.ok)
-        return {
-          ok: false,
-          status: 401,
-          error: 'unauthorized',
-          message: 'Cloudflare Access assertion missing or invalid',
-          detail: checked
-            ? `Cloudflare Access assertion rejected: ${checked.reason}`
-            : 'no Cf-Access-Jwt-Assertion header: the request did not come through the Cloudflare Access application',
-        };
-      const who = checked.who;
-      const base: Unowned = { kind: 'external', principal: `cf:${who}`, label: `external:${who}`, access: 'write' };
-      const userId = await externalUser(ctx, who);
-      if (!userId) return unknownUser(base);
-      return owned(ctx, base, userId, instance.id);
-    }
-    const header = settings.trustedIdentityHeader;
-    const named = header && c.req.header(header)?.trim().slice(0, 200);
-    if (named) {
-      const base: Unowned = {
-        kind: 'external',
-        principal: `ext:${named}`,
-        label: `external:${named}`,
-        access: 'write',
-      };
-      const userId = await externalUser(ctx, named);
-      if (!userId) return unknownUser(base);
-      return owned(ctx, base, userId, instance.id);
-    }
-    // Every call belongs to a user (design §6.4): a caller the proxy didn't name is refused.
-    return refuse(
-      401,
-      'unauthorized',
-      'The proxy did not identify the caller',
-      header
-        ? `no ${header} header and no Cloudflare Access assertion: anonymous callers are refused`
-        : 'external mode without Cloudflare Access or a trusted identity header: anonymous callers are refused',
-    );
+  if (!methods.length) {
+    const detail = 'no client auth method is both enabled globally and allowed on this endpoint';
+    const held = auth?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    // Only a live credential learns why; anyone else gets the answer of an unknown slug.
+    if (held && (ctx.tokens.verify(held) || oauth.verifyAccess(held, '')))
+      return refuse(403, 'forbidden', 'This endpoint accepts no client auth method', detail);
+    return {
+      ok: false,
+      status: 401,
+      error: 'unauthorized',
+      message: 'Authentication required',
+      wwwAuthenticate: 'Bearer',
+      detail,
+    };
   }
 
-  const allowBearer = mode === 'bearer' || mode === 'bearer+oauth';
+  const allowBearer = methods.includes('bearer');
   // OAuth is off until PUBLIC_MCP_URL is set: its discovery documents must not come from the Host header.
-  const allowOauth = (mode === 'oauth' || mode === 'bearer+oauth') && !!ctx.config.PUBLIC_MCP_URL;
+  const allowOauth = methods.includes('oauth') && !!ctx.config.PUBLIC_MCP_URL;
   const base = publicMcpBase(ctx, c);
   const challenge = (error?: string) => {
     const params: string[] = [];
@@ -281,15 +195,22 @@ export async function authenticateMcp(
     return params.length ? `Bearer ${params.join(', ')}` : 'Bearer';
   };
 
-  // A proxy that authenticated the caller is the usual reason a client sends what this mode can't use.
-  const hint = c.req.header('cf-access-jwt-assertion')
-    ? '; the request carries a Cloudflare Access assertion: set the endpoint to External auth to accept it'
-    : '';
-  const oauthOff =
-    (mode === 'oauth' || mode === 'bearer+oauth') && !allowOauth ? '; OAuth is off until PUBLIC_MCP_URL is set' : '';
+  // A proxy that authenticated the caller is the usual reason a client sends what these methods can't use.
+  const hint =
+    c.req.header('cf-access-jwt-assertion') && !methods.includes('external')
+      ? '; the request carries a Cloudflare Access assertion: enable External client auth for this endpoint to accept it'
+      : '';
+  const oauthOff = methods.includes('oauth') && !allowOauth ? '; OAuth is off until PUBLIC_MCP_URL is set' : '';
+  const accepted = methods.join(', ');
 
-  const auth = c.req.header('authorization');
   const token = auth?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  let externalWhy = '';
+  if (!token && methods.includes('external')) {
+    const result = await authenticateExternal(ctx, c, instance.id);
+    // Unnamed, an endpoint that also takes tokens answers with the bearer challenge, so OAuth can start.
+    if (result.ok || result.status === 403 || !(allowBearer || methods.includes('oauth'))) return result;
+    externalWhy = `; ${result.detail}`;
+  }
   if (!token)
     return {
       ok: false,
@@ -297,7 +218,7 @@ export async function authenticateMcp(
       error: 'unauthorized',
       message: 'Authentication required',
       wwwAuthenticate: challenge(),
-      detail: `${auth ? 'Authorization header is not a bearer token' : 'no Authorization header'}${oauthOff}${hint}`,
+      detail: `${auth ? 'Authorization header is not a bearer token' : 'no Authorization header'}${externalWhy}${oauthOff}${hint}`,
     };
 
   if (allowBearer && token.startsWith(TOKEN_PREFIX)) {
@@ -367,6 +288,6 @@ export async function authenticateMcp(
     error: 'invalid_token',
     message: 'This endpoint does not accept that kind of token',
     wwwAuthenticate: challenge('invalid_token'),
-    detail: `got ${describeToken(token)}, which ${mode} auth does not accept${oauthOff}${hint}`,
+    detail: `got ${describeToken(token)}, which this endpoint's methods (${accepted}) do not accept${oauthOff}${hint}`,
   };
 }

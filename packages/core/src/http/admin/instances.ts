@@ -13,7 +13,7 @@ import { findRegistryEntries, scopesFromQuery } from '../../catalog/registry.js'
 import { createRule, deleteRule, listRules, updateRule } from '../../catalog/rules.js';
 import { NotFoundError, ValidationError } from '../../errors.js';
 import { ACCESS_LEVELS } from '../../gate/access.js';
-import { AUTH_MODES } from '../../instances/manager.js';
+import { AUTH_METHODS } from '../../instances/manager.js';
 import { clientIp, readJson, readOptionalJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 import { createRedactor, GLOBAL_SENSITIVE_KEYS } from '../../gate/redact.js';
@@ -33,15 +33,17 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/instances', async (c) => {
     const body = await readJson(
       c,
-      z.object({
-        pluginId: z.string().min(1),
-        slug: z.string().min(1).max(63),
-        displayName: z.string().max(100).optional(),
-        connection: z.record(z.string(), z.unknown()).default({}),
-        authMode: z.enum(AUTH_MODES).nullable().optional(),
-        settings: z.record(z.string(), z.unknown()).optional(),
-        enabled: z.boolean().optional(),
-      }),
+      z
+        .object({
+          pluginId: z.string().min(1),
+          slug: z.string().min(1).max(63),
+          displayName: z.string().max(100).optional(),
+          connection: z.record(z.string(), z.unknown()).default({}),
+          authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
+          settings: z.record(z.string(), z.unknown()).optional(),
+          enabled: z.boolean().optional(),
+        })
+        .strict(),
     );
     return c.json(await ctx.instances.create(body, actor(c)), 201);
   });
@@ -51,13 +53,15 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.patch('/api/instances/:id', async (c) => {
     const body = await readJson(
       c,
-      z.object({
-        displayName: z.string().max(100).optional(),
-        slug: z.string().max(63).optional(),
-        enabled: z.boolean().optional(),
-        authMode: z.enum(AUTH_MODES).nullable().optional(),
-        settings: z.record(z.string(), z.unknown()).optional(),
-      }),
+      z
+        .object({
+          displayName: z.string().max(100).optional(),
+          slug: z.string().max(63).optional(),
+          enabled: z.boolean().optional(),
+          authMethods: z.array(z.enum(AUTH_METHODS)).max(AUTH_METHODS.length).nullable().optional(),
+          settings: z.record(z.string(), z.unknown()).optional(),
+        })
+        .strict(),
     );
     return c.json(await ctx.instances.update(c.req.param('id'), body, actor(c)));
   });
