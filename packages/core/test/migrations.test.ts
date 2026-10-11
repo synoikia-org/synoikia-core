@@ -310,3 +310,38 @@ describe('0013 user roles migration', () => {
     expect(owner('t2')).toBe('u2');
   });
 });
+
+describe('0015 endpoint switches migration', () => {
+  it('copies each role’s switches onto every endpoint it has', () => {
+    const { dir, sqlite } = databaseAt('0014_user_registration_source');
+    sqlite.exec(`
+      INSERT INTO plugins (id, plugin_id, version, path, manifest, status) VALUES ('p1', 'echo', '1.0.0', '/x', '{}', 'ok');
+      INSERT INTO plugin_instances (id, plugin_id, slug, display_name) VALUES ('i1', 'p1', 'a', 'A'), ('i2', 'p1', 'b', 'B');
+      INSERT INTO roles (id, name, can_set_own_levels, can_manage_own_rules, can_see_status)
+        VALUES ('r1', 'Ops', 1, 0, 1), ('r2', 'Viewers', 0, 1, 0);
+      INSERT INTO role_instances (role_id, instance_id) VALUES ('r1', 'i1'), ('r1', 'i2'), ('r2', 'i1');
+    `);
+    sqlite.close();
+    const db = openDatabase({ dataDir: dir });
+    const rows = db
+      .select()
+      .from(schema.roleInstances)
+      .all()
+      .map((r) => [r.roleId, r.instanceId, r.canSetOwnLevels, r.canManageOwnRules, r.canSeeStatus]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        ['r1', 'i1', true, false, true],
+        ['r1', 'i2', true, false, true],
+        ['r2', 'i1', false, true, false],
+      ]),
+    );
+    expect(rows).toHaveLength(3);
+    expect(
+      db
+        .select()
+        .from(schema.roles)
+        .all()
+        .every((r) => r.canSeeOtherEndpoints === false),
+    ).toBe(true);
+  });
+});

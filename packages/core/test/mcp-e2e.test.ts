@@ -657,6 +657,9 @@ describe('credential owners', () => {
     const refused = await init();
     expect(refused.status).toBe(403);
     expect(await refused.json()).toMatchObject({ error: 'insufficient_scope' });
+    // Seeing other endpoints by name opens none of them.
+    ctx.roles.update(role.id, { canSeeOtherEndpoints: true });
+    expect((await init()).status).toBe(403);
     ctx.roles.setInstances(role.id, [instanceId]);
     ctx.db.update(users).set({ disabled: true }).where(eq(users.id, dan.id)).run();
     expect((await init()).status).toBe(403);

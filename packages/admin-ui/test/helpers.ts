@@ -34,9 +34,7 @@ export const adminRole = {
   id: 'admin',
   name: 'Admin',
   isAdmin: true,
-  canSetOwnLevels: true,
-  canManageOwnRules: true,
-  canSeeStatus: true,
+  canSeeOtherEndpoints: false,
 };
 
 export const signedIn = {

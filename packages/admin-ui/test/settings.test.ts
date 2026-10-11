@@ -11,8 +11,8 @@ afterEach(() => {
 
 const operators = { ...adminRole, id: 'r1', name: 'Operators', isAdmin: false };
 const roles: RoleRow[] = [
-  { ...adminRole, users: 1, instanceIds: [], isDefault: false },
-  { ...operators, users: 0, instanceIds: [], isDefault: false },
+  { ...adminRole, users: 1, endpoints: [], isDefault: false },
+  { ...operators, users: 0, endpoints: [], isDefault: false },
 ];
 const overview = { instances: [], plugins: [], warnings: [], publicMcpUrl: null };
 const me: PublicUser = { ...signedIn.user, createdAt: '2026-01-01T00:00:00Z', lastLoginAt: null };
@@ -266,7 +266,7 @@ describe('My profile', () => {
       'GET /api/profile/approval-sessions': [],
       'GET /api/me/tokens': [token],
       'GET /api/me/grants': [grant],
-      'GET /api/me/endpoints': [],
+      'GET /api/me/endpoints': { assigned: [], unassigned: [] },
       ...extra,
     });
 

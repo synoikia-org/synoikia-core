@@ -10,15 +10,25 @@ export interface PublicRole {
   id: string;
   name: string;
   isAdmin: boolean;
+  canSeeOtherEndpoints: boolean;
+}
+
+/** A role's switches on one of its endpoints (design §6.4). */
+export interface EndpointSwitches {
   canSetOwnLevels: boolean;
   canManageOwnRules: boolean;
   canSeeStatus: boolean;
 }
 
+/** One endpoint of a role, with the role's switches on it. */
+export interface RoleEndpoint extends EndpointSwitches {
+  instanceId: string;
+}
+
 /** A role as the Roles page lists it. */
 export interface RoleRow extends PublicRole {
   users: number;
-  instanceIds: string[];
+  endpoints: RoleEndpoint[];
   isDefault: boolean;
 }
 
@@ -445,8 +455,28 @@ export interface LevelView {
   }[];
 }
 
-/** An endpoint of the signed-in user's role (`/api/me/endpoints`). */
-export interface MyEndpoint {
+/** `/api/me/endpoints`: the role's endpoints, and the others by name when the role may see them (design §6.4). */
+export interface MyEndpoints {
+  assigned: MyEndpoint[];
+  unassigned: UnassignedEndpoint[];
+}
+
+/** An endpoint outside the signed-in user's role: its name and plugin only. */
+export interface UnassignedEndpoint {
+  id: string;
+  slug: string;
+  displayName: string;
+  plugin: string;
+  description: string | null;
+}
+
+/** `/api/me/endpoints/:id/about`: one unassigned endpoint and the user's role name. */
+export interface UnassignedEndpointAbout extends UnassignedEndpoint {
+  role: string;
+}
+
+/** An endpoint of the signed-in user's role (`/api/me/endpoints`), with the role's switches on it. */
+export interface MyEndpoint extends EndpointSwitches {
   id: string;
   slug: string;
   displayName: string;

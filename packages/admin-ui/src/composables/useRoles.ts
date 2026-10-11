@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/vue-query';
 import { http } from '../api';
-import type { RoleRow } from '../types';
+import type { EndpointSwitches, RoleRow } from '../types';
 import { useApiMutation } from './useApiMutation';
 import { userKeys } from './useUsers';
 
 export const roleKeys = { all: ['roles'] as const };
 
-type RolePatch = Partial<Pick<RoleRow, 'name' | 'canSetOwnLevels' | 'canManageOwnRules' | 'canSeeStatus'>>;
+type RolePatch = Partial<Pick<RoleRow, 'name' | 'canSeeOtherEndpoints'>>;
 
 // Users show their role's name, so role writes refresh the users too.
 const changed = () => [roleKeys.all, userKeys.all];
@@ -34,6 +34,14 @@ export function useSetRoleInstances() {
   return useApiMutation(
     ({ id, instanceIds }: { id: string; instanceIds: string[] }) =>
       http.put(`/api/roles/${id}/instances`, { instanceIds }),
+    changed(),
+  );
+}
+
+export function useSetRoleEndpointSwitches() {
+  return useApiMutation(
+    ({ id, instanceId, ...patch }: Partial<EndpointSwitches> & { id: string; instanceId: string }) =>
+      http.patch(`/api/roles/${id}/endpoints/${instanceId}`, patch),
     changed(),
   );
 }

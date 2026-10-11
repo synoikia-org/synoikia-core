@@ -68,8 +68,11 @@ export const useSetGroupLevel = (target: MaybeRefOrGetter<AccessTarget>) =>
     scoped ? http.put(group(base, key), { level }) : http.patch(group(base, key), { level }),
   );
 
+/** A role's bulk route sits on the endpoint; the user's own scope has none. */
 export const useSetAllGroups = (target: MaybeRefOrGetter<AccessTarget>) =>
-  useLevelMutation(target, (base, _scoped, level: Level) => http.post(`${base}/groups/bulk-level`, { level }));
+  useLevelMutation(target, (base, scoped, level: Level) =>
+    http.post(scoped ? `${base}/bulk-level` : `${base}/groups/bulk-level`, { level }),
+  );
 
 export const useRenameGroup = (target: MaybeRefOrGetter<AccessTarget>) =>
   useLevelMutation(target, (base, _scoped, { key, label }: { key: string; label: string }) =>

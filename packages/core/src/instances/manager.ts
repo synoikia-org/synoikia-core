@@ -7,7 +7,7 @@ import { asc, count, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { PublicRole } from '../auth/roles.js';
 import { applyRegistrySync } from '../catalog/registry.js';
-import { roleInstanceIds } from '../catalog/role-levels.js';
+import { roleEndpointSwitches } from '../catalog/role-levels.js';
 import { applyCatalogSync } from '../catalog/sync.js';
 import type { SyncSummary } from '../catalog/sync.js';
 import { aad } from '../crypto/index.js';
@@ -152,32 +152,66 @@ export class InstanceManager {
       .map(({ instance, plugin }) => this.describe(instance, plugin));
   }
 
-  /** The role's endpoints at `mcpBase`, with live status only where the role shows it (design §6.4). */
+  /** The role's endpoints at `mcpBase`, each with the role's switches on it and live status only where
+   * its switch shows it (design §6.4). */
   listForRole(role: PublicRole, mcpBase: string) {
-    const mine = role.isAdmin ? null : new Set(roleInstanceIds(this.db, role.id));
     const mode = getSettings(this.db, 'mcp').defaultAuthMode;
-    return this.list()
-      .filter((i) => !mine || mine.has(i.id))
-      .map((i) => ({
-        id: i.id,
-        slug: i.slug,
-        displayName: i.displayName,
-        endpointUrl: `${mcpBase}/${i.slug}`,
-        authMode: i.authMode ?? mode,
-        ...(role.isAdmin || role.canSeeStatus
-          ? {
-              status: {
-                enabled: i.enabled,
-                state: i.status,
-                error: i.statusError,
-                plugin: i.plugin.name,
-                upstreamVersion: i.upstreamVersion,
-                lastSyncedAt: i.lastSyncedAt,
-                lastSyncStatus: i.lastSyncStatus,
-              },
-            }
-          : {}),
-      }));
+    return this.list().flatMap((i) => {
+      const switches = roleEndpointSwitches(this.db, role.id, i.id);
+      if (!switches) return [];
+      return [
+        {
+          id: i.id,
+          slug: i.slug,
+          displayName: i.displayName,
+          endpointUrl: `${mcpBase}/${i.slug}`,
+          authMode: i.authMode ?? mode,
+          ...switches,
+          ...(switches.canSeeStatus
+            ? {
+                status: {
+                  enabled: i.enabled,
+                  state: i.status,
+                  error: i.statusError,
+                  plugin: i.plugin.name,
+                  upstreamVersion: i.upstreamVersion,
+                  lastSyncedAt: i.lastSyncedAt,
+                  lastSyncStatus: i.lastSyncStatus,
+                },
+              }
+            : {}),
+        },
+      ];
+    });
+  }
+
+  /** Endpoints outside the role, by name only, when the role may see them (design §6.4). Admins have every one. */
+  listUnassigned(role: PublicRole) {
+    if (role.isAdmin || !role.canSeeOtherEndpoints) return [];
+    return this.db
+      .select({ instance: pluginInstances, plugin: plugins })
+      .from(pluginInstances)
+      .innerJoin(plugins, eq(pluginInstances.pluginId, plugins.id))
+      .orderBy(asc(pluginInstances.slug))
+      .all()
+      .filter(({ instance }) => !roleEndpointSwitches(this.db, role.id, instance.id))
+      .map(({ instance, plugin }) => {
+        const manifest = plugin.status === 'ok' ? parseManifest(plugin.manifest) : undefined;
+        return {
+          id: instance.id,
+          slug: instance.slug,
+          displayName: instance.displayName,
+          plugin: manifest?.name ?? plugin.pluginId,
+          description: manifest?.description ?? null,
+        };
+      });
+  }
+
+  /** One endpoint outside the role, as `listUnassigned` shows it; 404 for any other id. */
+  aboutUnassigned(role: PublicRole, instanceId: string) {
+    const endpoint = this.listUnassigned(role).find((e) => e.id === instanceId);
+    if (!endpoint) throw new NotFoundError('instance_not_found', 'No such endpoint');
+    return { ...endpoint, role: role.name };
   }
 
   get(id: string) {

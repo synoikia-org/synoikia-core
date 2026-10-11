@@ -5,20 +5,18 @@ import { rovingKeydown } from '../a11y';
 import { errorText } from '../api';
 import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
 import { ago } from '../format';
-import { useSessionStore } from '../stores/session';
 import AccessView from './instance/AccessView.vue';
 import RulesView from './instance/RulesView.vue';
 
-/** One endpoint as a user sees it (design §6.4): their operations and levels, read-only unless the role
- * lets them set their own, and their own pre-approval rules where the role allows them. */
+/** One endpoint as a user sees it (design §6.4): their operations and levels, read-only unless the role's
+ * switch on this endpoint lets them set their own, and their own pre-approval rules where it allows them. */
 const route = useRoute();
-const session = useSessionStore();
 const id = computed(() => String(route.params.id));
 const { endpoints: mine, error: loadError } = useMyEndpointsQuery();
 const endpoint = computed(() => mine.value.find((e) => e.id === id.value));
 const tab = ref<'access' | 'rules'>('access');
 const uid = useId();
-const tabs = computed(() => !!session.role?.canManageOwnRules);
+const tabs = computed(() => !!endpoint.value?.canManageOwnRules);
 const TABS = [
   ['access', 'Access'],
   ['rules', 'My pre-approval rules'],
@@ -72,14 +70,14 @@ const error = computed(() => (loadError.value ? errorText(loadError.value) : und
     </nav>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <div
-      v-if="tab === 'access'"
+      v-if="tab === 'access' || !tabs"
       :id="`${uid}-panel`"
       class="stack"
       :role="tabs ? 'tabpanel' : undefined"
       :aria-labelledby="tabs ? `${uid}-tab-access` : undefined"
     >
       <p class="small muted">
-        <template v-if="session.role?.canSetOwnLevels">
+        <template v-if="endpoint?.canSetOwnLevels">
           Your role sets the most each operation can do here. You can lower that for your own clients.
         </template>
         <template v-else>The levels your role gives you. An administrator sets them.</template>
@@ -88,7 +86,7 @@ const error = computed(() => (loadError.value ? errorText(loadError.value) : und
         :key="id"
         :instance="{ id, slug: endpoint?.slug ?? '' }"
         :scope="{ kind: 'own' }"
-        :readonly="!session.role?.canSetOwnLevels"
+        :readonly="!endpoint?.canSetOwnLevels"
       />
     </div>
     <RulesView

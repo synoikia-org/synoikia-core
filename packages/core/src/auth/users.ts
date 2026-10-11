@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import { and, asc, count, eq, ne, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
-import { levelView, roleHasInstance, setOwnLevel } from '../catalog/role-levels.js';
+import { levelView, roleEndpointSwitches, roleHasInstance, setOwnLevel } from '../catalog/role-levels.js';
 import type { LevelTarget, LevelView } from '../catalog/role-levels.js';
 import { aad } from '../crypto/index.js';
 import type { SecretBox } from '../crypto/index.js';
@@ -92,9 +92,7 @@ export class UserService {
           id: u.roleId,
           name: 'Unknown',
           isAdmin: false,
-          canSetOwnLevels: false,
-          canManageOwnRules: false,
-          canSeeStatus: false,
+          canSeeOtherEndpoints: false,
         };
   }
 
@@ -491,14 +489,17 @@ export class UserService {
     return roleHasInstance(this.db, u.roleId, instanceId);
   }
 
-  assertAllowed(u: UserRow, cap: 'canSetOwnLevels' | 'canManageOwnRules') {
-    if (!this.roleOf(u)[cap]) throw new ForbiddenError('forbidden', 'Your role does not allow this');
+  /** The role's switch on one of its endpoints (design §6.4). */
+  assertAllowed(u: UserRow, instanceId: string, cap: 'canSetOwnLevels' | 'canManageOwnRules') {
+    if (!roleEndpointSwitches(this.db, u.roleId, instanceId)?.[cap])
+      throw new ForbiddenError('forbidden', 'Your role does not allow this on this endpoint');
   }
 
-  /** The user's levels on an endpoint; a non-admin sees only what they can call. */
+  /** The user's levels on an endpoint. Without the endpoint's status switch, a non-admin sees only what they can call. */
   levels(u: UserRow, instanceId: string): LevelView {
     const who = { roleId: u.roleId, userId: u.id };
-    return levelView(this.db, instanceId, who, { reachableOnly: !this.roleOf(u).isAdmin });
+    const seesAll = !!roleEndpointSwitches(this.db, u.roleId, instanceId)?.canSeeStatus;
+    return levelView(this.db, instanceId, who, { reachableOnly: !seesAll });
   }
 
   setOwnLevel(u: UserRow, instanceId: string, target: LevelTarget, level: AccessLevel | null): LevelView {

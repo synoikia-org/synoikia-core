@@ -20,9 +20,7 @@ export const roles = sqliteTable('roles', {
   id: id(),
   name: text('name').notNull().unique(),
   builtIn: flag('built_in').notNull().default(false),
-  canSetOwnLevels: flag('can_set_own_levels').notNull().default(false),
-  canManageOwnRules: flag('can_manage_own_rules').notNull().default(false),
-  canSeeStatus: flag('can_see_status').notNull().default(false),
+  canSeeOtherEndpoints: flag('can_see_other_endpoints').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: ts('updated_at'),
 });
@@ -363,6 +361,9 @@ export const roleInstances = sqliteTable(
     instanceId: text('instance_id')
       .notNull()
       .references(() => pluginInstances.id, { onDelete: 'cascade' }),
+    canSetOwnLevels: flag('can_set_own_levels').notNull().default(false),
+    canManageOwnRules: flag('can_manage_own_rules').notNull().default(false),
+    canSeeStatus: flag('can_see_status').notNull().default(false),
   },
   (t) => [uniqueIndex('role_instances_idx').on(t.roleId, t.instanceId)],
 );

@@ -9,7 +9,7 @@ Core keeps all data in one SQLite file, `DATA_DIR/synoikia.sqlite` (default `/da
 | Table         | Holds                                                                                                                                                                                                                                                            |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `users`       | `username` (unique), `password_hash`, `totp_secret_enc`, `totp_enabled`, `totp_last_step`, `recovery_codes_hash`, `oidc_issuer`, `oidc_subject`, `last_login_at`, `disabled`, `role_id`, `registered_via` (`oidc`, `external`, `signup`; NULL: made by an admin) |
-| `roles`       | `name` (unique), `built_in` (the Admin role, id `admin`), `can_set_own_levels`, `can_manage_own_rules`, `can_see_status`                                                                                                                                         |
+| `roles`       | `name` (unique), `built_in` (the Admin role, id `admin`), `can_see_other_endpoints`                                                                                                                                                                              |
 | `sessions`    | `id_hash` (key), `user_id`, `kind` (`admin`, `oauth_ui`, `approval_ui`), `last_seen_at`, `expires_at`, `ip`, `user_agent`                                                                                                                                        |
 | `settings`    | `key`, `value` (JSON): authentication defaults, rate limits, flags                                                                                                                                                                                               |
 | `oidc_config` | One row: `issuer`, `client_id`, `client_secret_enc`, `scopes`, `allow_policy`, `auto_provision`, `enabled`                                                                                                                                                       |
@@ -46,11 +46,11 @@ The `decision` of a call is one of: `auto-executed`, `auto-approved:level`, `aut
 
 **Roles** (§6.4)
 
-| Table            | Holds                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| `role_instances` | `role_id`, `instance_id`: the endpoints of a role                                                          |
-| `role_levels`    | `role_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`, `changed_by`: role maximums |
-| `user_levels`    | `user_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`: own levels                  |
+| Table            | Holds                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `role_instances` | `role_id`, `instance_id`: the endpoints of a role, with `can_set_own_levels`, `can_manage_own_rules`, `can_see_status` |
+| `role_levels`    | `role_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`, `changed_by`: role maximums             |
+| `user_levels`    | `user_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`: own levels                              |
 
 **MCP client authentication**
 

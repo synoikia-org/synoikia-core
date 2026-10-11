@@ -1,4 +1,5 @@
 import type { RouteLocationNormalized } from 'vue-router';
+import type { ConnectionSchema } from './types';
 
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '—';
@@ -83,4 +84,20 @@ export function kindSource(reason: string | null | undefined, locked: boolean): 
 export function pageTitle(to: RouteLocationNormalized): string | undefined {
   const slug = to.params.slug;
   return to.meta.title && typeof slug === 'string' ? `${to.meta.title} · /${slug}` : to.meta.title;
+}
+
+const CONNECTION_FIELD = /\{\{\s*connection\.(\w+)\s*\}\}/g;
+
+/** Declared network hosts as readers see them: `{{connection.<field>}}` names the field by its title. */
+export function describeHosts(
+  hosts: string[],
+  schema?: ConnectionSchema,
+): { raw: string; text: string; literal: boolean }[] {
+  const title = (field: string) => schema?.properties?.[field]?.title ?? field;
+  return hosts.map((host) => {
+    const whole = /^\{\{\s*connection\.(\w+)\s*\}\}$/.exec(host);
+    if (whole) return { raw: host, text: `the host of each endpoint's ${title(whole[1]!)}`, literal: false };
+    const text = host.replace(CONNECTION_FIELD, (_m, field: string) => `‹${title(field)}›`);
+    return { raw: host, text, literal: text === host };
+  });
 }
