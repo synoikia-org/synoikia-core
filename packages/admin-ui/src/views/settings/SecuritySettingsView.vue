@@ -297,7 +297,9 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
               : null
           "
         />
-        <p id="a-ret-help" class="help">Empty keeps everything. The default is 90 days. Purges are themselves audited.</p>
+        <p id="a-ret-help" class="help">
+          Empty keeps everything. The default is 90 days. Purges are themselves audited.
+        </p>
       </div>
       <p v-if="messages.audit" class="alert" :class="messages.audit.kind" :role="messageRole(messages.audit.kind)">
         {{ messages.audit.text }}
