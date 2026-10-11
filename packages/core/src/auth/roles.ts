@@ -74,6 +74,7 @@ export class RoleService {
       .map((r) => ({
         ...toPublicRole(r),
         users: members.get(r.id) ?? 0,
+        instanceIds: endpoints.filter((e) => e.roleId === r.id).map((e) => e.instanceId),
         endpoints: endpoints
           .filter((e) => e.roleId === r.id)
           .map(({ instanceId, canSetOwnLevels, canManageOwnRules, canSeeStatus }) => ({

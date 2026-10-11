@@ -11,8 +11,8 @@ afterEach(() => {
 
 const operators = { ...adminRole, id: 'r1', name: 'Operators', isAdmin: false };
 const roles: RoleRow[] = [
-  { ...adminRole, users: 1, instanceIds: [], isDefault: false },
-  { ...operators, users: 1, instanceIds: ['i1'], isDefault: true },
+  { ...adminRole, users: 1, instanceIds: [], endpoints: [], isDefault: false },
+  { ...operators, users: 1, instanceIds: ['i1'], endpoints: [], isDefault: true },
 ];
 const me: PublicUser = { ...signedIn.user, createdAt: '2026-01-01T00:00:00Z', lastLoginAt: null };
 const olga: PublicUser = { ...me, id: 'u2', username: 'olga', totpEnabled: true, role: operators };

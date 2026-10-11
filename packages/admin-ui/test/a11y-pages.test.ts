@@ -134,7 +134,7 @@ describe('Plugins tabs', () => {
 
 describe('My endpoint tabs', () => {
   it('switch between access and own rules from the keyboard', async () => {
-    const role = { ...signedIn.user.role, isAdmin: false, canManageOwnRules: true, canSetOwnLevels: false };
+    const role = { ...signedIn.user.role, isAdmin: false };
     const user = { ...signedIn.user, role };
     fakeApi({
       'GET /api/session': { ...signedIn, user },
@@ -145,6 +145,9 @@ describe('My endpoint tabs', () => {
           displayName: 'Acme',
           endpointUrl: 'https://mcp.example.com/nas',
           authMode: 'oauth',
+          canManageOwnRules: true,
+          canSetOwnLevels: false,
+          canSeeStatus: true,
           status: { state: 'ready', enabled: true, plugin: 'Acme', upstreamVersion: null, lastSyncedAt: null },
         },
       ],
