@@ -2,25 +2,28 @@
 import { computed, ref, useId } from 'vue';
 import { errorText } from '../../api';
 import { latestError } from '../../composables/useApiMutation';
+import InfoTip from '../../components/InfoTip.vue';
 import { useConfirm } from '../../composables/useConfirm';
 import { useOverviewQuery } from '../../composables/useOverview';
 import {
   useCreateRole,
   useDeleteRole,
   useRolesQuery,
+  useSetRoleEndpointSwitches,
   useSetRoleInstances,
   useUpdateRole,
 } from '../../composables/useRoles';
-import type { RoleRow } from '../../types';
+import type { EndpointSwitches, RoleRow } from '../../types';
 
-/** Roles (design §6.4): Admin is built in; each other role has endpoints, maximum levels (set on an
- * endpoint's Access page) and role-wide switches. */
+/** Roles (design §6.4): Admin is built in; each other role has endpoints, three switches on each, maximum
+ * levels (set on an endpoint's Access page) and the role-wide "See other endpoints". */
 const overviewQuery = useOverviewQuery();
 const rolesQuery = useRolesQuery();
 const createRole = useCreateRole();
 const update = useUpdateRole();
 const del = useDeleteRole();
 const setInstances = useSetRoleInstances();
+const setSwitches = useSetRoleEndpointSwitches();
 const { confirm, prompt } = useConfirm();
 const instances = computed(() => overviewQuery.data.value?.instances ?? []);
 const roles = computed(() => rolesQuery.data.value ?? []);
@@ -30,21 +33,36 @@ const uid = useId();
 // One page alert: the latest action's failure, else a failed load.
 const error = computed(() => {
   const loadError = rolesQuery.error.value ?? overviewQuery.error.value;
-  return latestError([createRole, update, del, setInstances]) ?? (loadError ? errorText(loadError) : undefined);
+  return (
+    latestError([createRole, update, del, setInstances, setSwitches]) ?? (loadError ? errorText(loadError) : undefined)
+  );
 });
 
-const SWITCHES = [
+const ENDPOINT_SWITCHES: { key: keyof EndpointSwitches; label: string; help: string }[] = [
   {
-    key: 'canSeeOtherEndpoints',
-    label: 'See other endpoints',
-    help: 'Users see the endpoints their role does not have, without access to them.',
+    key: 'canSetOwnLevels',
+    label: 'Set personal levels',
+    help: 'Users set personal levels for their own calls on this endpoint, up to the role maximum.',
   },
-] as const;
+  {
+    key: 'canManageOwnRules',
+    label: 'Own pre-approval rules',
+    help: 'Users add pre-approval rules on this endpoint that apply only to their own calls.',
+  },
+  {
+    key: 'canSeeStatus',
+    label: 'See endpoint status',
+    help: 'Users see the health, plugin and sync state of this endpoint, and every operation, also those at None.',
+  },
+];
 
 const custom = computed(() => roles.value.filter((r) => !r.isAdmin));
 
 const create = () => createRole.mutate(newName.value.trim(), { onSuccess: () => (newName.value = '') });
-const flip = (r: RoleRow, key: (typeof SWITCHES)[number]['key']) => update.mutate({ id: r.id, [key]: !r[key] });
+const flipOther = (r: RoleRow) => update.mutate({ id: r.id, canSeeOtherEndpoints: !r.canSeeOtherEndpoints });
+const endpointOf = (r: RoleRow, instanceId: string) => r.endpoints.find((e) => e.instanceId === instanceId);
+const flipSwitch = (r: RoleRow, instanceId: string, key: keyof EndpointSwitches) =>
+  setSwitches.mutate({ id: r.id, instanceId, [key]: !endpointOf(r, instanceId)?.[key] });
 const rename = async (r: RoleRow) => {
   const name = (
     await prompt({ title: `Rename ${r.name}`, label: 'New name', initial: r.name, action: 'Rename' })
@@ -54,12 +72,10 @@ const rename = async (r: RoleRow) => {
 const remove = async (r: RoleRow) => {
   if (await confirm({ title: `Delete the role ${r.name}?`, action: 'Delete', danger: true })) del.mutate(r.id);
 };
-const toggleEndpoint = (r: RoleRow, id: string) =>
-  setInstances.mutate({
-    id: r.id,
-    instanceIds: r.instanceIds.includes(id) ? r.instanceIds.filter((x) => x !== id) : [...r.instanceIds, id],
-  });
-const slugOf = (id: string) => instances.value.find((i) => i.id === id)?.slug ?? id;
+const toggleEndpoint = (r: RoleRow, id: string) => {
+  const ids = r.endpoints.map((e) => e.instanceId);
+  setInstances.mutate({ id: r.id, instanceIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
+};
 </script>
 
 <template>
@@ -96,29 +112,58 @@ const slugOf = (id: string) => instances.value.find((i) => i.id === id)?.slug ??
         Built in. Every endpoint, at the endpoint's own levels, and every setting.
       </p>
       <template v-else>
-        <div class="switches" role="group" :aria-labelledby="`${uid}-${r.id}`">
-          <label v-for="s in SWITCHES" :key="s.key" class="row small check" :title="s.help">
-            <input type="checkbox" :checked="r[s.key]" @change="flip(r, s.key)" /> {{ s.label }}
+        <div class="other">
+          <label class="row small check">
+            <input
+              type="checkbox"
+              :checked="r.canSeeOtherEndpoints"
+              :aria-describedby="`${uid}-${r.id}-other`"
+              @change="flipOther(r)"
+            />
+            See other endpoints
           </label>
+          <p :id="`${uid}-${r.id}-other`" class="small muted">
+            Users see the other endpoints by name and description, without access.
+          </p>
         </div>
-        <div :id="`${uid}-${r.id}-endpoints`" class="small"><strong>Endpoints</strong></div>
-        <div class="endpoints" role="group" :aria-labelledby="`${uid}-${r.id} ${uid}-${r.id}-endpoints`">
-          <label v-for="i in instances" :key="i.id" class="row small check">
-            <input type="checkbox" :checked="r.instanceIds.includes(i.id)" @change="toggleEndpoint(r, i.id)" />
-            <span :id="`${uid}-${r.id}-${i.id}`" class="mono">/{{ i.slug }}</span>
-            <RouterLink
-              v-if="r.instanceIds.includes(i.id)"
-              :to="`/endpoints/${i.slug}/access?role=${r.id}`"
-              :aria-describedby="`${uid}-${r.id}-${i.id}`"
+        <h3 :id="`${uid}-${r.id}-endpoints`" class="small">Endpoints</h3>
+        <ul class="endpoints" :aria-labelledby="`${uid}-${r.id} ${uid}-${r.id}-endpoints`">
+          <li v-for="i in instances" :key="i.id" class="endpoint" :data-endpoint="i.slug">
+            <div class="row">
+              <label class="row small check">
+                <input type="checkbox" :checked="!!endpointOf(r, i.id)" @change="toggleEndpoint(r, i.id)" />
+                <span :id="`${uid}-${r.id}-${i.id}`" class="mono">/{{ i.slug }}</span>
+              </label>
+              <RouterLink
+                v-if="endpointOf(r, i.id)"
+                class="small"
+                :to="`/endpoints/${i.slug}/access?role=${r.id}`"
+                :aria-describedby="`${uid}-${r.id}-${i.id}`"
+              >
+                levels…
+              </RouterLink>
+            </div>
+            <div
+              v-if="endpointOf(r, i.id)"
+              class="switches"
+              role="group"
+              :aria-label="`${r.name}: switches on /${i.slug}`"
             >
-              levels…
-            </RouterLink>
-          </label>
-          <span v-if="!instances.length" class="muted small">No endpoints yet.</span>
-        </div>
-        <p v-if="r.instanceIds.length" class="small muted">
-          Has {{ r.instanceIds.map((id) => '/' + slugOf(id)).join(', ') }}.
-        </p>
+              <span v-for="sw in ENDPOINT_SWITCHES" :key="sw.key" class="switch">
+                <label class="row small check">
+                  <input
+                    type="checkbox"
+                    :checked="endpointOf(r, i.id)?.[sw.key]"
+                    @change="flipSwitch(r, i.id, sw.key)"
+                  />
+                  {{ sw.label }}
+                </label>
+                <InfoTip :text="sw.help" :label="`About ${sw.label}`" />
+              </span>
+            </div>
+          </li>
+          <li v-if="!instances.length" class="muted small">No endpoints yet.</li>
+        </ul>
       </template>
     </div>
     <p v-if="!custom.length" class="small muted">No roles besides Admin yet.</p>
@@ -137,10 +182,39 @@ const slugOf = (id: string) => instances.value.find((i) => i.id === id)?.slug ??
   flex-direction: column;
   gap: 10px;
 }
-.switches,
+.other p {
+  margin: 2px 0 0 24px;
+}
+h3 {
+  margin: 0;
+}
 .endpoints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.endpoint {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.switches {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
+  gap: 6px 20px;
+  margin: 6px 0 0 24px;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .switches {
+    flex-direction: column;
+    margin-left: 0;
+  }
 }
 </style>

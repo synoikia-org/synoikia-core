@@ -15,7 +15,7 @@ const setInstances = useSetRoleInstances();
 const roles = computed(() => rolesQuery.data.value ?? []);
 const roleId = computed(() => (typeof route.query.role === 'string' ? route.query.role : 'admin'));
 const role = computed(() => roles.value.find((r) => r.id === roleId.value));
-const inRole = computed(() => role.value?.instanceIds.includes(props.instance.id) ?? false);
+const inRole = computed(() => role.value?.endpoints.some((e) => e.instanceId === props.instance.id) ?? false);
 const error = computed(
   () => setInstances.errorText.value ?? (rolesQuery.error.value ? errorText(rolesQuery.error.value) : undefined),
 );
@@ -27,7 +27,10 @@ function pick(e: Event) {
 
 function addToRole() {
   if (!role.value) return;
-  setInstances.mutate({ id: role.value.id, instanceIds: [...role.value.instanceIds, props.instance.id] });
+  setInstances.mutate({
+    id: role.value.id,
+    instanceIds: [...role.value.endpoints.map((e) => e.instanceId), props.instance.id],
+  });
 }
 </script>
 

@@ -215,14 +215,12 @@ describe('roles for admins', () => {
           name: 'Admin',
           isAdmin: true,
           users: 1,
-          instanceIds: [],
           endpoints: [],
           isDefault: false,
         },
         {
           ...role(),
           users: 2,
-          instanceIds: ['i1'],
           endpoints: [{ instanceId: 'i1', canSetOwnLevels: false, canManageOwnRules: false, canSeeStatus: false }],
           isDefault: false,
         },
@@ -264,6 +262,62 @@ describe('roles for admins', () => {
     expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({
       path: '/api/roles/r1',
       body: { canSeeOtherEndpoints: true },
+    });
+  });
+
+  it('flips one switch on one endpoint of a role, and keeps the endpoint list', async () => {
+    const { calls } = roleApi({
+      'PATCH /api/roles/r1/endpoints/i1': { canSetOwnLevels: false, canManageOwnRules: true, canSeeStatus: false },
+    });
+    const { wrapper } = await mountAt('/settings/roles');
+    await flushPromises();
+    const group = wrapper.get('[role="group"][aria-label="Operators: switches on /nas"]');
+    expect(group.text()).toContain('Set personal levels');
+    expect(group.text()).toContain('See endpoint status');
+    expect(wrapper.get('[data-role="Operators"]').text()).toContain(
+      'Users see the other endpoints by name and description, without access.',
+    );
+    await group
+      .findAll('label')
+      .find((l) => l.text() === 'Own pre-approval rules')!
+      .get('input')
+      .setValue(true);
+    await flushPromises();
+    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({
+      path: '/api/roles/r1/endpoints/i1',
+      body: { canManageOwnRules: true },
+    });
+    expect(wrapper.get('[data-role="Operators"]').find('a[href="/endpoints/nas/access?role=r1"]').exists()).toBe(true);
+  });
+
+  it('shows a failed switch change as an alert', async () => {
+    roleApi({
+      'PATCH /api/roles/r1/endpoints/i1': new Response(
+        JSON.stringify({ error: 'not_in_role', message: 'Add the endpoint to the role first' }),
+        { status: 409, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+    const { wrapper } = await mountAt('/settings/roles');
+    await flushPromises();
+    await wrapper.get('[aria-label="Operators: switches on /nas"]').findAll('input')[0]!.setValue(true);
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain('Add the endpoint to the role first');
+  });
+
+  it('removes an endpoint from a role', async () => {
+    const { calls } = roleApi({ 'PUT /api/roles/r1/instances': { instanceIds: [] } });
+    const { wrapper } = await mountAt('/settings/roles');
+    await flushPromises();
+    await wrapper
+      .get('[data-role="Operators"] [data-endpoint="nas"]')
+      .findAll('label')
+      .find((l) => l.text() === '/nas')!
+      .get('input')
+      .setValue(false);
+    await flushPromises();
+    expect(calls.find((c) => c.method === 'PUT')).toMatchObject({
+      path: '/api/roles/r1/instances',
+      body: { instanceIds: [] },
     });
   });
 
