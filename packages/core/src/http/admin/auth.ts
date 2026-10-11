@@ -268,7 +268,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     const { url, stateToken } = await ctx.oidc.begin({
       purpose: 'admin_link',
       redirectUri: adminCallbackUrl(c, ctx),
-      returnTo: '/settings/profile',
+      returnTo: '/profile',
       userId: c.get('user').id,
     });
     setCookie(c, OIDC_COOKIE, stateToken, {
@@ -302,14 +302,14 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       // Linking requires the same signed-in user who started it.
       const session = ctx.sessions.validate(readSessionCookie(c), 'admin', sessionLimits(ctx));
       if (!session || session.user.id !== state.userId) return fail('session_changed');
-      if (!ctx.oidc.isAllowed(identity)) return c.redirect('/settings/profile?error=oidc_not_allowed');
+      if (!ctx.oidc.isAllowed(identity)) return c.redirect('/profile?error=oidc_not_allowed');
       try {
         ctx.users.linkOidc(session.user.id, identity.issuer, identity.subject);
       } catch (err) {
-        if (err instanceof ConflictError) return c.redirect('/settings/profile?error=oidc_taken');
+        if (err instanceof ConflictError) return c.redirect('/profile?error=oidc_taken');
         throw err;
       }
-      return c.redirect('/settings/profile?linked=1');
+      return c.redirect('/profile?linked=1');
     }
     if (state.purpose !== 'admin_login') return fail('wrong_flow');
     const user = await ctx.oidc.resolveUser(ctx.users, identity);
