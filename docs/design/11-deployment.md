@@ -22,7 +22,7 @@
 ## Reverse proxy
 
 - `mcp.example.com` → `:8080`. The proxy must pass `Mcp-Session-Id`, allow SSE (no buffering), and forward `X-Forwarded-Proto` and `Host`.
-- `admin.lan`, or a host on a VPN only → `:8081`. Do not publish it on the internet. If it must be remote, put it behind Cloudflare Access or Authelia, in addition to the portal sign-in.
+- `admin.example.com` → `:8081`. The admin portal runs on this dedicated port, separate from the MCP port. The portal sign-in protects it (§6.1). Cloudflare Access or Authelia can add a second layer.
 - `TRUST_PROXY=true`, or a number of proxies (for example `2`), makes core use `X-Forwarded-*`. Core then takes the client IP (for rate limits and audit), the scheme and the cookie `Secure` flag from these headers.
 - Core reads `X-Forwarded-For` from the right. The entry that the outermost trusted proxy added is the client. Core ignores the entries to its left, because the client sent them.
 
