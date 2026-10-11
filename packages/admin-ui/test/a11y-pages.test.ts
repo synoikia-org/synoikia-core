@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SchemaForm from '../src/components/SchemaForm.vue';
-import { fakeApi, json, mountAt, signedIn } from './helpers';
+import { fakeApi, json, mcpSettings, mountAt, signedIn } from './helpers';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -16,7 +16,7 @@ const instance = {
   slug: 'nas',
   displayName: 'Acme',
   enabled: true,
-  authMode: null,
+  authMethods: null,
   status: 'ready',
   statusError: null,
   upstreamVersion: null,
@@ -145,7 +145,7 @@ describe('My endpoint tabs', () => {
             slug: 'nas',
             displayName: 'Acme',
             endpointUrl: 'https://mcp.example.com/nas',
-            authMode: 'oauth',
+            authMethods: ['oauth'],
             canManageOwnRules: true,
             canSetOwnLevels: false,
             canSeeStatus: true,
@@ -322,14 +322,7 @@ describe('Alerts and notices', () => {
       'GET /api/overview': overview,
       'GET /api/settings': {
         security: {},
-        mcp: {
-          defaultAuthMode: 'oauth',
-          allowDynamicRegistration: true,
-          cfAccess: { teamDomain: '', aud: '' },
-          trustedIdentityHeader: '',
-          accessTokenTtlMinutes: 60,
-          refreshTokenTtlDays: 30,
-        },
+        mcp: mcpSettings,
         audit: { retentionDays: null },
         oidc: null,
         forceLocalLogin: false,
@@ -338,7 +331,7 @@ describe('Alerts and notices', () => {
       },
       'PUT /api/settings/mcp': (b: unknown) => (fail ? json(400, { error: 'invalid', message: 'Bad value' }) : b),
     });
-    await mountAt('/settings/mcp');
+    await mountAt('/settings/client-auth');
     const form = document.querySelector('form')!;
     form.requestSubmit();
     await flushPromises();

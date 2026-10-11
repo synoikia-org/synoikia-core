@@ -9,7 +9,7 @@ const session = useSessionStore();
 const tabs = computed(() =>
   session.isAdmin
     ? [
-        { path: 'mcp', label: 'MCP access' },
+        { path: 'client-auth', label: 'Client auth' },
         { path: 'security', label: 'Admin UI settings' },
         { path: 'users', label: 'Users' },
         { path: 'roles', label: 'Roles' },

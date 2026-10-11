@@ -196,7 +196,10 @@ describe('New endpoint', () => {
 
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(writes(calls)[0]).toMatchObject({ path: '/api/instances', body: { pluginId: 'acme', slug: 'mine' } });
+    expect(writes(calls)[0]).toMatchObject({
+      path: '/api/instances',
+      body: { pluginId: 'acme', slug: 'mine', authMethods: null },
+    });
     // The overview has the new endpoint before its page opens, so the page needs no second look.
     expect(calls.filter((c) => c.path === '/api/overview')).toHaveLength(3);
     expect(router.currentRoute.value.path).toBe('/endpoints/mine/connection');

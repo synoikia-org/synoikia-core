@@ -237,7 +237,7 @@ async function setOpLevel(op: Operation, group: GroupSummary, level: Level) {
     !(await confirm({
       title: `${op.key} is locked (destructive or irreversible).`,
       message:
-        'At Ask it becomes callable: every call needs your approval on the approval page, with a typed confirmation and a fresh authenticator code. Continue?',
+        'At Ask it becomes callable: every call needs your approval on the approval page, with a typed confirmation. Continue?',
       action: 'Continue',
       danger: true,
     }))

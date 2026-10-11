@@ -16,7 +16,7 @@ const instance = {
   slug: 'nas',
   displayName: 'Acme',
   enabled: true,
-  authMode: null,
+  authMethods: null,
   status: 'ready',
   statusError: null,
   upstreamVersion: null,

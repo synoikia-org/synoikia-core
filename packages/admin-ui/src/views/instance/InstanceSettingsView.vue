@@ -3,6 +3,7 @@ import { messageRole } from '../../a11y';
 import { computed, ref, useId } from 'vue';
 import { useRouter } from 'vue-router';
 import { errorText } from '../../api';
+import AuthMethodsPicker from '../../components/AuthMethodsPicker.vue';
 import ChipsInput from '../../components/ChipsInput.vue';
 import ModalDialog from '../../components/ModalDialog.vue';
 import {
@@ -11,9 +12,8 @@ import {
   useSessionGrantsQuery,
   useUpdateInstance,
 } from '../../composables/useInstance';
-import { AUTH_MODE_LABELS } from '../../format';
-import { AUTH_MODES } from '../../types';
-import type { AuthMode, Instance } from '../../types';
+import { useEnabledAuthMethods } from '../../composables/useSettings';
+import type { Instance } from '../../types';
 
 const props = defineProps<{ instance: Instance }>();
 const router = useRouter();
@@ -22,6 +22,7 @@ const update = useUpdateInstance(id);
 const del = useDeleteInstance(id);
 const grantsQuery = useSessionGrantsQuery(id);
 const revoke = useRevokeSessionGrant(id);
+const enabledMethods = useEnabledAuthMethods();
 
 // The form is a draft taken from the instance once; a refetch of the overview leaves the edits alone.
 const s = props.instance.settings;
@@ -29,7 +30,7 @@ const form = ref({
   displayName: props.instance.displayName,
   slug: props.instance.slug,
   enabled: props.instance.enabled,
-  authMode: (props.instance.authMode ?? '') as AuthMode | '',
+  authMethods: props.instance.authMethods ? [...props.instance.authMethods] : null,
   approvalTimeoutMin: s.approvalTimeoutMs / 60_000,
   formApprovals: s.formElicitationApprovals === 'writes',
   sessionGrantMaxHours: s.sessionGrantMaxHours,
@@ -61,7 +62,7 @@ async function save() {
       displayName: f.displayName,
       slug: f.slug !== props.instance.slug ? f.slug : undefined,
       enabled: f.enabled,
-      authMode: f.authMode || null,
+      authMethods: f.authMethods,
       settings: {
         approvalTimeoutMs: Math.round(f.approvalTimeoutMin * 60_000),
         formElicitationApprovals: f.formApprovals ? 'writes' : 'off',
@@ -117,14 +118,8 @@ async function remove() {
             Clients using /{{ instance.slug }} will stop working.
           </p>
         </div>
-        <div class="field">
-          <label for="s-auth">Client authentication</label>
-          <select id="s-auth" v-model="form.authMode">
-            <option value="">Global default</option>
-            <option v-for="m in AUTH_MODES" :key="m" :value="m">{{ AUTH_MODE_LABELS[m] }}</option>
-          </select>
-        </div>
       </div>
+      <AuthMethodsPicker v-model="form.authMethods" :enabled="enabledMethods" />
       <div class="field check">
         <label><input v-model="form.enabled" type="checkbox" /> Endpoint enabled</label>
       </div>
@@ -147,9 +142,9 @@ async function remove() {
         </div>
       </div>
       <p class="small muted">
-        Writes that ask are approved on an approval page that you open from the client, and you sign in there with your
-        authenticator app once per browser. Clients that can't open the page themselves show the link, and the call
-        continues after you decide.
+        Writes that ask are approved on an approval page that you open from the client. You sign in there once per
+        browser, or with your Cloudflare Access identity when external client auth is on. Clients that can't open the
+        page themselves show the link, and the call continues after you decide.
       </p>
       <div class="form-grid">
         <div class="field">
