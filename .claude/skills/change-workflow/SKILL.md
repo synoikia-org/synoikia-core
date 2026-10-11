@@ -47,6 +47,8 @@ Recommend one pattern, say why in a sentence, and get approval: in the plan for 
 - Stop only on blocking decisions; record everything else in the decisions log for the user to settle before the final merge.
 - Never merge to `main`. The user merges the integration PR.
 
+**In both patterns, the PR into `main`** is opened as a draft and watched (`subscribe_pr_activity`) from the moment it opens until it merges or closes, so CI results, reviews and conflicts wake the session. Mark it ready for review (`update_pull_request` with `draft: false`) only when the work is done and CI is green on its current head: the PR going ready is the signal to the user that it needs their review. If a push after that turns CI red, fix it; don't leave a red PR marked ready.
+
 Read `references/pr-chain.md` before starting a chain: it has the per-step loop, the PR body template, the blocking list and how to resume after an interruption.
 
 ## 4. Long task and not in Auto mode: suggest switching
@@ -58,4 +60,4 @@ A PR chain, or any task that will run for more than about an hour or across many
 - After every step, update the plan file's status section and the integration PR's progress table. They are the resume point after a usage limit or a restart.
 - Subagents commit early, in coherent chunks, so an interruption loses little.
 - PR events wake the session; don't poll. A one-time `send_later` check-in covers a lost event. Let a stale check-in fire and do nothing rather than deleting it.
-- Subscribe to each child PR when it opens and unsubscribe when it merges.
+- Subscribe to each child PR when it opens and unsubscribe when it merges. The PR into `main` stays watched until the user merges or closes it.

@@ -4,7 +4,7 @@ How to run a big change as a chain of child PRs into one integration PR. The use
 
 ## Branches
 
-- **Integration branch** `<topic>/integration`, from `origin/main`, pushed at the start. Open a **draft** PR from it into `main` right away; it carries the progress table and decisions log (template below).
+- **Integration branch** `<topic>/integration`, from `origin/main`, pushed at the start. Open a **draft** PR from it into `main` right away and subscribe to it; it carries the progress table and decisions log (template below).
 - **Child branches** `<topic>/<step>`, each from the current integration head, after the previous child merged.
 - Keep the integration branch **linear**: only squash-merged children land on it. Don't use "Update branch" (it adds a merge commit), and don't build it on top of an unmerged PR. If `main` moves, rebuild the integration branch on `main` (cherry-pick the step commits) before the final merge, so the user can **Rebase and merge** it.
 - Versions are bumped once, in the last step.
@@ -67,4 +67,4 @@ Read the plan file's status section, then check the repo: which child branch exi
 
 1. A security review of the whole integration diff, plus a final visual run when the plan promised one.
 2. Line counts before and after, test counts, and the open decisions list in the integration PR body.
-3. Mark the integration PR ready for review. Don't merge it; tell the user the merge method that keeps the step commits (Rebase and merge) and what it needs.
+3. When CI is green on the integration PR's head, mark it ready for review and keep watching it. Don't merge it; tell the user the merge method that keeps the step commits (Rebase and merge) and what it needs.
