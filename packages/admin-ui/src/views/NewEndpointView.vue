@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import AuthMethodsPicker from '../components/AuthMethodsPicker.vue';
 import PageHeader from '../components/PageHeader.vue';
 import SchemaForm from '../components/SchemaForm.vue';
 import { useCreateInstance } from '../composables/useInstance';
 import { usePluginsQuery } from '../composables/usePlugins';
-import { AUTH_MODE_LABELS } from '../format';
-import { AUTH_MODES } from '../types';
-import type { AuthMode } from '../types';
+import { useEnabledAuthMethods } from '../composables/useSettings';
+import type { AuthMethod } from '../types';
 
 const router = useRouter();
 const pluginsQuery = usePluginsQuery();
@@ -17,7 +17,8 @@ const busy = createInstance.isPending;
 const pluginId = ref('');
 const slug = ref('');
 const displayName = ref('');
-const authMode = ref<AuthMode | ''>('');
+const authMethods = ref<AuthMethod[] | null>(null);
+const enabledMethods = useEnabledAuthMethods();
 const config = ref<Record<string, unknown>>({});
 const secrets = ref<Record<string, string | null>>({});
 
@@ -47,7 +48,7 @@ function create() {
       pluginId: plugin.value.pluginId,
       slug: slug.value,
       displayName: displayName.value || undefined,
-      authMode: authMode.value || null,
+      authMethods: authMethods.value,
       connection: { ...config.value, ...filled },
     },
     { onSuccess: (created) => router.push(`/endpoints/${created.slug}/connection`) },
@@ -88,13 +89,7 @@ function create() {
           <input id="n-name" v-model="displayName" :placeholder="plugin?.manifest.name" />
         </div>
       </div>
-      <div class="field">
-        <label for="n-auth">Client authentication</label>
-        <select id="n-auth" v-model="authMode">
-          <option value="">Use the global default</option>
-          <option v-for="m in AUTH_MODES" :key="m" :value="m">{{ AUTH_MODE_LABELS[m] }}</option>
-        </select>
-      </div>
+      <AuthMethodsPicker v-model="authMethods" :enabled="enabledMethods" />
 
       <template v-if="plugin?.manifest.connection">
         <h2>Connection</h2>

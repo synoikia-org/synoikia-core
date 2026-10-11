@@ -19,7 +19,7 @@ import MyEndpointsView from './views/MyEndpointsView.vue';
 import NewEndpointView from './views/NewEndpointView.vue';
 import OverviewView from './views/OverviewView.vue';
 import PluginsView from './views/PluginsView.vue';
-import McpSettingsView from './views/settings/McpSettingsView.vue';
+import ClientAuthView from './views/settings/ClientAuthView.vue';
 import NotificationsView from './views/settings/NotificationsView.vue';
 import ProfileView from './views/settings/ProfileView.vue';
 import SecuritySettingsView from './views/settings/SecuritySettingsView.vue';
@@ -69,8 +69,9 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         component: SettingsLayout,
         children: [
-          { path: '', redirect: '/settings/mcp' },
-          { path: 'mcp', component: McpSettingsView, meta: { title: 'MCP access', admin: true } },
+          { path: '', redirect: '/settings/client-auth' },
+          { path: 'mcp', redirect: '/settings/client-auth' },
+          { path: 'client-auth', component: ClientAuthView, meta: { title: 'Client auth', admin: true } },
           { path: 'security', component: SecuritySettingsView, meta: { title: 'Admin UI settings', admin: true } },
           { path: 'users', component: UsersView, meta: { title: 'Users', admin: true } },
           { path: 'roles', component: RolesView, meta: { title: 'Roles', admin: true } },

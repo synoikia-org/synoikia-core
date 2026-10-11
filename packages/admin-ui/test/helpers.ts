@@ -6,6 +6,7 @@ import { createMemoryHistory } from 'vue-router';
 import App from '../src/App.vue';
 import { createQueryClient } from '../src/api';
 import { createAppRouter } from '../src/router';
+import type { Settings } from '../src/types';
 
 export function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -52,6 +53,16 @@ export const signedIn = {
     role: adminRole,
   },
   mustEnrollTotp: false,
+};
+
+/** The `mcp` settings section as core returns it by default: bearer and OAuth on, external off. */
+export const mcpSettings: Settings['mcp'] = {
+  clientAuth: { bearer: true, oauth: true, external: false },
+  external: { provider: 'cloudflare' },
+  allowDynamicRegistration: true,
+  cfAccess: { teamDomain: '', aud: '' },
+  accessTokenTtlMinutes: 60,
+  refreshTokenTtlDays: 30,
 };
 
 /** Mounts the app at `path`; `body` also finds what dialogs teleport out of the wrapper. */

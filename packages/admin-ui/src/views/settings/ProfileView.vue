@@ -181,8 +181,8 @@ async function enrolled() {
     <section class="card">
       <h2>Approval browsers</h2>
       <p class="small muted">
-        Browsers where you signed in to the approval page. They approve calls without a new authenticator code, except
-        for locked operations.
+        Browsers where you signed in to the approval page. They approve calls without a new sign-in until the session
+        ends.
       </p>
       <p v-if="!approvalBrowsers.length" class="small muted">None.</p>
       <ul v-else class="small">

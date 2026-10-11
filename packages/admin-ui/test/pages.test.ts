@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import type { DOMWrapper } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SchemaForm from '../src/components/SchemaForm.vue';
-import { fakeApi, json, mountAt, signedIn } from './helpers';
+import { fakeApi, json, mcpSettings, mountAt, signedIn } from './helpers';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -15,7 +15,7 @@ const instance = {
   slug: 'nas',
   displayName: 'Acme',
   enabled: true,
-  authMode: null,
+  authMethods: null,
   status: 'ready',
   statusError: null,
   upstreamVersion: '25.10.7',
@@ -208,7 +208,8 @@ describe('Access page', () => {
       .find((b) => b.text() === 'Ask')!
       .trigger('click');
     await flushPromises();
-    expect(body.get('[role="dialog"]').text()).toContain('fresh authenticator code');
+    expect(body.get('[role="dialog"]').text()).toContain('with a typed confirmation');
+    expect(body.get('[role="dialog"]').text()).not.toContain('authenticator');
     await clickIn(body, 'Continue');
     expect(patched('app.delete')[0]?.body).toEqual({ level: 'ask' });
 
@@ -399,6 +400,96 @@ describe('Endpoint settings', () => {
   });
 });
 
+describe('Accepted client auth of an endpoint', () => {
+  const settings = {
+    approvalTimeoutMs: 900_000,
+    formElicitationApprovals: 'off',
+    executePerMinute: 30,
+    writesPerMinute: 10,
+    sandbox: { timeoutMs: 10_000, memoryMb: 64, maxResultBytes: 65_536 },
+    extraRedactKeys: [],
+    syncMaxAgeMs: 3_600_000,
+    memoryMb: 256,
+  };
+  const api = (authMethods: string[] | null, clientAuth = mcpSettings.clientAuth) =>
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': { ...overview, instances: [{ ...instance, authMethods, settings }] },
+      'GET /api/settings': { mcp: { ...mcpSettings, clientAuth } },
+      'PATCH /api/instances/i1': (b: unknown) => ({ ...instance, settings, ...(b as object) }),
+    });
+  const picker = (body: Awaited<ReturnType<typeof mountAt>>['body']) => {
+    const set = body.get('fieldset.methods');
+    const option = (label: string) =>
+      set
+        .findAll<HTMLInputElement>('label')
+        .find((l) => l.text().startsWith(label))!
+        .get<HTMLInputElement>('input');
+    return { set, option };
+  };
+  const patched = (calls: { method: string; body: unknown }[]) =>
+    calls.filter((c) => c.method === 'PATCH').at(-1)?.body as Record<string, unknown>;
+
+  it('sends null for all enabled methods, and a subset when limited', async () => {
+    const { calls } = api(null);
+    const { wrapper, body } = await mountAt('/endpoints/nas/settings');
+    const { set, option } = picker(body);
+    expect(set.get('legend').text()).toBe('Accepted client auth');
+    expect(option('All enabled methods').element.checked).toBe(true);
+    expect(set.findAll('input[type="checkbox"]')).toHaveLength(0);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(patched(calls).authMethods).toBeNull();
+
+    await option('Only these').setValue(true);
+    // Limiting starts from the enabled methods; External is off globally, so it can't be picked.
+    expect(option('Bearer tokens').element.checked).toBe(true);
+    expect(option('OAuth').element.checked).toBe(true);
+    expect(option('External').element.disabled).toBe(true);
+    expect(set.text()).toContain('(off under Client auth)');
+    await option('Bearer tokens').setValue(false);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(patched(calls).authMethods).toEqual(['oauth']);
+  });
+
+  it('warns when no accepted method is enabled, so the endpoint refuses every call', async () => {
+    api(['external']);
+    const { body } = await mountAt('/endpoints/nas/settings');
+    const { set, option } = picker(body);
+    expect(option('Only these').element.checked).toBe(true);
+    expect(set.get('[data-warn="no-auth-method"]').text()).toContain('refuses every call');
+    await option('All enabled methods').setValue(true);
+    expect(set.find('[data-warn="no-auth-method"]').exists()).toBe(false);
+  });
+
+  it('says how approvals sign in, without an authenticator code', async () => {
+    api(null);
+    const { wrapper } = await mountAt('/endpoints/nas/settings');
+    expect(wrapper.text()).not.toContain('authenticator');
+    expect(wrapper.text()).toContain('Cloudflare Access identity');
+  });
+});
+
+describe('Client auth in endpoint lists', () => {
+  it('lists the accepted methods on the overview and flags an endpoint that refuses calls', async () => {
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': {
+        ...overview,
+        instances: [
+          { ...instance, effectiveAuthMethods: ['bearer', 'oauth'] },
+          { ...instance, id: 'i2', slug: 'off', effectiveAuthMethods: [] },
+        ],
+      },
+    });
+    const { wrapper } = await mountAt('/');
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows[0]!.text()).toContain('Bearer tokens, OAuth');
+    expect(rows[1]!.get('.pill.danger').text()).toBe('No client auth — refuses calls');
+  });
+});
+
 describe('Pre-approval rules', () => {
   it('builds $targets selectors from what the plugin declares', async () => {
     const { calls } = fakeApi({
@@ -529,9 +620,9 @@ describe('Pre-approval rules', () => {
 });
 
 describe('Connect a client', () => {
-  function api(auth: string, opts: { dcr?: boolean; publicMcpUrl?: string | null } = {}) {
+  function api(auth: string[], opts: { dcr?: boolean; publicMcpUrl?: string | null } = {}) {
     const pub = opts.publicMcpUrl === undefined ? 'https://mcp.example.com' : opts.publicMcpUrl;
-    const inst = { ...instance, endpointUrl: `${pub ?? ''}/nas`, effectiveAuthMode: auth };
+    const inst = { ...instance, endpointUrl: `${pub ?? ''}/nas`, effectiveAuthMethods: auth };
     return fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': { ...overview, instances: [inst], publicMcpUrl: pub },
@@ -552,7 +643,7 @@ describe('Connect a client', () => {
   afterEach(() => localStorage.clear());
 
   it('shows the Claude Code command for an OAuth endpoint, below the setup notes', async () => {
-    api('oauth');
+    api(['oauth']);
     const { wrapper, card: c } = await card();
     const cards = wrapper.findAll('aside .card').map((x) => x.find('h2').text());
     expect(cards.slice(-2)).toEqual(['Setup notes', 'Connect a client']);
@@ -567,10 +658,11 @@ describe('Connect a client', () => {
       ['claude mcp add', '--transport http', 'nas', 'https://mcp.example.com/nas'].join(' \\\n'),
     );
     expect(c.text()).toContain('Authenticate');
+    expect(c.find('#connect-method').exists()).toBe(false);
   });
 
   it('adds the bearer header and uses the config file for Claude Desktop', async () => {
-    api('bearer');
+    api(['bearer']);
     const { card: c } = await card();
     expect(c.get('[data-snippet="command"]').text()).toContain('--header "Authorization: Bearer <token>"');
     expect(c.text()).toContain('Clients & Tokens');
@@ -584,17 +676,21 @@ describe('Connect a client', () => {
     expect(localStorage.getItem('synoikia.connectClient')).toBe('claude-desktop');
   });
 
-  it('warns on the Cloudflare portal when the endpoint cannot do OAuth or DCR is off', async () => {
-    api('bearer', { dcr: false });
+  it('warns on the Cloudflare portal when the endpoint cannot do OAuth, or when DCR is off', async () => {
+    api(['bearer'], { dcr: false });
     const { card: c } = await card();
     await c.get('select').setValue('cloudflare');
     expect(c.find('[data-warn="auth"]').exists()).toBe(true);
-    expect(c.find('[data-warn="dcr"]').exists()).toBe(true);
     expect(c.text()).toContain('Add MCP server');
+    document.body.innerHTML = '';
+    api(['oauth'], { dcr: false });
+    const { card: o } = await card();
+    expect(o.find('[data-warn="dcr"]').exists()).toBe(true);
+    expect(o.find('[data-warn="auth"]').exists()).toBe(false);
   });
 
   it('points an External endpoint’s Cloudflare portal setup at Cloudflare Access, without OAuth warnings', async () => {
-    api('external', { dcr: false });
+    api(['external'], { dcr: false });
     const { card: c } = await card();
     await c.get('select').setValue('cloudflare');
     expect(c.findAll('.alert')).toHaveLength(0);
@@ -603,7 +699,7 @@ describe('Connect a client', () => {
   });
 
   it('shows a placeholder host, never the portal’s own address, when PUBLIC_MCP_URL is unset', async () => {
-    api('oauth', { publicMcpUrl: null });
+    api(['oauth'], { publicMcpUrl: null });
     const { card: c } = await card();
     expect(c.get('[data-snippet="url"]').text()).toBe('https://<your-mcp-host>/nas');
     expect(c.find('[data-warn="public-url"]').exists()).toBe(true);
@@ -611,7 +707,7 @@ describe('Connect a client', () => {
   });
 
   it('shows no Cloudflare warnings when everything is in place, and copies snippets', async () => {
-    api('bearer+oauth');
+    api(['bearer', 'oauth']);
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     const { card: c } = await card();
@@ -619,6 +715,31 @@ describe('Connect a client', () => {
     expect(c.findAll('.alert')).toHaveLength(0);
     await c.get('.copy').trigger('click');
     expect(writeText).toHaveBeenCalledWith('https://mcp.example.com/nas');
+  });
+
+  it('offers each accepted method, browser sign-ins first, and follows the one picked', async () => {
+    api(['bearer', 'oauth', 'external']);
+    const { card: c } = await card();
+    expect(c.findAll('.meta .pill').map((p) => p.text())).toEqual(['OAuth', 'External', 'Bearer tokens']);
+    const method = c.get<HTMLSelectElement>('#connect-method');
+    expect(method.findAll('option').map((o) => o.text())).toEqual(['OAuth', 'External', 'Bearer tokens']);
+    expect(c.text()).toContain('Sign in to Synoikia in the browser');
+    expect(c.get('[data-snippet="command"]').text()).not.toContain('--header');
+    await method.setValue('external');
+    expect(c.text()).toContain('Sign in with Cloudflare Access in the browser');
+    expect(c.get('[data-snippet="command"]').text()).not.toContain('--header');
+    await method.setValue('bearer');
+    expect(c.get('[data-snippet="command"]').text()).toContain('--header "Authorization: Bearer <token>"');
+    await c.get('select').setValue('claude-desktop');
+    expect(c.find('[data-snippet="config"]').exists()).toBe(true);
+  });
+
+  it('says an endpoint with no accepted method refuses every call, and gives no steps', async () => {
+    api([]);
+    const { card: c } = await card();
+    expect(c.get('.meta .pill').text()).toBe('none');
+    expect(c.get('[data-warn="no-auth-method"]').text()).toContain('refuses every call');
+    expect(c.find('[data-snippet="command"]').exists()).toBe(false);
   });
 });
 
@@ -660,52 +781,41 @@ describe('Shell and settings', () => {
     expect(localStorage.getItem('synoikia.theme')).toBeNull();
   });
 
-  it('names the sign-in tab Admin UI settings and explains MCP access', async () => {
+  it('names the tabs Client auth and Admin UI settings, and explains MCP access', async () => {
     fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
-      'GET /api/settings': {
-        mcp: {
-          defaultAuthMode: 'oauth',
-          allowDynamicRegistration: true,
-          accessTokenTtlMinutes: 60,
-          refreshTokenTtlDays: 30,
-          cfAccess: { teamDomain: '', aud: '' },
-          trustedIdentityHeader: '',
-        },
-        publicMcpUrl: 'https://mcp.example.com',
-      },
+      'GET /api/settings': { mcp: mcpSettings, publicMcpUrl: 'https://mcp.example.com' },
     });
-    const { wrapper } = await mountAt('/settings/mcp');
-    expect(wrapper.get('.tabs').text()).toContain('Admin UI settings');
-    expect(wrapper.get('.tabs').text()).not.toContain('Sign-in & security');
+    const { wrapper } = await mountAt('/settings/client-auth');
+    const tabs = wrapper.get('.tabs').text();
+    expect(tabs).toContain('Client auth');
+    expect(tabs).not.toContain('MCP access');
+    expect(tabs).toContain('Admin UI settings');
+    expect(tabs).not.toContain('Sign-in & security');
+    expect(document.title).toBe('Client auth · Synoikia');
     const about = wrapper.get('.card.about');
     expect(about.text()).toContain('https://mcp.example.com/<slug>');
     expect(about.text()).toContain('search');
     expect(about.text()).toContain('execute');
+    expect(about.text()).toContain('accepts all the methods enabled below');
   });
 
-  it('explains OAuth and Cloudflare Access setup on MCP access, and warns when OAuth is off', async () => {
-    const mcp = {
-      defaultAuthMode: 'oauth',
-      allowDynamicRegistration: true,
-      accessTokenTtlMinutes: 60,
-      refreshTokenTtlDays: 30,
-      cfAccess: { teamDomain: '', aud: '' },
-      trustedIdentityHeader: '',
-    };
+  it('explains OAuth, and Cloudflare Access setup once External is on, with no other reverse proxies', async () => {
     fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
-      'GET /api/settings': { mcp, publicMcpUrl: null },
+      'GET /api/settings': {
+        mcp: { ...mcpSettings, clientAuth: { bearer: false, oauth: true, external: true } },
+        publicMcpUrl: null,
+      },
     });
-    const { wrapper } = await mountAt('/settings/mcp');
+    const { wrapper } = await mountAt('/settings/client-auth');
     const headings = wrapper.findAll('section.card h2').map((h) => h.text());
-    expect(headings).toContain('Cloudflare Access');
-    expect(headings).toContain('Other reverse proxies');
-    expect(headings).not.toContain('External mode');
+    expect(headings).toEqual(['How MCP access works', 'Client auth methods', 'OAuth', 'Cloudflare Access']);
+    expect(wrapper.text()).not.toContain('Other reverse proxies');
+    expect(wrapper.text()).not.toContain('Trusted identity header');
     const oauthCard = wrapper.findAll('section.card').find((s) => s.get('h2').text() === 'OAuth')!;
-    expect(oauthCard.text()).toContain('Applies to endpoints set to OAuth and to endpoints set to Bearer or OAuth.');
     expect(oauthCard.find('[data-explain="oauth"]').text()).toContain('no provider, client ID or secret');
     expect(oauthCard.find('[data-warn="oauth-public-url"]').exists()).toBe(true);
     const steps = wrapper.get('[data-explain="cf-access"]').text();
@@ -713,6 +823,8 @@ describe('Shell and settings', () => {
     expect(steps).toContain('https://claude.ai/api/mcp/auth_callback');
     expect(steps).toContain('https://<portal-hostname>/servers-callback');
     expect(steps).toContain('Optional');
+    expect(steps).not.toContain('Service Auth');
+    expect(steps).toContain('Every endpoint then accepts External');
   });
 });
 

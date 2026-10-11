@@ -1,5 +1,5 @@
 import type { RouteLocationNormalized } from 'vue-router';
-import type { ConnectionSchema } from './types';
+import type { AuthMethod, ConnectionSchema, ExternalProvider } from './types';
 
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '—';
@@ -28,12 +28,19 @@ function until(value: string | Date, now = Date.now()): string {
 
 export const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 
-export const AUTH_MODE_LABELS: Record<string, string> = {
-  external: 'External (proxy)',
-  bearer: 'Bearer token',
+export const AUTH_METHOD_LABELS: Record<AuthMethod, string> = {
+  bearer: 'Bearer tokens',
   oauth: 'OAuth',
-  'bearer+oauth': 'Bearer or OAuth',
+  external: 'External',
 };
+
+export const EXTERNAL_PROVIDER_LABELS: Record<ExternalProvider, string> = { cloudflare: 'Cloudflare Access' };
+
+/** A list of client auth methods for a table cell; an empty list means the endpoint refuses every call. */
+export function formatAuthMethods(methods: readonly AuthMethod[] | null | undefined): string {
+  if (!methods) return '—';
+  return methods.length ? methods.map((m) => AUTH_METHOD_LABELS[m]).join(', ') : 'No client auth — refuses calls';
+}
 
 export const REASON_LABELS: Record<string, string> = {
   level_none: 'Off',
