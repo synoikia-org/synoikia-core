@@ -1,7 +1,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Grant, Notifier, PublicUser, RoleRow, Settings, Token } from '../src/types';
-import { adminRole, fakeApi, json, mountAt, signedIn } from './helpers';
+import { adminRole, fakeApi, json, mcpSettings, mountAt, signedIn } from './helpers';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -27,14 +27,7 @@ const settings: Settings = {
     defaultRoleId: null,
     localSignup: false,
   },
-  mcp: {
-    defaultAuthMode: 'oauth',
-    allowDynamicRegistration: true,
-    cfAccess: { teamDomain: '', aud: '' },
-    trustedIdentityHeader: '',
-    accessTokenTtlMinutes: 60,
-    refreshTokenTtlDays: 30,
-  },
+  mcp: mcpSettings,
   audit: { retentionDays: null },
   oidc: null,
   forceLocalLogin: false,
@@ -168,25 +161,89 @@ describe('Admin UI settings', () => {
   });
 });
 
-describe('the MCP access settings', () => {
+describe('the Client auth settings', () => {
   it('saves and shows core’s answer, or why it failed', async () => {
     let fail = true;
-    fakeApi({
+    const { calls } = fakeApi({
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
       'GET /api/settings': settings,
       'PUT /api/settings/mcp': (b: unknown) =>
-        fail ? json(400, { error: 'invalid', message: 'Bad lifetime' }) : { ...(b as object), refreshTokenTtlDays: 7 },
+        fail
+          ? json(400, {
+              error: 'invalid_settings',
+              message: 'Invalid settings',
+              details: ['external: configure Cloudflare Access before you enable external auth'],
+            })
+          : { ...(b as object), refreshTokenTtlDays: 7 },
     });
-    const { wrapper } = await mountAt('/settings/mcp');
+    const { wrapper } = await mountAt('/settings/client-auth');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(wrapper.get('.alert.error').text()).toBe('Bad lifetime');
+    expect(wrapper.get('.alert.error').text()).toBe(
+      'Invalid settings: external: configure Cloudflare Access before you enable external auth',
+    );
     fail = false;
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(wrapper.get('.alert.ok').text()).toBe('Saved.');
     expect(wrapper.get<HTMLInputElement>('input#m-rt').element.value).toBe('7');
+    const body = writes(calls).at(-1)!.body as Record<string, unknown>;
+    expect(body.clientAuth).toEqual({ bearer: true, oauth: true, external: false });
+    expect(body).not.toHaveProperty('defaultAuthMode');
+    expect(body).not.toHaveProperty('trustedIdentityHeader');
+  });
+
+  it('enables External with Cloudflare Access, and saves the provider and its application', async () => {
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'PUT /api/settings/mcp': (b: unknown) => b,
+    });
+    const { wrapper } = await mountAt('/settings/client-auth');
+    const methods = () => wrapper.get('fieldset.methods');
+    const box = (label: string) =>
+      methods()
+        .findAll('label')
+        .find((l) => l.text() === label)!
+        .get('input');
+    expect(wrapper.find('#m-provider').exists()).toBe(false);
+    expect(wrapper.find('[data-explain="cf-access"]').exists()).toBe(false);
+    await box('External').setValue(true);
+    expect(wrapper.get('#m-provider').text()).toBe('Cloudflare Access');
+    expect(wrapper.get('[data-warn="external-approvals"]').text()).toContain('could open the approval link itself');
+    await wrapper.get('#m-cft').setValue('team.cloudflareaccess.com');
+    await wrapper.get('#m-cfa').setValue('aud-tag');
+    await box('OAuth').setValue(false);
+    expect(wrapper.findAll('section.card h2').map((h) => h.text())).not.toContain('OAuth');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(writes(calls)[0]!.body).toMatchObject({
+      clientAuth: { bearer: true, oauth: false, external: true },
+      external: { provider: 'cloudflare' },
+      cfAccess: { teamDomain: 'team.cloudflareaccess.com', aud: 'aud-tag' },
+    });
+  });
+
+  it('will not save with no method enabled', async () => {
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+    });
+    const { wrapper } = await mountAt('/settings/client-auth');
+    const boxes = wrapper.findAll<HTMLInputElement>('fieldset.methods input[type="checkbox"]');
+    for (const b of boxes) await b.setValue(false);
+    expect(wrapper.get('[data-warn="no-method"]').text()).toContain('Enable at least one method');
+    expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('sends the old MCP access address to Client auth', async () => {
+    fakeApi({ 'GET /api/session': signedIn, 'GET /api/overview': overview, 'GET /api/settings': settings });
+    const { router } = await mountAt('/settings/mcp');
+    expect(router.currentRoute.value.path).toBe('/settings/client-auth');
   });
 });
 
