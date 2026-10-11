@@ -21,7 +21,18 @@ afterEach(async () => {
 
 type LevelView = {
   groups: { key: string; roleLevel: string | null; ownLevel: string | null }[];
-  operations: { id: string; key: string; level: string; roleMax: string; reachable: boolean }[];
+  operations: {
+    id: string;
+    key: string;
+    level: string;
+    roleMax: string;
+    reachable: boolean;
+    reason: string | null;
+  }[];
+};
+type MyEndpoints = {
+  assigned: { id: string; status?: Record<string, unknown> }[];
+  unassigned: Record<string, unknown>[];
 };
 
 /** An admin, two echo endpoints, and a role "Operators" holding the first with `switches` on it, with a
@@ -184,8 +195,9 @@ describe('roles: what a user sees and changes', () => {
   it('lists only the role’s endpoints and reachable operations, without status unless allowed', async () => {
     const t = await setup();
     await t.admin.put(`/api/roles/${t.roleId}/endpoints/${t.instanceId}/groups/echo`, { level: 'read' });
-    const endpoints = (await (await t.user.get('/api/me/endpoints')).json()) as { id: string; status?: unknown }[];
+    const { assigned: endpoints, unassigned } = (await (await t.user.get('/api/me/endpoints')).json()) as MyEndpoints;
     expect(endpoints.map((e) => e.id)).toEqual([t.instanceId]);
+    expect(unassigned).toEqual([]);
     expect(endpoints[0]!.status).toBeUndefined();
     const view = (await (await t.user.get(`/api/me/endpoints/${t.instanceId}/access`)).json()) as LevelView;
     expect(view.operations.map((o) => o.key)).toContain('echo.query');
@@ -196,11 +208,7 @@ describe('roles: what a user sees and changes', () => {
     expect((await t.user.get(`/api/me/endpoints/${t.instanceId}/rules`)).status).toBe(403);
 
     await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canSeeStatus: true });
-    const withStatus = (await (await t.user.get('/api/me/endpoints')).json()) as {
-      status?: { enabled: boolean };
-      canSeeStatus: boolean;
-      canSetOwnLevels: boolean;
-    }[];
+    const withStatus = ((await (await t.user.get('/api/me/endpoints')).json()) as MyEndpoints).assigned;
     expect(withStatus[0]).toMatchObject({ canSeeStatus: true, canSetOwnLevels: false, status: { enabled: true } });
   });
 
@@ -214,7 +222,7 @@ describe('roles: what a user sees and changes', () => {
     });
     for (const id of [t.instanceId, t.otherId])
       await t.admin.put(`/api/roles/${t.roleId}/endpoints/${id}/groups/echo`, { level: 'ask' });
-    const endpoints = (await (await t.user.get('/api/me/endpoints')).json()) as { id: string; status?: unknown }[];
+    const endpoints = ((await (await t.user.get('/api/me/endpoints')).json()) as MyEndpoints).assigned;
     expect(endpoints.map((e) => [e.id, !!e.status])).toEqual([
       [t.instanceId, false],
       [t.otherId, true],
@@ -236,6 +244,67 @@ describe('roles: what a user sees and changes', () => {
     expect(gate()).toMatchObject({ reachable: false });
     await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.otherId}`, { canSetOwnLevels: false });
     expect(gate()).toMatchObject({ reachable: true, level: 'ask' });
+  });
+
+  it('lists every group and operation, None included, where the endpoint shows status', async () => {
+    const t = await setup({ canSetOwnLevels: true });
+    await t.admin.put(`/api/roles/${t.roleId}/endpoints/${t.instanceId}/groups/echo`, { level: 'read' });
+    const access = async () =>
+      (await (await t.user.get(`/api/me/endpoints/${t.instanceId}/access`)).json()) as LevelView;
+    const all = ((await (await t.admin.get(`/api/me/endpoints/${t.instanceId}/access`)).json()) as LevelView)
+      .operations;
+    expect((await access()).operations.length).toBeLessThan(all.length);
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canSeeStatus: true });
+    const view = await access();
+    expect(view.operations.map((o) => o.key)).toEqual(all.map((o) => o.key));
+    expect(view.operations.find((o) => o.key === 'echo.set')).toMatchObject({
+      reachable: false,
+      level: 'none',
+      roleMax: 'none',
+      reason: expect.any(String),
+    });
+    // Seeing an operation opens nothing: own levels stay under the role maximum, own rules need reach.
+    const set = view.operations.find((o) => o.key === 'echo.set')!;
+    expect(
+      await (await t.user.put(`/api/me/endpoints/${t.instanceId}/operations/${set.id}`, { level: 'ask' })).json(),
+    ).toMatchObject({ error: 'above_role_max' });
+    await t.admin.patch(`/api/roles/${t.roleId}/endpoints/${t.instanceId}`, { canManageOwnRules: true });
+    const rule = await t.user.post(`/api/me/endpoints/${t.instanceId}/rules`, { operationId: set.id, reason: 'no' });
+    expect(await rule.json()).toMatchObject({ error: 'operation_not_reachable' });
+  });
+
+  it('names other endpoints only with the role’s switch, and nothing more', async () => {
+    const t = await setup();
+    const pluginRow = t.ctx.db.select().from(plugins).get()!;
+    const manifest = { ...(pluginRow.manifest as Record<string, unknown>), description: 'Echoes calls back.' };
+    t.ctx.db.update(plugins).set({ manifest }).where(eq(plugins.id, pluginRow.id)).run();
+    const about = (id: string) => t.user.get(`/api/me/endpoints/${id}/about`);
+    expect((await (await t.user.get('/api/me/endpoints')).json()) as MyEndpoints).toMatchObject({ unassigned: [] });
+    expect((await about(t.otherId)).status).toBe(404);
+
+    await t.admin.patch(`/api/roles/${t.roleId}`, { canSeeOtherEndpoints: true });
+    const mine = (await (await t.user.get('/api/me/endpoints')).json()) as MyEndpoints;
+    expect(mine.assigned.map((e) => e.id)).toEqual([t.instanceId]);
+    expect(mine.unassigned).toEqual([
+      {
+        id: t.otherId,
+        slug: 'other',
+        displayName: 'Echo (test fixture)',
+        plugin: 'Echo (test fixture)',
+        description: 'Echoes calls back.',
+      },
+    ]);
+    const res = await about(t.otherId);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ...mine.unassigned[0], role: 'Operators' });
+    expect((await about(t.instanceId)).status).toBe(404);
+    expect((await about('nope')).status).toBe(404);
+    // Still not the user's: no levels, no tokens.
+    expect((await t.user.get(`/api/me/endpoints/${t.otherId}/access`)).status).toBe(404);
+    expect((await t.user.post('/api/me/tokens', { name: 'x', scope: [t.otherId] })).status).toBe(400);
+    // Admins have every endpoint, so none is unassigned.
+    expect((await (await t.admin.get('/api/me/endpoints')).json()) as MyEndpoints).toMatchObject({ unassigned: [] });
+    expect((await t.admin.get(`/api/me/endpoints/${t.otherId}/about`)).status).toBe(404);
   });
 
   it('sets own levels up to the role maximum', async () => {

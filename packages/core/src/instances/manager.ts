@@ -185,6 +185,35 @@ export class InstanceManager {
     });
   }
 
+  /** Endpoints outside the role, by name only, when the role may see them (design §6.4). Admins have every one. */
+  listUnassigned(role: PublicRole) {
+    if (role.isAdmin || !role.canSeeOtherEndpoints) return [];
+    return this.db
+      .select({ instance: pluginInstances, plugin: plugins })
+      .from(pluginInstances)
+      .innerJoin(plugins, eq(pluginInstances.pluginId, plugins.id))
+      .orderBy(asc(pluginInstances.slug))
+      .all()
+      .filter(({ instance }) => !roleEndpointSwitches(this.db, role.id, instance.id))
+      .map(({ instance, plugin }) => {
+        const manifest = plugin.status === 'ok' ? parseManifest(plugin.manifest) : undefined;
+        return {
+          id: instance.id,
+          slug: instance.slug,
+          displayName: instance.displayName,
+          plugin: manifest?.name ?? plugin.pluginId,
+          description: manifest?.description ?? null,
+        };
+      });
+  }
+
+  /** One endpoint outside the role, as `listUnassigned` shows it; 404 for any other id. */
+  aboutUnassigned(role: PublicRole, instanceId: string) {
+    const endpoint = this.listUnassigned(role).find((e) => e.id === instanceId);
+    if (!endpoint) throw new NotFoundError('instance_not_found', 'No such endpoint');
+    return { ...endpoint, role: role.name };
+  }
+
   get(id: string) {
     const instance = this.row(id);
     return this.describe(instance, this.plugin(instance.pluginId));

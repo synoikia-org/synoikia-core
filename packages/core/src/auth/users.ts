@@ -495,10 +495,11 @@ export class UserService {
       throw new ForbiddenError('forbidden', 'Your role does not allow this on this endpoint');
   }
 
-  /** The user's levels on an endpoint; a non-admin sees only what they can call. */
+  /** The user's levels on an endpoint. Without the endpoint's status switch, a non-admin sees only what they can call. */
   levels(u: UserRow, instanceId: string): LevelView {
     const who = { roleId: u.roleId, userId: u.id };
-    return levelView(this.db, instanceId, who, { reachableOnly: !this.roleOf(u).isAdmin });
+    const seesAll = !!roleEndpointSwitches(this.db, u.roleId, instanceId)?.canSeeStatus;
+    return levelView(this.db, instanceId, who, { reachableOnly: !seesAll });
   }
 
   setOwnLevel(u: UserRow, instanceId: string, target: LevelTarget, level: AccessLevel | null): LevelView {
