@@ -13,9 +13,19 @@ import type { UserRow, UserService } from './users.js';
 /** Optional OIDC sign-in (design §6.1): code + PKCE, state and nonce; the identity must pass the allow
  * policy and be linked unless auto-provisioning. Used by the admin and MCP-port logins. */
 
+/** `*@example.com`: any verified address in that exact domain, never its subdomains. */
+const DomainEntrySchema = z
+  .string()
+  .regex(
+    /^\*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i,
+    'Invalid domain entry',
+  )
+  .transform((e) => e.toLowerCase());
+
 const AllowPolicySchema = z
   .object({
-    emails: z.array(z.string().email()).default([]),
+    /** Exact addresses or `*@domain` entries. */
+    emails: z.array(z.union([z.string().email(), DomainEntrySchema])).default([]),
     subjects: z.array(z.string().min(1)).default([]),
     /** Required value in the groups claim (`groupsClaim`, default `groups`). */
     group: z.string().default(''),
@@ -55,6 +65,15 @@ export interface OidcIdentity {
 }
 
 const STATE_TTL_MS = 10 * 60_000;
+function emailAllowed(entries: string[], email: string): boolean {
+  const address = email.toLowerCase();
+  const domain = address.slice(address.lastIndexOf('@') + 1);
+  return entries.some((e) => {
+    const entry = e.toLowerCase();
+    return entry.startsWith('*@') ? entry.slice(2) === domain : entry === address;
+  });
+}
+
 const policyIsEmpty = (p: OidcSettings['allowPolicy']) => !p.emails.length && !p.subjects.length && !p.group;
 
 class OidcError extends ServiceError {
@@ -227,7 +246,7 @@ export class OidcService {
     const policy = this.getSettings()?.allowPolicy;
     if (!policy || policyIsEmpty(policy)) return true; // linking alone decides
     if (policy.subjects.includes(identity.subject)) return true;
-    if (identity.email && policy.emails.map((e) => e.toLowerCase()).includes(identity.email.toLowerCase())) return true;
+    if (identity.email && emailAllowed(policy.emails, identity.email)) return true;
     if (policy.group && identity.groups.includes(policy.group)) return true;
     return false;
   }
