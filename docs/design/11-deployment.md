@@ -35,7 +35,8 @@ The full list is in `.env.example`: `DATA_DIR`, `MASTER_KEY`, `MCP_HOST`, `MCP_P
 Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`.
 
 - **Refused MCP requests.** Core logs the reason. The client never gets it. The reason is one of these:
-  - the authentication mode and the kind of credential (never its value);
+  - the effective client auth methods of the endpoint and the kind of credential (never its value);
+  - why the external provider did not identify the caller, for example a service token;
   - the `iss` and `aud` that a Cloudflare Access assertion claims;
   - a `Host` or `Origin` outside the allowed set;
   - an endpoint that is not available;

@@ -2,6 +2,7 @@ import type { SensitiveResult } from '@synoikia/plugin-sdk';
 import { sql } from 'drizzle-orm';
 import { blob, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { ADMIN_ROLE_ID } from '../gate/access.js';
+import type { AuthMethod } from '../instances/manager.js';
 
 /** The SQLite schema (design §7.1): JSON as TEXT, timestamps as epoch ms, secrets as AES-256-GCM blobs. */
 
@@ -120,8 +121,8 @@ export const pluginInstances = sqliteTable('plugin_instances', {
   enabled: flag('enabled').notNull().default(true),
   config: json('config').notNull().default({}),
   secretsEnc: blob('secrets_enc', { mode: 'buffer' }),
-  /** NULL = inherit the global default (design §6.2). */
-  authMode: text('auth_mode', { enum: ['external', 'bearer', 'oauth', 'bearer+oauth'] }),
+  /** Client auth methods the endpoint accepts; NULL = every globally enabled method (design §6.2). */
+  authMethods: json('auth_methods').$type<AuthMethod[]>(),
   settings: json('settings').notNull().default({}),
   status: text('status', { enum: ['stopped', 'starting', 'ready', 'error'] })
     .notNull()

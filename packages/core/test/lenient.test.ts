@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../src/db/index.js';
 import { pluginInstances, settings } from '../src/db/schema.js';
-import { getSettings } from '../src/settings.js';
+import { getSettings, normalizeStoredSettings } from '../src/settings.js';
 import { createTestApp } from './helpers.js';
 
 const cleanup: (() => unknown)[] = [];
@@ -23,6 +23,28 @@ describe('stored settings from an earlier release (review L22)', () => {
       .run();
     expect(getSettings(db, 'mcp')).toMatchObject({ accessTokenTtlMinutes: 60, allowDynamicRegistration: false });
     expect(warn.mock.calls.flat().join('\n')).toMatch(/settings\.mcp: ignoring stored accessTokenTtlMinutes/);
+  });
+
+  it('reads client auth methods it cannot read as all off, and keeps them off when it normalizes', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const off = { bearer: false, oauth: false, external: false };
+    for (const clientAuth of [{ bearer: 'yes', oauth: true }, 'all', null]) {
+      const db = openDatabase(':memory:');
+      db.insert(settings)
+        .values({ key: 'mcp', value: { clientAuth, allowDynamicRegistration: false } })
+        .run();
+      expect(getSettings(db, 'mcp')).toMatchObject({ clientAuth: off, allowDynamicRegistration: false });
+      expect(normalizeStoredSettings(db)).toEqual(['mcp']);
+      expect(db.select().from(settings).where(eq(settings.key, 'mcp')).get()?.value).toEqual({
+        clientAuth: off,
+        allowDynamicRegistration: false,
+      });
+      expect(getSettings(db, 'mcp').clientAuth).toEqual(off);
+    }
+    // A whole section that can't be read is closed too.
+    const db = openDatabase(':memory:');
+    db.insert(settings).values({ key: 'mcp', value: 'not an object' }).run();
+    expect(getSettings(db, 'mcp').clientAuth).toEqual(off);
   });
 
   it('normalizes stored JSON at startup without writing defaults in, and keeps endpoints serving', async () => {

@@ -345,3 +345,80 @@ describe('0015 endpoint switches migration', () => {
     ).toBe(true);
   });
 });
+
+describe('0016 client auth methods migration', () => {
+  /** Migrates a database whose `mcp` settings (or none) and endpoint modes are as given. */
+  function migrated(mcp: Record<string, unknown> | null, modes: (string | null)[]) {
+    const { dir, sqlite } = databaseAt('0015_endpoint_switches');
+    sqlite.exec(
+      `INSERT INTO plugins (id, plugin_id, version, path, manifest, status) VALUES ('p1', 'echo', '1.0.0', '/x', '{}', 'ok')`,
+    );
+    const insert = sqlite.prepare(
+      `INSERT INTO plugin_instances (id, plugin_id, slug, display_name, auth_mode) VALUES (?, 'p1', ?, 'X', ?)`,
+    );
+    modes.forEach((mode, i) => insert.run(`i${i}`, `e${i}`, mode));
+    if (mcp) sqlite.prepare(`INSERT INTO settings (key, value) VALUES ('mcp', ?)`).run(JSON.stringify(mcp));
+    sqlite.close();
+    const db = openDatabase({ dataDir: dir });
+    cleanup.unshift(() => db.$client.close());
+    const methods = db
+      .select()
+      .from(schema.pluginInstances)
+      .orderBy(schema.pluginInstances.id)
+      .all()
+      .map((i) => i.authMethods);
+    const settings = db.select().from(schema.settings).where(eq(schema.settings.key, 'mcp')).get()?.value;
+    return { methods, settings };
+  }
+  const cf = { teamDomain: 'home.cloudflareaccess.com', aud: 'tag' };
+
+  it('maps each mode, and an endpoint that inherits a narrower default keeps it', () => {
+    const { methods, settings } = migrated(
+      { defaultAuthMode: 'bearer', trustedIdentityHeader: 'remote-user', allowDynamicRegistration: false },
+      [null, 'oauth', 'bearer+oauth', 'bearer', 'external'],
+    );
+    // External mode without Cloudflare Access relied on the trusted header: it now refuses every call.
+    expect(methods).toEqual([['bearer'], ['oauth'], ['bearer', 'oauth'], ['bearer'], []]);
+    expect(settings).toEqual({
+      allowDynamicRegistration: false,
+      clientAuth: { bearer: true, oauth: true, external: false },
+      external: { provider: 'cloudflare' },
+    });
+  });
+
+  it('keeps external auth through Cloudflare Access', () => {
+    const { methods, settings } = migrated({ defaultAuthMode: 'external', cfAccess: cf }, [null, 'external', 'bearer']);
+    expect(methods).toEqual([['external'], ['external'], ['bearer']]);
+    expect(settings).toMatchObject({
+      cfAccess: cf,
+      clientAuth: { bearer: true, oauth: false, external: true },
+      external: { provider: 'cloudflare' },
+    });
+  });
+
+  it('leaves an inherited default alone when the global methods are the same', () => {
+    const { methods, settings } = migrated({ accessTokenTtlMinutes: 30 }, [null, 'oauth', 'bearer']);
+    expect(methods).toEqual([null, ['oauth'], ['bearer']]);
+    expect(settings).toEqual({
+      accessTokenTtlMinutes: 30,
+      clientAuth: { bearer: true, oauth: true, external: false },
+      external: { provider: 'cloudflare' },
+    });
+    const ext = migrated({ defaultAuthMode: 'external', cfAccess: cf }, [null, 'external']);
+    expect(ext.methods).toEqual([null, ['external']]);
+  });
+
+  it('gives no method to endpoints that inherited header-based external auth', () => {
+    const { methods, settings } = migrated({ defaultAuthMode: 'external', trustedIdentityHeader: 'remote-user' }, [
+      null,
+    ]);
+    expect(methods).toEqual([[]]);
+    expect(settings).toMatchObject({ clientAuth: { bearer: false, oauth: false, external: false } });
+  });
+
+  it('works on an install that never saved its MCP settings', () => {
+    const { methods, settings } = migrated(null, [null, 'bearer', 'external']);
+    expect(methods).toEqual([null, ['bearer'], []]);
+    expect(settings).toBeUndefined();
+  });
+});

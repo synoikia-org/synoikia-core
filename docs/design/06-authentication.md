@@ -48,24 +48,41 @@ The Admin listener (port 8081) has its own sign-in.
 - A per-IP budget applies to `/auth/*` and to `/api/instances/:id/connection/test`.
 - Core audits sign-in failures as `auth` events.
 
-## 6.2 MCP endpoint authentication
+## 6.2 MCP client authentication
 
-The authentication mode is a global default (Settings → MCP Access). Each instance can override it (Instance → Settings).
+Client auth is how an MCP client proves who it is on the MCP listener. There are three client auth methods. The admin enables a set of them (Settings → Client auth, `mcp.clientAuth`). By default, `bearer` and `oauth` are on and `external` is off.
 
-| Mode           | Accepts                                                        | Recorded identity                                                |
-| -------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `external`     | All requests. The reverse proxy authenticates. See below.      | JWT e-mail, header value, or `external (anonymous, <client IP>)` |
-| `bearer`       | `Authorization: Bearer syn_…` tokens from the portal           | Token name                                                       |
-| `oauth`        | OAuth 2.1 access tokens from the built-in authorization server | OAuth client name and the user who consented                     |
-| `bearer+oauth` | Both                                                           | As above                                                         |
+| Method     | Accepts                                                                | Recorded identity                            |
+| ---------- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| `bearer`   | `Authorization: Bearer syn_…` tokens from the portal                   | Token name                                   |
+| `oauth`    | OAuth 2.1 access tokens from the built-in authorization server         | OAuth client name and the user who consented |
+| `external` | A request that the configured external provider identifies. See below. | `external:<identity>`                        |
 
-**`external` mode.**
+**Methods of an endpoint.**
 
-- **Cloudflare Access.** If the admin sets `teamDomain` and `aud`, the `Cf-Access-Jwt-Assertion` header must verify against the JWKS of the team. A service token records `service:<client id>`. Core refuses an assertion that names nobody.
-- **Trusted identity header.** An optional header, for example `Remote-User` from Authelia, gives the identity.
-- **User.** Core finds the user whose user name is the identity. Upper and lower case do not matter. Only a user that an admin made, or that `external` mode registered, can match. A user from the sign-up form or OIDC never matches, so nobody can take a proxy identity first. If there is no such user, self-registration (§6.5) creates one. If self-registration is off, the name is taken, or the identity is not a valid user name, core refuses the request with 403.
-- Core refuses a caller that the proxy does not name (401). Each call belongs to a user.
-- The portal shows a warning for `external` without JWT verification. Port 8080 must then be reachable only through the proxy.
+- An endpoint accepts all enabled methods, or a subset of them (Instance → Settings, `plugin_instances.auth_methods`).
+- The effective methods are the subset of the endpoint, or all methods, that are also enabled globally.
+- If the effective set is empty, core refuses each request to the endpoint. A caller with a live credential gets 403. Other callers get the answer of an unknown slug (401). The portal shows a warning.
+- If core cannot read the stored methods, all methods are off.
+- Core refuses a save of the settings that enables no method, with 400 `invalid_settings`.
+
+**Method selection.**
+
+1. A request with an `Authorization: Bearer` header uses `bearer` or `oauth`, if the endpoint allows the method. `oauth` also needs `PUBLIC_MCP_URL`.
+2. A request without a bearer token uses `external`, if the endpoint allows it.
+3. If `external` does not identify the caller and the endpoint also allows `bearer` or `oauth`, core sends the bearer challenge (401).
+
+**`external` method.**
+
+- An external provider identifies the user of each request. The admin selects the provider (`mcp.external.provider`). Core refuses a save that enables `external` while the provider has no configuration.
+- Each provider is one module in the provider harness (`auth/external.ts`). The MCP listener uses only the harness, never a provider directly.
+- **Cloudflare Access** is the only provider. Its configuration is `mcp.cfAccess.teamDomain` and `mcp.cfAccess.aud`.
+  - The `Cf-Access-Jwt-Assertion` header must verify against the JWKS of the team, with `RS256`, the issuer and audience of the application, and `exp` and `iat` claims.
+  - The identity is the `email` claim. Core refuses an assertion without an e-mail address.
+  - Core refuses the assertion of a service token (an empty `sub`, or a `common_name` claim). A service token is not a user.
+- **User.** Core finds the user whose user name is the identity. Upper and lower case do not matter. Only a user that an admin made, or that `external` registered, can match. A user from the sign-up form or OIDC never matches, so nobody can take an external identity first. If there is no such user, self-registration (§6.5) creates one. If self-registration is off, the name is taken, or the identity is not a valid user name, core refuses the request with 403.
+- Core refuses a caller that the provider does not identify (401). Each call belongs to a user.
+- Core does not read any other identity header.
 
 **Bearer tokens** (Clients & Tokens page):
 
@@ -77,8 +94,8 @@ The authentication mode is a global default (Settings → MCP Access). Each inst
 
 **Built-in OAuth 2.1 authorization server.** It follows the MCP authorization specification.
 
-- **Protected-resource metadata** (RFC 9728) is at `/.well-known/oauth-protected-resource/{slug}`. It names `PUBLIC_MCP_URL` as the authorization server and has no `resource_name`.
-- **Order of checks.** A request to `/{slug}` without credentials gets 401 with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/{slug}"`. Authentication comes before all other checks:
+- **Protected-resource metadata** (RFC 9728) is at `/.well-known/oauth-protected-resource/{slug}`. It names `PUBLIC_MCP_URL` as the authorization server and has no `resource_name`. It exists only for an endpoint whose effective methods include `oauth`. For other endpoints it returns 404.
+- **Order of checks.** A request to `/{slug}` without credentials gets 401 with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/{slug}"` when the endpoint accepts `oauth`. Authentication comes before all other checks:
   - A disabled endpoint answers a stranger like an enabled one. It returns 503 only after authentication.
   - An unknown slug returns 401 with a plain `Bearer` challenge. It returns 404 only to a caller with a valid credential.
 - **Authorization-server metadata** (RFC 8414) is at `/.well-known/oauth-authorization-server`.
@@ -104,7 +121,7 @@ The authentication mode is a global default (Settings → MCP Access). Each inst
 
 **Scope check.** For each request to `/{slug}`, core checks that the scope or audience of the credential includes that instance. This applies to both token kinds.
 
-**Owner check.** Each credential has an owner: the user who made the token, the user who gave the OAuth consent, or the user that `external` mode finds. For each request, the owner must be enabled and the role of the owner must have the instance. Otherwise core refuses the request with 403. The consent page shows only the endpoints of the role of the user.
+**Owner check.** Each credential has an owner: the user who made the token, the user who gave the OAuth consent, or the user that the `external` method finds. For each request, the owner must be enabled and the role of the owner must have the instance. Otherwise core refuses the request with 403. The consent page shows only the endpoints of the role of the user.
 
 ## 6.3 Access ceiling
 
@@ -113,7 +130,7 @@ Each credential has an access ceiling: `read` or `write`.
 - On the OAuth consent page, the user selects "Read only" (the default) or "Read & write". The ceiling is stored on the grant. All access and refresh tokens of the grant have it. A wider ceiling needs a new consent.
 - A bearer token has the same field, `read` by default.
 - A principal with ceiling `read` never reaches a write, whatever the access levels are (§5.2.1).
-- `external` mode trusts the proxy. Core does not limit its principals.
+- The `external` method trusts the external provider. Core does not limit its principals.
 
 The person who connects a client decides once what the client can ever do.
 
@@ -171,5 +188,5 @@ A user that self-registration makes gets the default role. Core records the sour
 | Source     | When                                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `oidc`     | OIDC `autoProvision` is on and the allow policy accepts the identity.                                                               |
-| `external` | An `external` endpoint gets an identity with no user (§6.2).                                                                        |
+| `external` | The external provider (§6.2) identifies a caller with no user.                                                                      |
 | `signup`   | The "Create account" form on the sign-in page. It needs `localSignup` and local sign-in on. The per-IP budget of `/auth/*` applies. |

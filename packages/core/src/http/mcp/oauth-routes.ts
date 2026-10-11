@@ -2,7 +2,8 @@ import type { Context, Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { AppContext } from '../../app.js';
 import { writeAudit } from '../../audit.js';
-import { effectiveAuthMode, oauthEndpoints, publicMcpBase, resourceUrl } from '../../auth/mcp-auth.js';
+import { oauthEndpoints, publicMcpBase, resourceUrl } from '../../auth/mcp-auth.js';
+import { effectiveAuthMethods } from '../../instances/manager.js';
 import { canonicalResource, OAuthError } from '../../auth/oauth.js';
 import type { OAuthService } from '../../auth/oauth.js';
 import type { SessionLimits, ValidSession } from '../../auth/sessions.js';
@@ -177,8 +178,8 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
   // RFC 9728: the path of the protected resource is appended to the well-known prefix.
   app.get('/.well-known/oauth-protected-resource/:slug', (c) => {
     const endpoint = ctx.instances.bySlug(c.req.param('slug'));
-    const mode = endpoint && effectiveAuthMode(ctx, endpoint.instance.authMode);
-    if (!endpoint || (mode !== 'oauth' && mode !== 'bearer+oauth')) return c.json({ error: 'not_found' }, 404);
+    if (!endpoint || !effectiveAuthMethods(ctx.db, endpoint.instance.authMethods).includes('oauth'))
+      return c.json({ error: 'not_found' }, 404);
     return c.json({
       resource: resourceUrl(issuer(c), endpoint.instance.slug),
       authorization_servers: [issuer(c)],

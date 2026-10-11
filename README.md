@@ -82,7 +82,7 @@ An operation's own level only offers what fits it: a read is None, Read or Ask (
 
 **✋ Human-in-the-loop (HITL) the model can't fake.** You approve on Synoikia's own approval page, where you sign in once per browser with your authenticator app. Clients that support [URL-mode elicitation][elicitation] open it for you; in chat clients such as Claude or ChatGPT, an approval card appears in the conversation and the chat continues by itself after you decide. The client that made the call can't approve it. "Approve for this session" lets one client run its Ask operations on one endpoint without asking, for a few hours (useful for batch operations). Destructive operations are `locked` by default: off until you set them to Ask, and then they always need a human, a typed confirmation and a fresh authenticator code, and can never be pre-approved or set to Write.
 
-**🔐 Per-client ceilings.** Each connected client gets an access ceiling when you connect it (OAuth consent) or create its token: read only by default. MCP clients authenticate with [OAuth 2.1][oauth], bearer tokens or your existing reverse-proxy auth (such as [Cloudflare Access][cf-access] or [Authelia][authelia]).
+**🔐 Per-client ceilings.** Each connected client gets an access ceiling when you connect it (OAuth consent) or create its token: read only by default. MCP clients authenticate with [OAuth 2.1][oauth], bearer tokens or [Cloudflare Access][cf-access]; you choose which methods are on, globally and per endpoint.
 
 **🧱 Isolated plugins.** Every plugin instance runs in its own child process under the [Node permission model][node-perm], with a scrubbed environment and a memory cap. Secrets are encrypted at rest and handed only to the instance that owns them.
 
@@ -111,7 +111,7 @@ On first start, open the admin portal and create the first account (or set `ADMI
 
 ### Debugging a client that can't connect
 
-A refused MCP request is logged with its reason: the auth mode, the kind of credential the client sent, a Cloudflare Access claim that didn't match, a Host outside `PUBLIC_MCP_URL`/`MCP_ALLOWED_HOSTS`, or an endpoint that is unavailable. Watch `docker compose logs -f synoikia` while the client connects. Set `LOG_LEVEL=debug` to also see every request on the MCP port, including OAuth discovery. If nothing shows up, the request was stopped before it reached Synoikia: check your proxy's log (for Cloudflare Access, Zero Trust → Logs → Access). See design §11.
+A refused MCP request is logged with its reason: the endpoint's client auth methods, the kind of credential the client sent, a Cloudflare Access claim that didn't match, a Host outside `PUBLIC_MCP_URL`/`MCP_ALLOWED_HOSTS`, or an endpoint that is unavailable. Watch `docker compose logs -f synoikia` while the client connects. Set `LOG_LEVEL=debug` to also see every request on the MCP port, including OAuth discovery. If nothing shows up, the request was stopped before it reached Synoikia: check your proxy's log (for Cloudflare Access, Zero Trust → Logs → Access). See design §11.
 
 ### Plugin repositories
 
@@ -157,7 +157,6 @@ Bug reports, feature requests and pull requests are welcome — see [CONTRIBUTIN
 [minisign]: https://jedisct1.github.io/minisign/
 [oauth]: https://oauth.net/2.1/
 [cf-access]: https://www.cloudflare.com/zero-trust/products/access/
-[authelia]: https://www.authelia.com/
 [node-perm]: https://nodejs.org/api/permissions.html
 [ntfy]: https://ntfy.sh/
 [totp]: https://datatracker.ietf.org/doc/html/rfc6238

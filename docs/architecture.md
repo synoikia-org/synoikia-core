@@ -48,7 +48,7 @@ flowchart LR
   end
 
   subgraph Edge["Edge (TLS terminated here)"]
-    proxy["Reverse proxy<br/>Caddy / Traefik / Cloudflare Tunnel<br/>optional CF Access / Authelia"]
+    proxy["Reverse proxy<br/>Caddy / Traefik / Cloudflare Tunnel<br/>optional CF Access"]
   end
 
   syn[["Synoikia<br/>one container, one core process"]]
@@ -650,23 +650,24 @@ stateDiagram-v2
 
 ## 11. MCP endpoint authentication
 
-Global default mode with a per-instance override; scope and audience are checked on every request
-(§6.2).
+Client auth methods enabled globally and narrowed per instance; scope and audience are checked on every
+request (§6.2).
 
 ```mermaid
 flowchart TD
   req(["request to /{slug}"]) --> host{"Host / Origin allowed?"}
   host -- no --> r403a["403"]
-  host -- yes --> mode{"auth mode<br/>(instance override or global)"}
+  host -- yes --> mode{"effective methods<br/>(instance subset ∩ enabled)"}
+  mode -- empty --> r403e["403"]
 
-  mode -- external --> cf{"CF Access configured?"}
-  cf -- yes --> jwt{"Cf-Access-Jwt-Assertion<br/>verifies vs team JWKS + aud?"}
-  jwt -- no --> r401
-  jwt -- yes --> idx["principal = JWT email / service id"]
-  cf -- no --> hdr["principal = trusted header<br/>or anonymous by client IP"]
+  mode -- "no bearer token, external allowed" --> ext["external provider<br/>(Cloudflare Access)"]
+  ext --> jwt{"Cf-Access-Jwt-Assertion verifies<br/>vs team JWKS + aud, user (not service token)?"}
+  jwt -- "no, and bearer/oauth not allowed" --> r401
+  jwt -- "no, bearer/oauth allowed" --> cred
+  jwt -- yes --> idx["principal = JWT email"]
 
-  mode -- "bearer / oauth / bearer+oauth" --> cred{"credential presented<br/>and allowed by mode?"}
-  cred -- none --> r401["401 WWW-Authenticate: Bearer<br/>resource_metadata=…/{slug}"]
+  mode -- "bearer token" --> cred{"credential presented<br/>and its method allowed?"}
+  cred -- none --> r401["401 WWW-Authenticate: Bearer<br/>resource_metadata=…/{slug} if oauth allowed"]
   cred -- "syn_… bearer" --> bt["SHA-256 lookup in mcp_tokens<br/>not revoked / expired"]
   cred -- "OAuth access token" --> ot["oauth_tokens lookup<br/>audience = granted instance ids"]
   bt -- invalid --> r401
@@ -675,7 +676,7 @@ flowchart TD
   bt & ot --> scope{"scope / audience<br/>includes this instance?"}
   scope -- no --> r403["403"]
   scope -- yes --> pr["principal + ceiling read|write"]
-  idx & hdr --> pr2["principal (ceiling write)"]
+  idx --> pr2["principal (ceiling write)"]
   pr & pr2 --> ex{"slug exists, enabled,<br/>plugin enabled, synced?"}
   ex -- "unknown slug" --> r404["404"]
   ex -- disabled --> r503["503 JSON-RPC error"]
@@ -947,7 +948,7 @@ erDiagram
     text slug UK
     text config
     blob secrets_enc "🔒"
-    text auth_mode "NULL = inherit"
+    text auth_methods "JSON list, NULL = all enabled"
     text settings
     text status "stopped | starting | ready | error"
     text upstream_version
@@ -1200,7 +1201,7 @@ flowchart TB
         ist["Endpoint Settings"]
       end
       subgraph Set["/settings"]
-        sm["MCP access"]
+        sm["Client auth"]
         ss["Admin UI security"]
         su["Users"]
         sn["Notifications"]
@@ -1252,7 +1253,7 @@ Where each control sits (§12).
 
 ```mermaid
 flowchart LR
-  inet(["Internet"]) -- "B1: auth mode, scoped tokens/grants,<br/>403 outside scope, read ceiling by default" --> mcp
+  inet(["Internet"]) -- "B1: client auth methods, scoped tokens/grants,<br/>403 outside scope, read ceiling by default" --> mcp
   lan(["LAN admin"]) -- "B2: separate port, login + TOTP/OIDC,<br/>sessions, CSRF, lockout" --> adm
 
   subgraph CoreProc["core process (trusted)"]
