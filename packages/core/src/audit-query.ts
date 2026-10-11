@@ -2,7 +2,7 @@ import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DbLike } from './db/index.js';
-import { auditLog } from './db/schema.js';
+import { auditLog, users } from './db/schema.js';
 
 /** Audit log reads for the portal (design §8.2): filterable, paginated, exportable. Never writes. */
 
@@ -31,22 +31,31 @@ function where(q: AuditQuery): SQL | undefined {
   if (q.decision) c.push(sql`${auditLog.decision} LIKE ${`${escapeLike(q.decision)}%`} ESCAPE '\\'`);
   if (q.operation) c.push(sql`${auditLog.operationKey} LIKE ${`${escapeLike(q.operation)}%`} ESCAPE '\\'`);
   if (q.target) c.push(sql`${auditLog.resolvedTargets} LIKE ${`%${escapeLike(q.target)}%`} ESCAPE '\\'`);
-  if (q.actor) c.push(eq(auditLog.actorId, q.actor));
+  if (q.actor) {
+    const byName = sql`${auditLog.actorKind} = 'user' AND ${auditLog.actorId} IN (SELECT ${users.id} FROM ${users} WHERE lower(${users.username}) = lower(${q.actor}))`;
+    c.push(or(eq(auditLog.actorId, q.actor), byName)!);
+  }
   if (q.from) c.push(gte(auditLog.at, q.from));
   if (q.to) c.push(lte(auditLog.at, q.to));
   return c.length ? and(...c) : undefined;
 }
 
+/** Audit rows plus the acting user's current name; null when the actor isn't a user or no longer exists. */
+const selectWithActorName = (db: DbLike) =>
+  db
+    .select({ row: auditLog, actorName: users.username })
+    .from(auditLog)
+    .leftJoin(users, and(eq(auditLog.actorKind, 'user'), eq(auditLog.actorId, users.id)));
+
 export function queryAudit(db: DbLike, raw: unknown) {
   const q = AuditQuerySchema.parse(raw);
-  const rows = db
-    .select()
-    .from(auditLog)
+  const rows = selectWithActorName(db)
     .where(where(q))
     .orderBy(desc(auditLog.at), desc(auditLog.id))
     .limit(q.limit)
     .offset(q.offset)
-    .all();
+    .all()
+    .map(({ row, actorName }) => ({ ...row, actorName }));
   const total =
     db
       .select({ n: sql<number>`count(*)` })
@@ -66,6 +75,7 @@ const CSV_COLUMNS = [
   'decision',
   'actorKind',
   'actorId',
+  'actorName',
   'decidedBy',
   'decidedVia',
   'resultStatus',
@@ -94,13 +104,12 @@ export function* auditCsvChunks(db: DbLike, raw: unknown): Generator<string> {
     const after = last
       ? or(lt(auditLog.at, last.at), and(eq(auditLog.at, last.at), lt(auditLog.id, last.id)))
       : undefined;
-    const rows = db
-      .select()
-      .from(auditLog)
+    const rows = selectWithActorName(db)
       .where(and(where(q), after))
       .orderBy(desc(auditLog.at), desc(auditLog.id))
       .limit(CSV_PAGE)
-      .all();
+      .all()
+      .map(({ row, actorName }) => ({ ...row, actorName }));
     if (rows.length) yield rows.map((r) => `${CSV_COLUMNS.map((c) => csvCell(r[c])).join(',')}\n`).join('');
     if (rows.length < CSV_PAGE) return;
     const tail = rows.at(-1)!;
