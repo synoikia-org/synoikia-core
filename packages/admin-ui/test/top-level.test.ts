@@ -63,6 +63,20 @@ describe('Plugins', () => {
     expect(calls.filter((c) => c.path === '/api/plugins' && c.method === 'GET')).toHaveLength(2);
   });
 
+  it('describes connection-field hosts and keeps the raw manifest string visible', async () => {
+    const manifest = {
+      name: 'Acme',
+      network: { hosts: ['{{connection.baseUrl}}', 'api.example.com'] },
+      connection: { schema: { properties: { baseUrl: { type: 'string', title: 'Base URL' } } } },
+    };
+    pluginsApi({ 'GET /api/plugins': [plugin({ manifest })] });
+    const { wrapper } = await mountAt('/plugins');
+    const text = wrapper.text();
+    expect(text).toContain("the host of each endpoint's Base URL ({{connection.baseUrl}})");
+    expect(text).toContain('api.example.com');
+    expect(wrapper.get('[data-raw-host]').text()).toBe('{{connection.baseUrl}}');
+  });
+
   it('uninstalls only after the dialog confirms it, and says so', async () => {
     const { calls } = pluginsApi({ 'DELETE /api/plugins/p2': {} });
     const { wrapper, body } = await mountAt('/plugins');

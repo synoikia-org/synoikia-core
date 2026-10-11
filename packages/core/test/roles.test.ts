@@ -92,6 +92,29 @@ describe('roles: admin API', () => {
     expect((await t.admin.del(`/api/roles/${t.roleId}`)).status).toBe(204);
   });
 
+  it('changes only the switches a patch names', async () => {
+    const t = await setup({ canSetOwnLevels: true });
+    const patch = async (body: Record<string, unknown>) =>
+      (await (await t.admin.patch(`/api/roles/${t.roleId}`, body)).json()) as Record<string, unknown>;
+    expect(await patch({ canManageOwnRules: true })).toMatchObject({
+      canSetOwnLevels: true,
+      canManageOwnRules: true,
+      canSeeStatus: false,
+    });
+    expect(await patch({ canSeeStatus: true })).toMatchObject({
+      canSetOwnLevels: true,
+      canManageOwnRules: true,
+      canSeeStatus: true,
+    });
+    expect(await patch({ name: 'Ops', canSetOwnLevels: false })).toMatchObject({
+      name: 'Ops',
+      canSetOwnLevels: false,
+      canManageOwnRules: true,
+      canSeeStatus: true,
+    });
+    expect((await t.admin.patch(`/api/roles/${t.roleId}`, { canSeeStatus: 'yes' })).status).toBe(400);
+  });
+
   it('never leaves the server without an enabled admin', async () => {
     const t = await setup();
     const me = (await (await t.admin.get('/api/profile')).json()) as { id: string };

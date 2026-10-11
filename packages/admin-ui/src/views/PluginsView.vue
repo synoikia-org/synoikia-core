@@ -19,7 +19,7 @@ import {
   useTogglePlugin,
   useUninstallPlugin,
 } from '../composables/usePlugins';
-import { ago } from '../format';
+import { ago, describeHosts } from '../format';
 import type { AvailablePlugin, PluginRow, Repo } from '../types';
 
 const pluginsQuery = usePluginsQuery();
@@ -241,7 +241,16 @@ const BLOCKED: Record<string, string> = {
               <span class="mono small muted">{{ p.pluginId }}</span>
               <div v-if="p.manifest.description" class="small muted">{{ p.manifest.description }}</div>
               <div v-if="p.manifest.network?.hosts?.length" class="small muted">
-                Declares network access to: <span class="mono">{{ p.manifest.network.hosts.join(', ') }}</span>
+                Declares network access to:
+                <template
+                  v-for="(h, n) in describeHosts(p.manifest.network.hosts, p.manifest.connection?.schema)"
+                  :key="n"
+                  >{{ n ? ', ' : '' }}<span v-if="h.literal" class="mono">{{ h.raw }}</span
+                  ><template v-else
+                    >{{ h.text }} (<span class="mono" data-raw-host>{{ h.raw }}</span
+                    >)</template
+                  ></template
+                >
               </div>
             </td>
             <td class="mono">{{ p.version }}</td>
