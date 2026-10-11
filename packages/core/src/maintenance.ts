@@ -5,7 +5,7 @@ import { auditLog, pendingApprovals, preApprovalHits, preApprovalRules } from '.
 import { getSettings } from './settings.js';
 
 /** Hourly, idempotent housekeeping (design §10): expired sessions, tokens and links, old rule hits and
- * decided approvals, and old audit rows only when a retention is set. */
+ * decided approvals, and audit rows past the retention. */
 
 const DAY = 24 * 60 * 60_000;
 

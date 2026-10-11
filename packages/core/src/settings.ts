@@ -67,8 +67,8 @@ const SETTINGS_SCHEMAS = {
     .prefault({}),
   audit: z
     .object({
-      /** Unset = keep forever (design §10). */
-      retentionDays: z.number().int().min(7).nullable().default(null),
+      /** Null = keep forever (design §10). */
+      retentionDays: z.number().int().min(7).nullable().default(90),
     })
     .prefault({}),
 } as const;
