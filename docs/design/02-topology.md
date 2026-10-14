@@ -47,7 +47,7 @@ The two listeners are two separate Hono apps on two ports. A route of one listen
 
 `PUBLIC_ADMIN_URL` is optional. Core uses it for OIDC redirect URIs and for links in notifications.
 
-The MCP listener shows a small fixed set of HTML pages: OAuth sign-in, OAuth consent, and the approval page. These pages use the portal user accounts and the OIDC configuration. Each purpose has its own cookie:
+The MCP listener shows a small fixed set of HTML pages: OAuth sign-in, OAuth consent, and the approval page. These pages use the portal user accounts and the OIDC configuration. They run no scripts. The only exception is the page after an approval decision: its CSP allows one static `window.close()` script by its hash (§5.3). Each purpose has its own cookie:
 
 | Purpose  | Cookie            | Path     | Session kind  |
 | -------- | ----------------- | -------- | ------------- |

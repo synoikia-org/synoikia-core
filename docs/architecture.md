@@ -586,8 +586,8 @@ flowchart TD
 
 ## 10. Human approval
 
-An approval comes from a person on Synoikia's own page, never from the client that made the call
-(§5.3).
+An approval comes from a person on Synoikia's own page. An endpoint that opts in to in-session approval
+lets the agent session approve its non-locked Ask calls instead: a form prompt, or the approval card (§5.3).
 
 ```mermaid
 sequenceDiagram
@@ -602,7 +602,10 @@ sequenceDiagram
   G->>AP: request(op, params, targets, summary, literal, diff)
   AP->>DB: pending_approvals row (redacted params, params_hash, expires +15 min)
   Note over AP: unredacted params kept only in memory
-  alt client supports URL elicitation
+  alt in-session approval opted in, not locked, client supports forms
+    AP->>C: elicitInput(form: approve boolean)
+    C-->>AP: approve, decided_via=elicitation, channel=form
+  else client supports URL elicitation
     AP->>DB: approval_links (token hash, single use)
     AP->>C: elicitInput(mode url, PUBLIC_MCP_URL/a/token)
     C->>H: "open this link"
@@ -610,16 +613,18 @@ sequenceDiagram
     PG->>H: sign in (password [+ TOTP], or OIDC), or external provider identifies the owner
     H->>PG: POST decision (CSRF)<br/>locked: typed literal
     PG->>AP: approve / deny, decided_by=user, via=url
+    PG->>H: "return to your chat" (tries window.close())
     AP->>C: notifications/elicitation/complete
-  else form elicitation opted in and plain write
-    AP->>C: elicitInput(form: approve boolean)
-    C-->>AP: approve, decided_via=elicitation
   else no client prompt: the execution parks (§5.6)
     AP->>DB: approval_links (token hash, single use)
-    AP-->>C: execute returns awaiting_approval + page link
+    AP-->>C: execute returns awaiting_approval + page link (+ inSession)
     Note over C: approval card (MCP Apps) or the link as text
-    H->>PG: GET /a/token, sign in, POST decision
-    PG->>AP: approve (once, or for this session) / deny
+    alt inSession: Approve / Deny on the card
+      C->>AP: approval_decide(executionId, approve), channel=card, no session grant
+    else on the page
+      H->>PG: GET /a/token, sign in, POST decision
+      PG->>AP: approve (once, or for this session) / deny
+    end
     C->>AP: resume(executionId) → result
   else caller cannot park
     AP-->>G: deny (client_cannot_approve / no_approval_path / too_many_parked)
@@ -636,7 +641,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
   [*] --> pending: gate requests approval
-  pending --> approved: approver decides on page / opted-in form
+  pending --> approved: approver decides on page / in session (form or card)
   pending --> denied: approver denies, client declines, no path
   pending --> timed_out: expires_at reached
   pending --> cancelled: execute ended, session closed,<br/>endpoint stopped, shutdown

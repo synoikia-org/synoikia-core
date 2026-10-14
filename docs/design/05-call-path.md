@@ -169,6 +169,8 @@ effectiveAccess(op, group, principal):
 
 A human must make an approval, not the client that made the call. The answer to a form prompt goes back through the calling client. A scripted client, or a client under prompt injection, could then approve its own writes. For this reason, core shows its own approval page.
 
+An endpoint can allow in-session approval with `formElicitationApprovals: 'writes'`. The default is `off`, and the portal shows a warning. Then the human approves an operation at `ask`, read or write, in the agent session. The operation must not be locked and must not need a typed confirmation. The client can then approve these calls itself.
+
 1. **Pending approval.** Core creates a `pending_approvals` row with:
    - the instance, the operation key, and the redacted parameters for display;
    - `params_hash`: SHA-256 over the canonical JSON of the key, the parameters, the resolved targets and the expected hash;
@@ -176,10 +178,10 @@ A human must make an approval, not the client that made the call. The answer to 
    - the client identity, the user who owns the credential (`owner_user_id`), and the MCP session;
    - `expires_at`: 15 minutes by default, set for each instance.
      Core keeps the parameters that are not redacted in memory only.
-2. **Channel.** Core uses the first channel that applies, in this order:
-   - **URL-mode elicitation.** This is the approval path. Core makes a single-use page token (`approval_links`, stored as a hash, valid until the approval expires). It calls `elicitInput({ mode: 'url', url: PUBLIC_MCP_URL/a/<token>, elicitationId, message })`. The human opens the page, signs in, and decides there. The client never sees the decision form or the literal. The answer of the client only tells if the page opened (`accept`). `decline` and `cancel` deny. After the decision, core sends `notifications/elicitation/complete` and makes the token invalid.
-   - **Form elicitation.** The endpoint must allow it with `formElicitationApprovals: 'writes'`. The default is `off`, and the portal shows a warning. The operation must be a plain write: not locked and without typed confirmation. The form has one `approve` value. The audit records `decided_via: elicitation` and the client as `decided_by`.
-   - **Link.** The client has no channel above. The execution parks (§5.6). Core makes the same single-use page token and returns the page link in the tool result. The approval card (§5.7) shows it, or the agent shows it as text. The human decides on the page.
+2. **Channel.** Core uses the first channel that applies, in this order. The audit `detail.approvalChannel` records the channel of the decision: `form`, `url`, `link` or `card`.
+   - **Form elicitation.** In-session approval applies to the call, and the client supports form prompts. The form has one `approve` value. The audit records `decided_via: elicitation` and the client as `decided_by`.
+   - **URL-mode elicitation.** This is the approval path for the other calls. Core makes a single-use page token (`approval_links`, stored as a hash, valid until the approval expires). It calls `elicitInput({ mode: 'url', url: PUBLIC_MCP_URL/a/<token>, elicitationId, message })`. The human opens the page, signs in, and decides there. The client never sees the decision form or the literal. The answer of the client only tells if the page opened (`accept`). `decline` and `cancel` deny. After the decision, core sends `notifications/elicitation/complete` and makes the token invalid.
+   - **Link.** The client has no channel above. The execution parks (§5.6). Core makes the same single-use page token and returns the page link in the tool result. The approval card (§5.7) shows it, or the agent shows it as text. The human decides on the page. If in-session approval applies to the call, the human can also decide on the approval card (channel `card`).
    - **No channel.** A caller that cannot park, for example a script through the test harness, has no channel. Core denies the call at once: `client_cannot_approve` for a client with forms only, `no_approval_path` for a client without prompts. Over the parked limits, core denies with `too_many_parked`.
 3. **Approval page** (`/a/:token` on the MCP listener). The page needs:
    - an approver that core identifies in one of these two ways:
@@ -188,6 +190,7 @@ A human must make an approval, not the client that made the call. The answer to 
    - a POST with a CSRF token. The token is signed with the double-submit cookie, the approval link and the approver, so a token from another form or another user fails. A GET or a prefetch decides nothing.
      A page sign-in has priority over the external provider. If core cannot identify an approver, the page shows the sign-in form.
      `decided_by` is the user name. `decided_via` is `url`. The audit `detail.approverSignIn` is `session` or `external`. The page has three choices: **Deny**, **Approve once** and **Approve for this session** (§5.8).
+     After the decision, the page tells the user to go back to the chat. It runs one static script that tries to close the tab (`window.close()`). The CSP allows only this script, by its SHA-256 hash. The other pages run no scripts.
 4. **Typed confirmation.** For an operation with typed confirmation, the approver must type `confirm_literal` exactly. Otherwise core returns 400 and the approver can try again. `summarize` gets redacted parameters, so the summary and the literal cannot hold a secret. If such an operation has no literal, core refuses the call.
 5. **Targets checked again.** For plugins with `targets`, core resolves the targets again after the approval. If they are not the targets that the approver saw, core refuses the call (`TARGETS_CHANGED`). The plugin gets the approved targets in `InvokeContext.targets`.
 6. **Access checked again.** If the admin lowered the level while the approval was open, core refuses the call (`access_changed`).
@@ -201,7 +204,7 @@ A human must make an approval, not the client that made the call. The answer to 
 
 | From      | To          | When                                                                                                                                      |
 | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `pending` | `approved`  | A human approves on the page, or the client approves an allowed form.                                                                     |
+| `pending` | `approved`  | A human approves on the page, or in the agent session: an allowed form or the approval card.                                              |
 | `pending` | `denied`    | A human denies, the client declines, there is no channel, or core restarts.                                                               |
 | `pending` | `timed_out` | `expires_at` passes.                                                                                                                      |
 | `pending` | `cancelled` | The `execute` ends, the session closes (not for a parked execution), the endpoint stops, the owner is deleted (§6.1), or core shuts down. |
@@ -287,8 +290,8 @@ A client without a usable prompt, for example a chat client without elicitation,
 
 1. A binding needs a human decision, and no client prompt applies (§5.3). The caller can park.
 2. Core makes the pending approval and the page token. It writes the audit event `awaiting_approval` with the `executionId`, the `approvalId` and `channel: link`.
-3. The `execute` call returns `status: awaiting_approval`, the `executionId` and `approval` (`url`, `operationKey`, `summary`, `expiresAt`). This is not an error result.
-4. The human decides on the approval page.
+3. The `execute` call returns `status: awaiting_approval`, the `executionId` and `approval` (`url`, `operationKey`, `summary`, `expiresAt`, `inSession`). This is not an error result. `inSession` is true when in-session approval applies to the call.
+4. The human decides on the approval page, or on the approval card when `inSession` is true (§5.7).
 5. The script continues at the decision. It does not wait for `resume`. The sandbox time limit starts again.
 6. The agent calls `resume(executionId)`. `resume` waits up to 45 s for a change. It returns one of these:
    - the result of the script, after which core forgets the execution;
@@ -326,10 +329,12 @@ One `resume` at a time can wait on an execution. A second one gets `BUSY`.
 The approval card is an MCP Apps view (extension `io.modelcontextprotocol/ui`). Hosts that support MCP Apps show it in the chat for each `execute` and `resume` result.
 
 - **Resource.** `ui://synoikia/approval`, MIME type `text/html;profile=mcp-app`. Core serves static HTML and script. It loads nothing from other origins and declares no CSP domains.
-- **Tools.** `execute` and `resume` set `_meta.ui.resourceUri` to the card. Two tools have `_meta.ui.visibility: ["app"]`, so the model does not see them:
+- **Tools.** `execute` and `resume` set `_meta.ui.resourceUri` to the card. Three tools have `_meta.ui.visibility: ["app"]`, so the model does not see them:
   - `approval_status(executionId)` returns the state of a parked execution: `pending`, `approved`, `denied`, `timed_out`, `cancelled`, `running` or `done`, with `expiresAt` and the last decision. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
+  - `approval_decide(executionId, approve)` approves or denies the approval that the parked execution waits on. It has the owner check of `resume`. It returns only `decided`, or `decided: false` with an error code.
   - `session_grant_revoke(grantId)` ends a session grant of the same principal and endpoint.
-- **The card never decides.** It has no approve control and no confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
+- **Decisions.** The card decides only when `approval.inSession` is true. It then shows **Approve**, **Deny** and **Review on the page**. Core refuses a decision when the approval is closed, when in-session approval does not apply to the call, or when the endpoint does not allow it now. The audit records `decided_via: elicitation`, the client as `decided_by`, and `detail.approvalChannel: card`. A card decision never gives a session grant.
+- **Page.** For each other approval, the card has no approve control. It never has a confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
 - **Continue.** When the state is final, the card sends one `ui/message` to the chat ("Approved, continue."). The agent then calls `resume`. If the host refuses the message, the card asks the user to say "continue".
 - **Session grant.** When a session grant is active, the result has `sessionGrant` (`id`, `expiresAt`). The card shows it with a **Revoke** control.
 - A host without MCP Apps ignores the card. The agent shows the link from the text result.
