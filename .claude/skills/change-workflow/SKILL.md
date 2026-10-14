@@ -37,7 +37,7 @@ Recommend one pattern, say why in a sentence, and get approval: in the plan for 
 
 **Single PR** (small changes):
 
-- Work on the session's designated branch (restart it from `main` if its PR already merged), make the change, run the repo's checks (`CLAUDE.md` › Commands), run the `security-reviewer` subagent when `CLAUDE.md` › Security review lists a path you touched, then push and open one draft PR into `main`.
+- Work on one branch from `main` named as in **Branch names** below, make the change, run the repo's checks (`CLAUDE.md` › Commands), run the `security-reviewer` subagent when `CLAUDE.md` › Security review lists a path you touched, then push and open one draft PR into `main`.
 
 **PR chain, unattended** (big changes):
 
@@ -48,6 +48,25 @@ Recommend one pattern, say why in a sentence, and get approval: in the plan for 
 - Never merge to `main`. The user merges the integration PR.
 
 **In both patterns, the PR into `main`** is opened as a draft and watched (`subscribe_pr_activity`) from the moment it opens until it merges or closes, so CI results, reviews and conflicts wake the session. Mark it ready for review (`update_pull_request` with `draft: false`) only when the work is done and CI is green on its current head: the PR going ready is the signal to the user that it needs their review. If a push after that turns CI red, fix it; don't leave a red PR marked ready.
+
+**UI changes need renders before the PR goes ready.** When the change touches the admin UI or a page core renders, deliver renders in the session first:
+
+- Run the app and take screenshots with Playwright (Chromium is pre-installed) of each changed page, dialog and state (loading, empty, error, success where they changed).
+- Cover light and dark mode, and desktop and mobile width when the layout changed.
+- When the change should look the same, show the `main` render next to the branch render.
+- Send them with `SendUserFile` (`display: "render"`), each with a one-line caption saying what it shows.
+- Re-send them after a later push changes the UI. Tests and CI passing are not a substitute for renders.
+
+### Branch names
+
+Every branch name says what changes, as `<component>/<task-summary>` in lowercase kebab-case.
+
+- `<component>` is where the most important changes land: `core`, `plugin-sdk`, `create-plugin`, `admin-ui`, `docs`, `ci`, `skills`.
+- `<task-summary>` is two to four words about the whole task: `core/auth-refactoring`, `admin-ui/add-backups`.
+- No `claude/` prefix, no random strings or words, no session IDs or dates.
+- A session's designated branch with a generated name (`claude/…`, random words) is not used. Create a branch with a meaningful name instead, and push and open the PR from it.
+- In a PR chain, the integration branch takes this name. Each child branch adds its step to it with a hyphen: `core/auth-refactoring-session-store`. Git can't hold a branch `a/b` and a branch `a/b/c` at the same time, so don't use a slash.
+- If the PR for a branch already merged, follow-up work gets a new branch with its own name.
 
 Read `references/pr-chain.md` before starting a chain: it has the per-step loop, the PR body template, the blocking list and how to resume after an interruption.
 
