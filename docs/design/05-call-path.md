@@ -169,7 +169,7 @@ effectiveAccess(op, group, principal):
 
 A human must make an approval, not the client that made the call. The answer to a form prompt goes back through the calling client. A scripted client, or a client under prompt injection, could then approve its own writes. For this reason, core shows its own approval page.
 
-An endpoint can allow in-session approval with `formElicitationApprovals: 'writes'`. The default is `off`, and the portal shows a warning. Then the human approves an operation at `ask`, read or write, in the agent session. The operation must not be locked and must not need a typed confirmation. The client can then approve these calls itself.
+An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`. The values are `off` and `ask`. The default is `off`, and the portal shows a warning. Core reads each other stored value as `off`. At startup, core removes such a value and logs a warning for the endpoint. Then the human approves an operation at `ask`, read or write, in the agent session. The operation must not be locked and must not need a typed confirmation. The client can then approve these calls itself.
 
 1. **Pending approval.** Core creates a `pending_approvals` row with:
    - the instance, the operation key, and the redacted parameters for display;
