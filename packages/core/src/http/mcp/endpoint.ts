@@ -26,6 +26,7 @@ import { executeCode, resumeExecution, searchCode } from '../../runtime/index.js
 import type { ExecuteResult } from '../../runtime/executions.js';
 import type { LogFields } from '../../log.js';
 import { getSettings } from '../../settings.js';
+import { ServiceError } from '../../errors.js';
 import { clientIp } from '../common.js';
 import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION } from './approval-card.js';
 
@@ -110,6 +111,7 @@ function toolText(result: ExecuteResult, extras?: ToolExtras) {
               operationKey: result.approval.operationKey,
               summary: result.approval.summary,
               expiresAt: result.approval.expiresAt.toISOString(),
+              inSession: result.approval.inSession,
             },
           }
         : {}),
@@ -290,7 +292,7 @@ export class McpEndpoints {
     const server = new McpServer(
       { name: `synoikia/${rt().slug}`, version: SERVER_VERSION },
       {
-        instructions: `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. When execute returns awaiting_approval, show the link and call resume after the user decides.`,
+        instructions: `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.`,
         capabilities: { extensions: { [MCP_APPS_EXTENSION]: {} } },
       },
     );
@@ -407,7 +409,7 @@ export class McpEndpoints {
         );
       },
     );
-    // App-only (design §5.7): the approval card polls state and can end a grant; neither can approve.
+    // App-only (design §5.7): the approval card polls state, ends a grant, and decides only in-session approvals.
     server.registerTool(
       'approval_status',
       {
@@ -421,6 +423,31 @@ export class McpEndpoints {
         const status = this.ctx.executions.status(id, identity.principal, instanceId);
         const body = status ?? { state: 'not_found' };
         return { structuredContent: { ...body }, content: [{ type: 'text', text: JSON.stringify(body) }] };
+      },
+    );
+    server.registerTool(
+      'approval_decide',
+      {
+        title: 'Decide approval',
+        description: 'Approves or denies the in-session approval a parked execution waits on, for the approval card.',
+        inputSchema: { executionId, approve: z.boolean() },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+        _meta: appOnly,
+      },
+      ({ executionId: id, approve }) => {
+        // The owner check of approval_status; the approval service decides if the card may answer.
+        const approval = this.ctx.executions.currentApproval(id, identity.principal, instanceId);
+        let body: { decided: boolean; error?: string } = { decided: false, error: 'not_found' };
+        if (approval) {
+          try {
+            this.ctx.approvals.decideInSession(approval.approvalId, { approve, decidedBy: identity.label });
+            body = { decided: true };
+          } catch (err) {
+            if (!(err instanceof ServiceError)) throw err;
+            body = { decided: false, error: err.code };
+          }
+        }
+        return { structuredContent: body, content: [{ type: 'text', text: JSON.stringify(body) }] };
       },
     );
     server.registerTool(

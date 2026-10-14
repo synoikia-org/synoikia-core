@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import { getSettings, updateSettings } from '../src/settings.js';
 import { sha256, signPayload } from '../src/auth/tokens.js';
 import { auditLog, operations, pluginInstances, settings, users } from '../src/db/schema.js';
 import { createMcpApp } from '../src/http/mcp-app.js';
+import { CLOSE_SCRIPT } from '../src/http/mcp/pages.js';
 import { executeCode } from '../src/runtime/index.js';
 import { createTestApp } from './helpers.js';
 
@@ -73,6 +75,27 @@ function formBrowser(
     return res;
   };
 }
+/** The decided page runs only its static close script, allowed by hash; every other page runs none. */
+async function expectScripts(res: Response, closeTab: boolean) {
+  const csp = res.headers.get('content-security-policy')!;
+  const body = await res.text();
+  const scripts = [...body.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  expect(csp).toContain("default-src 'none'");
+  if (!closeTab) {
+    expect(scripts).toEqual([]);
+    expect(csp).not.toContain('script-src');
+    return body;
+  }
+  expect(scripts).toEqual([CLOSE_SCRIPT]);
+  const hash = createHash('sha256').update(scripts[0]!).digest('base64');
+  const directive = csp
+    .split(';')
+    .map((d) => d.trim())
+    .find((d) => d.startsWith('script-src'));
+  expect(directive).toBe(`script-src 'sha256-${hash}'`);
+  return body;
+}
+
 const hidden = (page: string, name: string) => new RegExp(`name="${name}" value="([^"]*)"`).exec(page)?.[1] ?? '';
 
 /** An echo endpoint at Ask, an admin (with TOTP unless `totp: false`) and one call awaiting approval. */
@@ -192,7 +215,7 @@ describe('approval page', () => {
     expect(signedIn.headers.get('location')).toBe(t.page);
     expect(t.ctx.db.select().from(auditLog).where(eq(auditLog.decidedVia, 'url')).all()).toHaveLength(0);
 
-    const pageHtml = await (await t.browse(t.page)).text();
+    const pageHtml = await expectScripts(await t.browse(t.page), false);
     expect(pageHtml).toContain('echo.set');
     expect(pageHtml).not.toContain('hunter2');
     expect(pageHtml).toContain('Signed in as <strong>admin</strong>');
@@ -201,13 +224,17 @@ describe('approval page', () => {
     // Without the CSRF field the POST is refused.
     expect((await t.browse(t.page, { decision: 'approve' })).status).toBe(400);
     const done = await t.browse(t.page, { decision: 'approve', csrf: hidden(pageHtml, 'csrf') });
-    expect(await done.text()).toContain('was approved');
+    const doneHtml = await expectScripts(done, true);
+    expect(doneHtml).toContain('was approved');
+    expect(doneHtml).toContain('Done — return to your chat (<strong>claude</strong>). You can close this tab.');
     await expect(t.run).resolves.toMatchObject({ ok: true, value: 'echo.set' });
     const audit = t.ctx.db.select().from(auditLog).where(eq(auditLog.decidedVia, 'url')).all();
     expect(audit.map((a) => [a.decision, a.actorId, a.decidedBy])).toEqual([['human-approved', 'claude', 'admin']]);
 
     // The link is burnt once decided.
-    expect((await t.browse(t.page)).status).toBe(404);
+    const burnt = await t.browse(t.page);
+    expect(burnt.status).toBe(404);
+    await expectScripts(burnt, false);
   });
 
   it('asks locked operations for the typed confirmation only, and can deny', async () => {
@@ -225,10 +252,10 @@ describe('approval page', () => {
     for (const confirm of [undefined, 'nope', 'VOL/X']) {
       const res = await t.browse(t.page, { decision: 'approve', csrf, ...(confirm ? { confirm } : {}) });
       expect(res.status).toBe(400);
-      expect(await res.text()).toContain('exactly to approve');
+      expect(await expectScripts(res, false)).toContain('exactly to approve');
     }
 
-    expect(await (await t.browse(t.page, { decision: 'deny', csrf })).text()).toContain('was denied');
+    expect(await expectScripts(await t.browse(t.page, { decision: 'deny', csrf }), true)).toContain('was denied');
     await expect(t.run).resolves.toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
   });
 

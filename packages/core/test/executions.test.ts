@@ -26,6 +26,7 @@ const approval = (id: string): ParkedApproval => ({
   operationKey: 'echo.set',
   summary: 'set',
   expiresAt: new Date(Date.now() + 60_000),
+  inSession: false,
 });
 
 describe('ExecutionRegistry', () => {
@@ -53,6 +54,9 @@ describe('ExecutionRegistry', () => {
     expect(reg.status('x', 'bob', 'i1')).toBeUndefined();
     expect(reg.status('x', 'alice', 'i2')).toBeUndefined();
     expect(reg.status('x', 'alice', 'i1')).toMatchObject({ state: 'pending' });
+    expect(reg.currentApproval('x', 'alice', 'i1')?.approvalId).toBe('p1');
+    expect(reg.currentApproval('x', 'bob', 'i1')).toBeUndefined();
+    expect(reg.currentApproval('x', 'alice', 'i2')).toBeUndefined();
     expect(await reg.wait('x', 'bob', 'i1', 10)).toBe('not_found');
 
     // Nothing changes: the wait ends with the same approval.
@@ -63,6 +67,7 @@ describe('ExecutionRegistry', () => {
     expect(await reg.wait('x', 'alice', 'i1', 10)).toBe('busy');
     reg.settled('x', 'p1', { outcome: 'approved', decidedBy: 'admin' });
     expect(reg.status('x', 'alice', 'i1')).toEqual({ state: 'approved' }); // no approver name to the client
+    expect(reg.currentApproval('x', 'alice', 'i1')).toBeUndefined();
     reg.awaiting('x', approval('p2'));
     expect(await first).toMatchObject({ status: 'awaiting_approval', approval: { approvalId: 'p2' } });
 

@@ -200,9 +200,37 @@ describe('New endpoint', () => {
       path: '/api/instances',
       body: { pluginId: 'acme', slug: 'mine', authMethods: null },
     });
+    // In-session approval stays off unless the admin turns it on.
+    expect(calls.find((c) => c.method === 'POST')?.body).not.toHaveProperty('settings');
     // The overview has the new endpoint before its page opens, so the page needs no second look.
     expect(calls.filter((c) => c.path === '/api/overview')).toHaveLength(3);
     expect(router.currentRoute.value.path).toBe('/endpoints/mine/connection');
+  });
+
+  it('sends in-session approval only when it is checked, with its warning', async () => {
+    const created = { id: 'i9', slug: 'mine', displayName: 'Mine', plugin: { name: 'Acme' }, settings: {} };
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/plugins': [plugin()],
+      'POST /api/instances': created,
+    });
+    const { wrapper } = await mountAt('/endpoints/new');
+    await wrapper.get('#n-slug').setValue('mine');
+    const box = wrapper
+      .findAll('label')
+      .find((l) => l.text().includes('in the agent session'))!
+      .get<HTMLInputElement>('input');
+    expect(box.element.checked).toBe(false);
+    expect(wrapper.text()).not.toContain('could then approve those calls itself');
+    await box.setValue(true);
+    expect(wrapper.text()).toContain('could then approve those calls itself');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(writes(calls)[0]).toMatchObject({
+      path: '/api/instances',
+      body: { slug: 'mine', settings: { formElicitationApprovals: 'ask' } },
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 /** The approval card (design §5.7): an MCP Apps view that hosts render for `execute` and `resume` results.
- * It shows state and opens the approval page; it never decides. Static, no external origins. */
+ * It shows state, decides only in-session approvals, and opens the approval page. Static, no external origins. */
 
 export const APPROVAL_CARD_URI = 'ui://synoikia/approval';
 export const MCP_APP_MIME = 'text/html;profile=mcp-app';
@@ -28,6 +28,9 @@ html, body { margin: 0; background: transparent; color: var(--ink); font: 14px/1
 button { font: 600 13px/1.2 var(--sans); padding: 7px 14px; border-radius: 8px; border: 1px solid var(--brand); cursor: pointer;
   background: var(--brand); color: var(--on-brand); }
 button:hover { background: var(--brand-strong); }
+button.alt { background: transparent; color: var(--ink); border-color: var(--line); }
+button.alt:hover { background: var(--line); }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; }
 button.quiet { background: transparent; color: var(--no); border-color: var(--line); padding: 4px 10px; font-size: 12px; }
 .grant { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--ok-bg); color: var(--ok); font-size: 12.5px; }
@@ -81,10 +84,17 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
           ? '<span class="pill ok">✓ Approved</span>'
           : st === 'running' ? '<span class="pill ok">Running</span>'
           : '<span class="pill no">✕ ' + esc(st === 'done' ? (state.decision || 'finished').replace('_', ' ') : st.replace('_', ' ')) + '</span>';
+      const here = st === 'pending' && a.inSession === true;
+      const acts = st !== 'pending' ? ''
+        : here
+          ? '<div class="acts"><button class="alt" id="deny" type="button">Deny</button><button id="approve" type="button">Approve</button>' +
+            '<button class="alt" id="open" type="button">Review on the page ↗</button></div>'
+          : '<button id="open" type="button">Review and approve ↗</button>';
       html += '<div class="card"><div class="hd">Synoikia · approval needed</div><div class="bd">' +
         '<div class="t">' + esc(a.summary) + '</div><div class="op">' + esc(a.operationKey) + '</div>' +
-        '<div class="ft">' + pill + (st === 'pending' ? '<button id="open" type="button">Review and approve ↗</button>' : '') + '</div>' +
-        (st === 'pending' ? '<div class="note">Approve or deny on the Synoikia page. This chat continues by itself after you decide.</div>' : '') +
+        '<div class="ft">' + pill + acts + '</div>' +
+        (st === 'pending' ? '<div class="note">' + (here ? 'Approve or deny here, or review the details on the Synoikia page.' : 'Approve or deny on the Synoikia page.') +
+          ' This chat continues by itself after you decide.</div>' : '') +
         '</div></div>';
     }
     if (state.grant) {
@@ -95,6 +105,13 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
     root.innerHTML = html;
     const open = document.getElementById('open');
     if (open) open.onclick = () => request('ui/open-link', { url: state.approval.url }).catch(() => {});
+    const decide = (approve) => () =>
+      request('tools/call', { name: 'approval_decide', arguments: { executionId: state.executionId, approve } })
+        .then(check).catch(() => {});
+    const yes = document.getElementById('approve');
+    if (yes) yes.onclick = decide(true);
+    const no = document.getElementById('deny');
+    if (no) no.onclick = decide(false);
     const revoke = document.getElementById('revoke');
     if (revoke) revoke.onclick = () =>
       request('tools/call', { name: 'session_grant_revoke', arguments: { grantId: state.grant.id } })

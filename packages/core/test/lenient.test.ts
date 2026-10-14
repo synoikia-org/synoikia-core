@@ -88,4 +88,34 @@ describe('stored settings from an earlier release (review L22)', () => {
       sandbox: { memoryMb: 32 },
     });
   });
+
+  it('turns a stored in-session approval value it does not know off, says so once, and accepts only off or ask', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-lenient-'));
+    cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
+    const env = { DATA_DIR: dataDir };
+    const first = await createTestApp(env);
+    const inst = await first.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    first.db
+      .update(pluginInstances)
+      .set({ settings: { formElicitationApprovals: 'writes', writesPerMinute: 7 } })
+      .where(eq(pluginInstances.id, inst.id))
+      .run();
+    expect(first.instances.runtime(inst.id).settings.formElicitationApprovals).toBe('off');
+    await first.stop();
+
+    const ctx = await createTestApp(env);
+    cleanup.push(() => ctx.stop());
+    expect(ctx.warnings.filter((w) => w.includes('in-session approvals were turned off'))).toEqual([
+      '/echo: in-session approvals were turned off (unknown stored value); turn them on again in Endpoint settings',
+    ]);
+    expect(ctx.db.select().from(pluginInstances).where(eq(pluginInstances.id, inst.id)).get()!.settings).toEqual({
+      writesPerMinute: 7,
+    });
+    await expect(
+      ctx.instances.update(inst.id, { settings: { formElicitationApprovals: 'writes' } as never }),
+    ).rejects.toThrow();
+    await ctx.instances.update(inst.id, { settings: { formElicitationApprovals: 'ask' } });
+    expect(ctx.instances.runtime(inst.id).settings.formElicitationApprovals).toBe('ask');
+  });
 });

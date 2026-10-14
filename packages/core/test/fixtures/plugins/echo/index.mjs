@@ -16,6 +16,7 @@ const CATALOG = [
   op('echo.delete', 'write', { locked: true }),
   op('echo.nolit', 'write', { locked: true }),
   op('echo.guided', 'write', { attestationRequired: true }),
+  op('echo.confirm', 'write', { typedConfirmation: true }),
 ];
 
 let config = {};
@@ -54,7 +55,7 @@ const handlers = {
     reply(id, [{ kind: 'entity', id: `widget.e${resolutions}`, name: `Widget ${resolutions}`, scopes: {} }]);
   },
   summarize(id, { key, params }) {
-    const confirmLiteral = key === 'echo.delete' ? params.name : undefined;
+    const confirmLiteral = key === 'echo.delete' || key === 'echo.confirm' ? params.name : undefined;
     reply(id, { text: `${key} ${JSON.stringify(params)}`, ...(confirmLiteral ? { confirmLiteral } : {}) });
   },
   getGuide: (id) => reply(id, { version: 'v1', content: 'Read me first.' }),
