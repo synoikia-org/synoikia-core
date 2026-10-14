@@ -44,6 +44,8 @@ Core keeps all data in one SQLite file, `DATA_DIR/synoikia.sqlite` (default `/da
 
 The `decision` of a call is one of: `auto-executed`, `auto-approved:level`, `auto-approved:rule:<id>`, `human-approved`, `denied`, `timed-out`, `rejected:<reason>`, `error:<code>`.
 
+The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_via` of a deleted user in `detail` (§6.1). The audit log reads take the user name from it for the events of that user.
+
 **Roles** (§6.4)
 
 | Table            | Holds                                                                                                                  |
@@ -120,4 +122,5 @@ The `decision` of a call is one of: `auto-executed`, `auto-approved:level`, `aut
 - An operation without a group row is not reachable (`group_missing`).
 - A group can go to `write` only with the exact list of writes that it acknowledges. A list that is not current returns 409.
 - Only the Admin API changes levels, and core audits each change. Only the approval page makes approval decisions (§5.3).
+- A user delete clears `level_changed_by`, `acknowledged_by`, `pre_approval_rules.created_by`, `mcp_tokens.created_by` and `pending_approvals.owner_user_id` for that user. It deletes the pre-approval rules that the user owns: an empty `owner_user_id` makes an admin rule.
 - Sandbox code and plugin children have no access to any of these tables.
