@@ -1,13 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
-import {
-  decodeInstructions,
-  INSTRUCTIONS_MAX_BYTES,
-  isSdkCompatible,
-  parseManifest,
-  SDK_VERSION,
-} from '@synoikia/plugin-sdk';
+import { isSdkCompatible, parseManifest, readInstructionsFile, SDK_VERSION } from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { eq } from 'drizzle-orm';
 import { ZodError } from 'zod';
@@ -30,18 +24,6 @@ export type DiscoveredPlugin =
 function explain(err: unknown): string {
   if (err instanceof ZodError) return err.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
   return err instanceof Error ? err.message : String(err);
-}
-
-/** The manifest's `instructions` file as text (design §2.2); throws when it is missing, outside the
- * package, over the cap or not UTF-8 text. */
-function readInstructions(dir: string, realDir: string, file: string): string {
-  const full = path.join(dir, file);
-  if (!existsSync(full)) throw new Error('not found');
-  if (!realpathSync(full).startsWith(realDir + path.sep)) throw new Error('resolves outside the plugin directory');
-  const stat = statSync(full);
-  if (!stat.isFile()) throw new Error('is not a file');
-  if (stat.size > INSTRUCTIONS_MAX_BYTES) throw new Error(`is over ${INSTRUCTIONS_MAX_BYTES} bytes`);
-  return decodeInstructions(readFileSync(full));
 }
 
 export function inspectPluginDir(dir: string): DiscoveredPlugin {
@@ -76,7 +58,7 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
   let instructions: string | undefined;
   if (manifest.instructions) {
     try {
-      instructions = readInstructions(dir, realDir, manifest.instructions);
+      instructions = readInstructionsFile(dir, manifest.instructions);
     } catch (err) {
       return {
         status: 'invalid',

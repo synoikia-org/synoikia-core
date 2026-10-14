@@ -121,9 +121,14 @@ export function createRepoTool(opts: RepoOptions) {
     for (const id of readdirSync(pluginsDir).sort()) {
       const dir = path.join(pluginsDir, id);
       if (!existsSync(path.join(dir, 'manifest.json'))) continue;
-      const manifest = readJson<{ id: string; version: string; name: string; description?: string; sdk: string }>(
-        path.join(dir, 'manifest.json'),
-      );
+      const manifest = readJson<{
+        id: string;
+        version: string;
+        name: string;
+        description?: string;
+        sdk: string;
+        instructions?: string;
+      }>(path.join(dir, 'manifest.json'));
       const pkg = readJson<{ version: string; synoikia?: { minCoreVersion?: string } }>(path.join(dir, 'package.json'));
       if (manifest.id !== id) throw new Error(`plugins/${id}: manifest id is ${manifest.id}`);
       if (pkg.version !== manifest.version) {
@@ -136,8 +141,8 @@ export function createRepoTool(opts: RepoOptions) {
 
       buildPlugin(dir);
       const file = `${id}-${manifest.version}.tgz`;
-      // Flat layout, what core installs: manifest.json, package.json, dist/. Sorted, with fixed times and
-      // owners, so the same sources give the same bytes.
+      // Flat layout, what core installs: manifest.json, package.json, dist/ and the instructions file.
+      // Sorted, with fixed times and owners, so the same sources give the same bytes.
       const tarball = execFileSync(
         'tar',
         [
@@ -153,6 +158,7 @@ export function createRepoTool(opts: RepoOptions) {
           'manifest.json',
           'package.json',
           'dist',
+          ...(manifest.instructions ? [manifest.instructions] : []),
         ],
         { maxBuffer: 256 * 1024 * 1024 },
       );

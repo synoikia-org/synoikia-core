@@ -38,6 +38,8 @@ describe('parseManifest', () => {
     ['nested instructions escaping the package', { instructions: 'docs/../../x.md' }],
     ['instructions that are not Markdown', { instructions: 'dist/index.js' }],
     ['empty instructions path', { instructions: '' }],
+    ['instructions that look like an option', { instructions: '--to-command=x.md' }],
+    ['instructions with a backslash', { instructions: 'docs\\x.md' }],
     ['reserved namespace', { binding: { namespace: 'catalog', functions: ['call'] } }],
     ['non-identifier function', { binding: { namespace: 'x', functions: ['do-it'] } }],
   ])('rejects %s', (_name, patch) => {
