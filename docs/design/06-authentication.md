@@ -26,6 +26,7 @@ The Admin listener (port 8081) has its own sign-in.
   - A `*@domain` entry accepts an address whose part after the last `@` is that domain. It does not accept subdomains. Core refuses all other wildcard forms.
 - The flow is the authorization code flow with PKCE, `state` and `nonce`.
 - `autoProvision` is off by default. Then an OIDC identity must be linked to a local user first (Profile → "Link OIDC identity"). If it is on and self-registration is on (§6.5), core creates a user for each identity that the allow policy accepts.
+- The IdP redirect is cross-site, so the browser does not send the session cookie. The callback returns a page that opens the link step on the same site. That step links the identity only for the signed-in user who started the link.
 
 **Local sign-in fallback.**
 

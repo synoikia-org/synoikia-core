@@ -37,7 +37,7 @@ export function createAdminApp(ctx: AppContext, { uiDir }: AdminAppOptions = {})
     );
     c.header('X-Frame-Options', 'DENY');
     c.header('X-Content-Type-Options', 'nosniff');
-    c.header('Referrer-Policy', 'same-origin');
+    if (!c.res.headers.has('Referrer-Policy')) c.header('Referrer-Policy', 'same-origin');
   });
 
   app.get('/healthz', (c) => c.json({ status: 'ok' }));
