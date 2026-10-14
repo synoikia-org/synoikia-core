@@ -15,7 +15,7 @@ Names follow `SKILL.md` › Branch names.
 
 1. Start an implementation subagent (background) with: the plan file path and its step, the branch to create, the skills to load (`vue-development`, `core-development`), the repo checks to run, "commit early, don't push, don't open a PR", the commit trailer lines, and a report format (files, checks, decisions to record, blockers, under ~300 words).
 2. When it reports, run the step's checks the main session owns:
-   - UI changes: a visual comparison against `main` when the plan promised no visual change.
+   - UI changes: renders delivered in the session as `SKILL.md` › UI changes need renders says, with a comparison against `main` when the plan promised no visual change.
    - The `security-reviewer` subagent when `CLAUDE.md` › Security review lists a touched path.
    - Send findings back to the same subagent to fix.
 3. Push, open the child PR into the integration branch, `subscribe_pr_activity`, and arm one `send_later` check-in.
@@ -67,6 +67,6 @@ Read the plan file's status section, then check the repo: which child branch exi
 
 ## Finish
 
-1. A security review of the whole integration diff, plus a final visual run when the plan promised one.
+1. A security review of the whole integration diff, plus a final set of renders of the whole UI change, delivered in the session, when any step changed the UI.
 2. Line counts before and after, test counts, and the open decisions list in the integration PR body.
 3. When CI is green on the integration PR's head, mark it ready for review and keep watching it. Don't merge it; tell the user the merge method that keeps the step commits (Rebase and merge) and what it needs.

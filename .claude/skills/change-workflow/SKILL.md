@@ -49,6 +49,14 @@ Recommend one pattern, say why in a sentence, and get approval: in the plan for 
 
 **In both patterns, the PR into `main`** is opened as a draft and watched (`subscribe_pr_activity`) from the moment it opens until it merges or closes, so CI results, reviews and conflicts wake the session. Mark it ready for review (`update_pull_request` with `draft: false`) only when the work is done and CI is green on its current head: the PR going ready is the signal to the user that it needs their review. If a push after that turns CI red, fix it; don't leave a red PR marked ready.
 
+**UI changes need renders before the PR goes ready.** When the change touches the admin UI or a page core renders, deliver renders in the session first:
+
+- Run the app and take screenshots with Playwright (Chromium is pre-installed) of each changed page, dialog and state (loading, empty, error, success where they changed).
+- Cover light and dark mode, and desktop and mobile width when the layout changed.
+- When the change should look the same, show the `main` render next to the branch render.
+- Send them with `SendUserFile` (`display: "render"`), each with a one-line caption saying what it shows.
+- Re-send them after a later push changes the UI. Tests and CI passing are not a substitute for renders.
+
 ### Branch names
 
 Every branch name says what changes, as `<component>/<task-summary>` in lowercase kebab-case.
