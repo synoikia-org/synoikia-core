@@ -49,12 +49,12 @@ The Admin listener (port 8081) has its own sign-in.
   - the last user (409 `last_user`);
   - the last enabled admin (409 `last_admin`);
   - the last enabled linked user while local sign-in is off (409 `local_login_disabled`).
-- Before the delete, core revokes the sessions, OAuth grants and bearer tokens of the user (§6.2). It also cancels the pending approvals that the user owns.
+- Before the delete, core revokes the sessions, OAuth grants and bearer tokens of the user (§6.2). It also cancels the pending approvals that the user owns, and ends the session grants that the user gave (§5.8). The delete fails with 409 `approvals_pending` while a pending approval of the user remains.
 - Then, in one transaction, core:
   - deletes the user, their personal levels and their own pre-approval rules;
   - keeps the other rows that name the user, and clears that name: admin pre-approval rules that the user made, bearer tokens that the user made, decided approvals, operation acknowledgements and group level changes;
   - writes the audit event `user_deleted` with the user id, user name and `registered_via`.
-- Core does not change the audit log. The log shows the user name from `user_deleted` for the events of a deleted user. The actor filter also finds a deleted user by name.
+- Core does not change the audit log. The log shows the user name from `user_deleted` for the events of a deleted user, and marks it as deleted (`actorDeleted`). The actor filter also finds a deleted user by name.
 
 **CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it.
 
@@ -134,7 +134,7 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 - **Revocation.**
   - The Clients & Tokens page lists the grants of each user and client. The admin can revoke them.
   - A password change or a disabled user revokes all grants of the user, and their tokens.
-  - A disabled user also loses the bearer tokens that they made. `refresh` refuses a disabled user.
+  - A disabled user also loses the bearer tokens that they made, and the session grants that they gave (§5.8). `refresh` refuses a disabled user.
   - A deleted user loses all grants, their tokens and the bearer tokens that they made (§6.1).
   - When the admin enables a user again, no grant or token comes back.
 

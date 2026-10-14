@@ -217,13 +217,23 @@ describe('Audit log', () => {
           { id: 1, at, kind: 'call', decision: 'ok', actorKind: 'user', actorId: 'u-123', actorName: 'alice' },
           { id: 2, at, kind: 'call', decision: 'ok', actorKind: 'token', actorId: 't-456', actorName: null },
           { id: 3, at, kind: 'config', decision: null, actorKind: 'system', actorId: null, actorName: null },
+          {
+            id: 4,
+            at,
+            kind: 'call',
+            decision: 'ok',
+            actorKind: 'user',
+            actorId: 'u-9',
+            actorName: 'bob',
+            actorDeleted: true,
+          },
         ],
-        total: 3,
+        total: 4,
       },
     });
     const { wrapper } = await mountAt('/audit');
     const actors = wrapper.findAll('tbody tr').map((r) => r.findAll('td').at(-1)!);
-    expect(actors.map((c) => c.text())).toEqual(['alice', 't-456', 'system']);
+    expect(actors.map((c) => c.text())).toEqual(['alice', 't-456', 'system', 'bob (deleted)']);
     expect(actors[0]!.get('span').attributes('title')).toBe('u-123');
     expect(actors[1]!.find('[title]').exists()).toBe(false);
   });

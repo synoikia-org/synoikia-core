@@ -73,10 +73,11 @@ function withDeletedNames(db: DbLike, rows: NamedRow[]) {
           .map((d) => [d.id, d.name])
       : [],
   );
-  return rows.map(({ row, actorName }) => ({
-    ...row,
-    actorName: actorName ?? (row.actorKind === 'user' && row.actorId ? (names.get(row.actorId) ?? null) : null),
-  }));
+  return rows.map(({ row, actorName }) => {
+    const deletedName = !actorName && row.actorKind === 'user' && row.actorId ? names.get(row.actorId) : undefined;
+    // Marks a deleted actor, so a later user with the same name is told apart.
+    return { ...row, actorName: actorName ?? deletedName ?? null, actorDeleted: deletedName !== undefined };
+  });
 }
 
 export function queryAudit(db: DbLike, raw: unknown) {
@@ -110,6 +111,7 @@ const CSV_COLUMNS = [
   'actorKind',
   'actorId',
   'actorName',
+  'actorDeleted',
   'decidedBy',
   'decidedVia',
   'resultStatus',

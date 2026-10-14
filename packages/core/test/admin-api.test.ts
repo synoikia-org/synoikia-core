@@ -352,6 +352,77 @@ describe('deleting users', () => {
     expect(csv).toContain(`,user,${id},gone,`);
   });
 
+  it('ends the session grants the user approved, so a new user with the name gets none', async () => {
+    const t = await withVictim();
+    const grant = (createdBy: string, principal: string) =>
+      t.ctx.grants.create({
+        instanceId: 'i1',
+        principal,
+        createdBy,
+        approvalId: 'a1',
+        expiresAt: new Date(Date.now() + 3_600_000),
+      });
+    const bob = await t.add('bob');
+    grant('bob', 'external:bob');
+    grant('admin', 'external:admin');
+    expect((await t.b.patch(`/api/users/${bob}`, { disabled: true })).status).toBe(200);
+    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
+
+    grant('bob', 'external:bob');
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: bob });
+    expect((await t.b.del(`/api/users/${bob}`)).status).toBe(204);
+    const again = await t.add('bob');
+    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
+    expect(t.ctx.grants.active('i1', 'external:admin')).toBeDefined();
+
+    // Audit rows of the deleted bob and the new bob stay apart.
+    type Row = { actorId: string; actorName: string; actorDeleted: boolean };
+    const rows = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
+    const by = (id: string) => [
+      ...new Set(rows.filter((r) => r.actorId === id).map((r) => [r.actorName, r.actorDeleted].join())),
+    ];
+    expect(by(bob)).toEqual(['bob,true']);
+    expect(by(again)).toEqual([]);
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: again });
+    const now = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
+    expect(now.filter((r) => r.actorId === again).map((r) => r.actorDeleted)).toEqual([false]);
+    expect(now.filter((r) => r.actorId === bob).map((r) => r.actorDeleted)).toEqual([true]);
+    const csv = await (await t.b.get('/api/audit/export.csv?decision=probe')).text();
+    expect(csv.split('\n')[0]).toContain(',actorName,actorDeleted,');
+    expect(csv).toContain(`,user,${again},bob,false,`);
+    expect(csv).toContain(`,user,${bob},bob,true,`);
+  });
+
+  it('refuses a direct delete while the user still owns a live approval', async () => {
+    const t = await withVictim();
+    const id = await t.add('gone');
+    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    await t.b.post(`/api/instances/${inst.id}/sync`);
+    const [opRow] = t.ctx.db.select().from(operations).where(eq(operations.instanceId, inst.id)).all();
+    const live = t.ctx.approvals.request({
+      instanceId: inst.id,
+      operationId: opRow!.id,
+      operationKey: opRow!.key,
+      classification: 'write',
+      paramsDisplay: {},
+      paramsHash: 'h',
+      resolvedTargets: [],
+      summary: 's',
+      client: { kind: 'token' },
+      ownerUserId: id,
+      timeoutMs: 60_000,
+      prompts: { url: () => new Promise(() => {}) },
+      formApprovals: false,
+    });
+    expect(() => t.ctx.users.delete(id)).toThrow(expect.objectContaining({ code: 'approvals_pending' }));
+    expect(t.ctx.users.get(id)).toMatchObject({ username: 'gone' });
+    expect(t.ctx.approvals.cancel(live.id, 'test')).toBe(true);
+    t.ctx.users.delete(id);
+    expect(t.ctx.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, live.id)).get()).toMatchObject({
+      ownerUserId: null,
+    });
+  });
+
   it('refuses to delete yourself, the last admin, the last user or the last SSO user', async () => {
     const t = await withVictim();
     const refused = async (id: string, error: string) =>
@@ -399,7 +470,7 @@ describe('audit log', () => {
     expect(await decisions('deleted-user')).toEqual(['probe_gone']);
 
     const csv = (await (await b.get('/api/audit/export.csv?decision=probe_user')).text()).split('\n');
-    expect(csv[0]).toContain(',actorKind,actorId,actorName,decidedBy,');
+    expect(csv[0]).toContain(',actorKind,actorId,actorName,actorDeleted,decidedBy,');
     expect(csv[1]).toContain(`,user,${admin.id},admin,`);
   });
 });

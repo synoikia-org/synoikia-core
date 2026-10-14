@@ -333,7 +333,20 @@ export class UserService {
       tx.delete(preApprovalRules).where(eq(preApprovalRules.ownerUserId, userId)).run();
       tx.update(preApprovalRules).set({ createdBy: null }).where(eq(preApprovalRules.createdBy, userId)).run();
       tx.update(mcpTokens).set({ createdBy: null }).where(eq(mcpTokens.createdBy, userId)).run();
-      tx.update(pendingApprovals).set({ ownerUserId: null }).where(eq(pendingApprovals.ownerUserId, userId)).run();
+      // A null owner lets any admin decide, so only decided rows lose it; the caller cancels live ones first.
+      const mine = eq(pendingApprovals.ownerUserId, userId);
+      if (
+        tx
+          .select({ id: pendingApprovals.id })
+          .from(pendingApprovals)
+          .where(and(mine, eq(pendingApprovals.status, 'pending')))
+          .get()
+      )
+        throw new ConflictError('approvals_pending', 'The user still has pending approvals');
+      tx.update(pendingApprovals)
+        .set({ ownerUserId: null })
+        .where(and(mine, ne(pendingApprovals.status, 'pending')))
+        .run();
       tx.delete(users).where(eq(users.id, userId)).run();
       writeAudit(tx, {
         kind: 'auth',

@@ -178,6 +178,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         ctx.sessions.revokeUser(id);
         ctx.oauth.revokeUserGrants(id, 'user_disabled', actor(c));
         ctx.tokens.revokeCreatedBy(id, actor(c));
+        ctx.grants.endForUser(ctx.users.get(id).username, 'user_disabled');
       }
     }
     if (body.password !== undefined) {
@@ -190,12 +191,13 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.delete('/api/users/:id', (c) => {
     const id = c.req.param('id');
     if (id === c.get('user').id) throw new ConflictError('self_delete', 'You cannot delete yourself');
-    ctx.users.assertDeletable(id);
+    const { username } = ctx.users.assertDeletable(id);
     // Credentials are revoked while their rows still name the user; the delete then clears the rest.
     ctx.sessions.revokeUser(id);
     ctx.oauth.revokeUserGrants(id, 'user_deleted', actor(c));
     ctx.tokens.revokeCreatedBy(id, actor(c), 'user_deleted');
     ctx.approvals.cancelForOwner(id, 'user_deleted');
+    ctx.grants.endForUser(username, 'user_deleted');
     ctx.users.delete(id, actor(c));
     return c.body(null, 204);
   });

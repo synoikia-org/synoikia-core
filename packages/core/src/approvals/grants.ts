@@ -93,6 +93,11 @@ export class SessionGrantService {
     for (const g of this.list(instanceId)) this.end(g, reason);
   }
 
+  /** Ends the grants a user approved (disabled or deleted): a principal can outlive the user, e.g. `external`. */
+  endForUser(username: string, reason: string): void {
+    for (const g of this.list()) if (g.createdBy === username) this.end(g, reason);
+  }
+
   private sweep() {
     const now = this.now().getTime();
     for (const g of [...this.grants.values()]) if (g.expiresAt.getTime() <= now) this.end(g, 'expired');

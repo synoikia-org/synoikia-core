@@ -143,7 +143,9 @@ const DECISION_CLASS = (d: string | null) =>
                 <span class="pill" :class="DECISION_CLASS(r.decision)">{{ r.decision }}</span>
               </td>
               <td>
-                <span v-if="r.actorName" :title="r.actorId ?? undefined">{{ r.actorName }}</span>
+                <span v-if="r.actorName" :title="r.actorId ?? undefined"
+                  >{{ r.actorName }}<span v-if="r.actorDeleted" class="muted"> (deleted)</span></span
+                >
                 <template v-else>{{ r.actorId ?? r.actorKind }}</template>
                 <div v-if="r.decidedBy" class="small muted">decided by {{ r.decidedBy }} via {{ r.decidedVia }}</div>
               </td>
