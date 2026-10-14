@@ -179,7 +179,8 @@ An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`
    - `expires_at`: 15 minutes by default, set for each instance.
      Core keeps the parameters that are not redacted in memory only.
 2. **Channel.** Core uses the first channel that applies, in this order. The audit `detail.approvalChannel` records the channel of the decision: `form`, `url`, `link` or `card`.
-   - **Form elicitation.** In-session approval applies to the call, and the client supports form prompts. The form has one `approve` value. The audit records `decided_via: elicitation` and the client as `decided_by`.
+   - **Form elicitation.** In-session approval applies to the call, and the client supports form prompts. The form has no fields. **Accept** approves the call. **Decline** and **Cancel** deny it. If the client cannot show the form, core denies the call (`prompt_failed`). The audit records `decided_via: elicitation` and the client as `decided_by`.
+     If the form has no answer after 30 s and the caller can park, core cancels the form. The same approval then parks on the link (§5.6), with the same id and expiry. Core ignores a later answer of the cancelled form. If the caller cannot park, core keeps the form open.
    - **URL-mode elicitation.** This is the approval path for the other calls. Core makes a single-use page token (`approval_links`, stored as a hash, valid until the approval expires). It calls `elicitInput({ mode: 'url', url: PUBLIC_MCP_URL/a/<token>, elicitationId, message })`. The human opens the page, signs in, and decides there. The client never sees the decision form or the literal. The answer of the client only tells if the page opened (`accept`). `decline` and `cancel` deny. After the decision, core sends `notifications/elicitation/complete` and makes the token invalid.
    - **Link.** The client has no channel above. The execution parks (§5.6). Core makes the same single-use page token and returns the page link in the tool result. The approval card (§5.7) shows it, or the agent shows it as text. The human decides on the page. If in-session approval applies to the call, the human can also decide on the approval card (channel `card`).
    - **No channel.** A caller that cannot park, for example a script through the test harness, has no channel. Core denies the call at once: `client_cannot_approve` for a client with forms only, `no_approval_path` for a client without prompts. Over the parked limits, core denies with `too_many_parked`.
@@ -284,12 +285,12 @@ An approval must never apply to parameters that the approver did not see.
 
 ## 5.6 Parked executions and `resume`
 
-A client without a usable prompt, for example a chat client without elicitation, still gets each approval. The execution parks: it waits on the server, and the tool call answers at once.
+A client without a usable prompt, for example a chat client without elicitation, still gets each approval. The execution parks: it waits on the server, and the tool call answers at once. A form approval also parks when the form has no answer after 30 s (§5.3). Some clients tell core that they support forms, but do not show them.
 
 **Flow.**
 
-1. A binding needs a human decision, and no client prompt applies (§5.3). The caller can park.
-2. Core makes the pending approval and the page token. It writes the audit event `awaiting_approval` with the `executionId`, the `approvalId` and `channel: link`.
+1. A binding needs a human decision, and no client prompt applies (§5.3). Or a form prompt has no answer after 30 s. The caller can park.
+2. Core makes the pending approval and the page token. It writes the audit event `awaiting_approval` with the `executionId`, the `approvalId` and `channel: link`. After a form with no answer, the event also has `formFallback: true`.
 3. The `execute` call returns `status: awaiting_approval`, the `executionId` and `approval` (`url`, `operationKey`, `summary`, `expiresAt`, `inSession`). This is not an error result. `inSession` is true when in-session approval applies to the call.
 4. The human decides on the approval page, or on the approval card when `inSession` is true (§5.7).
 5. The script continues at the decision. It does not wait for `resume`. The sandbox time limit starts again.
@@ -316,6 +317,7 @@ Each write of a parked script runs once. The agent must not run the code again.
 | Parked executions for each endpoint               | 8      |
 | Parked executions in total                        | 32     |
 | Wait of one `resume`                              | 45 s   |
+| Wait of a form prompt before the call parks       | 30 s   |
 | Time a finished result waits for `resume`         | 10 min |
 
 One `resume` at a time can wait on an execution. A second one gets `BUSY`.

@@ -7,7 +7,14 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ApprovalLinkService } from '../src/approvals/links.js';
 import { ApprovalService } from '../src/approvals/service.js';
-import type { ClientPrompts, FormPromptRequest, UrlPromptRequest } from '../src/approvals/service.js';
+import type {
+  ApprovalRequestInput,
+  ClientPrompts,
+  FormPromptRequest,
+  FormPromptResponse,
+  ParkedApproval,
+  UrlPromptRequest,
+} from '../src/approvals/service.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
 import { applyCatalogSync } from '../src/catalog/sync.js';
 import { openDatabase } from '../src/db/index.js';
@@ -41,7 +48,7 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-async function setup(settings: Partial<InstanceSettings> = {}) {
+async function setup(settings: Partial<InstanceSettings> = {}, opts: { formFallbackMs?: number } = {}) {
   const { db, instanceId } = seedInstance(openDatabase(':memory:'), 'echo');
   db.update(pluginInstances).set({ settings }).where(eq(pluginInstances.id, instanceId)).run();
   const proc = new PluginProcess({ dir: FIXTURE, entry: manifest.entry, instanceId, defaultTimeoutMs: 5000 });
@@ -50,7 +57,7 @@ async function setup(settings: Partial<InstanceSettings> = {}) {
   await proc.call('init', { instanceId, config: {}, secrets: {}, sdkVersion: '0.1.0' });
   applyCatalogSync(db, instanceId, await proc.call('syncCatalog'));
 
-  const approvals = new ApprovalService(db, new ApprovalLinkService(db));
+  const approvals = new ApprovalService(db, new ApprovalLinkService(db), undefined, opts.formFallbackMs);
   cleanup.push(() => approvals.cancelAll());
   const deps: GateDeps = { db, approvals, limiter: new SlidingWindowLimiter(), attestationKey: randomBytes(32) };
   /** What `catalogVersion()` reports: the running bundle's version while the catalog was synced from it. */
@@ -99,8 +106,22 @@ function formClient() {
   const prompts: ClientPrompts = {
     form: async (req) => {
       asked.push(req);
-      return { action: 'accept', content: { approve: true, confirm: 'vol/x' } as { approve: unknown } };
+      return { action: 'accept' };
     },
+  };
+  return { prompts, asked };
+}
+
+/** A form client whose answer the test gives later, or never: the client that advertises forms but hides them. */
+function heldFormClient() {
+  const asked: {
+    req: FormPromptRequest;
+    signal: AbortSignal;
+    answer: (res: FormPromptResponse) => void;
+    fail: (err: Error) => void;
+  }[] = [];
+  const prompts: ClientPrompts = {
+    form: (req, signal) => new Promise((answer, fail) => asked.push({ req, signal, answer, fail })),
   };
   return { prompts, asked };
 }
@@ -324,11 +345,8 @@ describe('execute → gate → plugin', () => {
       await expect(
         t.exec(`return (await echo.call('echo.set', { name: 'x' })).key;`, client.prompts),
       ).resolves.toMatchObject({ ok: true, value: 'echo.set' });
-      expect(client.asked[0]?.requestedSchema).toEqual({
-        type: 'object',
-        properties: { approve: { type: 'boolean', title: 'Approve this call?' } },
-        required: ['approve'],
-      });
+      expect(client.asked[0]?.requestedSchema).toEqual({ type: 'object', properties: {} });
+      expect(client.asked[0]?.message).toMatch(/Accept to approve this call, Decline to deny it\.$/);
       expect(t.audits()[0]).toMatchObject({ decidedVia: 'elicitation', decidedBy: 'claude-test' });
 
       // Locked (typed-confirmation) operations still need the approval page.
@@ -988,6 +1006,210 @@ describe('ApprovalService', () => {
     const row = t.db.select().from(pendingApprovals).get()!;
     expect(() => t.approvals.decide(row.id, { approve: false, decidedBy: 'admin' })).toThrow(/already approved/);
     expect(() => t.approvals.decide('nope', { approve: false, decidedBy: 'admin' })).toThrow(/No such approval/);
+  });
+});
+
+describe('in-session form', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const requestInput = (t: Awaited<ReturnType<typeof setup>>, extra: Partial<ApprovalRequestInput>) =>
+    ({
+      instanceId: t.instanceId,
+      operationId: t.opId('echo.set'),
+      operationKey: 'echo.set',
+      classification: 'write',
+      paramsDisplay: { name: 'x' },
+      paramsHash: 'h',
+      resolvedTargets: [],
+      summary: 'Set x',
+      client: { kind: 'mcp_client', id: 'claude-test' },
+      timeoutMs: 60_000,
+      formApprovals: true,
+      ...extra,
+    }) satisfies ApprovalRequestInput;
+
+  it('has no fields: Accept approves, Decline and Cancel deny, a failed prompt denies', async () => {
+    const t = await setup();
+    const answers: [() => Promise<FormPromptResponse>, Record<string, unknown>][] = [
+      [async () => ({ action: 'accept' }), { outcome: 'approved', via: 'elicitation', channel: 'form' }],
+      [async () => ({ action: 'decline' }), { outcome: 'denied', via: 'elicitation', channel: 'form' }],
+      [async () => ({ action: 'cancel' }), { outcome: 'denied', via: 'elicitation', channel: 'form' }],
+      [() => Promise.reject(new Error('no ui')), { outcome: 'denied', reason: 'prompt_failed' }],
+    ];
+    for (const [answer, expected] of answers) {
+      const asked: FormPromptRequest[] = [];
+      const { decision } = t.approvals.request(
+        requestInput(t, {
+          prompts: {
+            form: (req) => {
+              asked.push(req);
+              return answer();
+            },
+          },
+        }),
+      );
+      await expect(decision).resolves.toMatchObject(expected);
+      expect(asked[0]?.requestedSchema).toEqual({ type: 'object', properties: {} });
+    }
+  });
+
+  it('approves on a bare Accept only where the endpoint is at ask, and never shows the form otherwise', async () => {
+    for (const [settings, expected, shown] of [
+      [{ formElicitationApprovals: 'ask' }, { ok: true, value: 'echo.set' }, 1],
+      [{}, { ok: false, error: { code: 'PERMISSION_DENIED' } }, 0],
+    ] as const) {
+      const t = await setup(settings);
+      t.setLevel('ask');
+      const asked: FormPromptRequest[] = [];
+      const prompts: ClientPrompts = {
+        form: async (req) => {
+          asked.push(req);
+          return { action: 'accept' };
+        },
+      };
+      expect(await t.exec(`return (await echo.call('echo.set', { name: 'x' })).key;`, prompts)).toMatchObject(expected);
+      expect(asked).toHaveLength(shown);
+    }
+  });
+
+  it('closes the open form when the approval settles another way', async () => {
+    const t = await setup();
+    const client = heldFormClient();
+    const { id, decision } = t.approvals.request(requestInput(t, { prompts: client.prompts }));
+    expect(client.asked[0]?.signal.aborted).toBe(false);
+    t.approvals.cancel(id, 'execution_ended');
+    await expect(decision).resolves.toMatchObject({ outcome: 'cancelled' });
+    expect(client.asked[0]?.signal.aborted).toBe(true);
+    // The rejection of the closed form changes nothing.
+    client.asked[0]!.fail(new Error('Request cancelled'));
+    await sleep(10);
+    expect(t.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id)).get()?.status).toBe('cancelled');
+  });
+
+  it('keeps waiting for the form when the call cannot park', async () => {
+    const t = await setup({}, { formFallbackMs: 20 });
+    let reserved = 0;
+    const offered: ParkedApproval[] = [];
+    const park = { reserve: () => (reserved++, 'too_many_parked'), offer: (a: ParkedApproval) => offered.push(a) };
+    const client = heldFormClient();
+    const { decision } = t.approvals.request(requestInput(t, { prompts: client.prompts, park }));
+    await sleep(80);
+    expect(reserved).toBe(1);
+    expect(offered).toEqual([]);
+    expect(client.asked[0]?.signal.aborted).toBe(false);
+    client.asked[0]!.answer({ action: 'accept' });
+    await expect(decision).resolves.toMatchObject({ outcome: 'approved', channel: 'form' });
+
+    // Without a park hook, nothing parks either.
+    const bare = heldFormClient();
+    const second = t.approvals.request(requestInput(t, { prompts: bare.prompts }));
+    await sleep(80);
+    expect(bare.asked[0]?.signal.aborted).toBe(false);
+    bare.asked[0]!.answer({ action: 'decline' });
+    await expect(second.decision).resolves.toMatchObject({ outcome: 'denied', channel: 'form' });
+  });
+
+  describe('with no answer', () => {
+    const start = async (formFallbackMs: number) => {
+      const t = await setup({ formElicitationApprovals: 'ask' }, { formFallbackMs });
+      t.setLevel('ask');
+      const deps = { ...t.deps, executions: new ExecutionRegistry() };
+      const client = heldFormClient();
+      const caller = { ...t.caller(client.prompts), parkable: true };
+      const result = executeCode(deps, t.rt, caller, `return (await echo.call('echo.set', { name: 'x' })).key;`);
+      const resume = (id: string) => resumeExecution(deps, t.rt, caller, id);
+      return { t, client, result, resume };
+    };
+
+    it('parks the same approval with its link and card, and ignores the aborted form', async () => {
+      const { t, client, result, resume } = await start(50);
+      const parked = (await result) as PendingResult;
+      expect(parked).toMatchObject({ status: 'awaiting_approval', approval: { inSession: true } });
+      const asked = client.asked[0]!;
+      expect(asked.signal.aborted).toBe(true);
+      expect(parked.approval!.approvalId).toBe(asked.req.approvalId);
+      const [row] = t.pending();
+      expect(row?.id).toBe(asked.req.approvalId);
+      expect(parked.approval!.expiresAt).toEqual(row?.expiresAt);
+      expect(t.audits().find((a) => a.decision === 'awaiting_approval')).toMatchObject({
+        detail: { approvalId: asked.req.approvalId, channel: 'link', formFallback: true },
+      });
+
+      // The client answers the aborted form after all: that neither approves nor denies.
+      asked.answer({ action: 'accept' });
+      await sleep(20);
+      expect(t.pending()).toHaveLength(1);
+      expect(t.audits().some((a) => a.decision === 'human-approved')).toBe(false);
+
+      t.approvals.decideInSession(parked.approval!.approvalId, { approve: true, decidedBy: 'token:me' });
+      expect(await resume(parked.executionId)).toMatchObject({ ok: true, value: 'echo.set' });
+      expect(t.audits().find((a) => a.decision === 'human-approved')).toMatchObject({
+        decidedBy: 'token:me',
+        detail: { approvalChannel: 'card' },
+      });
+    });
+
+    it('lets the page decide after the switch, and a late prompt error is not a denial', async () => {
+      const { t, client, result, resume } = await start(50);
+      const parked = (await result) as PendingResult;
+      client.asked[0]!.fail(new Error('Request cancelled'));
+      await sleep(20);
+      expect(t.pending()).toHaveLength(1);
+      t.approvals.decide(parked.approval!.approvalId, { approve: true, decidedBy: 'admin' });
+      expect(await resume(parked.executionId)).toMatchObject({ ok: true, value: 'echo.set' });
+      expect(t.audits().find((a) => a.decision === 'human-approved')).toMatchObject({
+        decidedVia: 'url',
+        detail: { approvalChannel: 'link' },
+      });
+    });
+
+    it('parks a later form of a parked run only after an approved first approval', async () => {
+      const t = await setup({ formElicitationApprovals: 'ask' }, { formFallbackMs: 50 });
+      t.setLevel('ask');
+      const deps = { ...t.deps, executions: new ExecutionRegistry() };
+      const client = heldFormClient();
+      const caller = { ...t.caller(client.prompts), parkable: true };
+      const code = `const out = [];
+        for (const name of ['a', 'b']) {
+          try { out.push((await echo.call('echo.set', { name })).params.name); } catch (e) { out.push(e.code); }
+        }
+        return out;`;
+      const parkedAudits = () => t.audits().filter((a) => a.decision === 'awaiting_approval');
+
+      // Approved first: the second form parks again on its own link.
+      const ok = (await executeCode(deps, t.rt, caller, code)) as PendingResult;
+      t.approvals.decideInSession(ok.approval!.approvalId, { approve: true, decidedBy: 'token:me' });
+      const second = (await resumeExecution(deps, t.rt, caller, ok.executionId)) as PendingResult;
+      expect(second).toMatchObject({ status: 'awaiting_approval', approval: { inSession: true } });
+      expect(second.approval!.approvalId).not.toBe(ok.approval!.approvalId);
+      expect(client.asked[1]?.signal.aborted).toBe(true);
+      expect(parkedAudits()).toHaveLength(2);
+      t.approvals.decideInSession(second.approval!.approvalId, { approve: true, decidedBy: 'token:me' });
+      expect(await resumeExecution(deps, t.rt, caller, ok.executionId)).toMatchObject({ ok: true, value: ['a', 'b'] });
+
+      // Denied first: the run may not park again, so it keeps waiting on the second form.
+      const denied = (await executeCode(deps, t.rt, caller, code)) as PendingResult;
+      t.approvals.decideInSession(denied.approval!.approvalId, { approve: false, decidedBy: 'token:me' });
+      await waitFor(() => client.asked.length === 4);
+      await sleep(150);
+      const held = client.asked[3]!;
+      expect(held.signal.aborted).toBe(false);
+      expect(parkedAudits()).toHaveLength(3);
+      held.answer({ action: 'accept' });
+      expect(await resumeExecution(deps, t.rt, caller, denied.executionId)).toMatchObject({
+        ok: true,
+        value: ['PERMISSION_DENIED', 'b'],
+      });
+    });
+
+    it('never parks a form answered in time', async () => {
+      const { t, client, result } = await start(300);
+      await waitFor(() => client.asked.length === 1);
+      client.asked[0]!.answer({ action: 'accept' });
+      expect(await result).toMatchObject({ ok: true, value: 'echo.set' });
+      await sleep(400);
+      expect(t.audits().map((a) => a.decision)).toEqual(['human-approved']);
+      expect(t.audits()[0]).toMatchObject({ decidedVia: 'elicitation', detail: { approvalChannel: 'form' } });
+    });
   });
 });
 

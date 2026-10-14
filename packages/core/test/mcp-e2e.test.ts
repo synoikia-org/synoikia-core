@@ -60,7 +60,8 @@ beforeAll(async () => {
       ADMIN_HOST: '127.0.0.1',
       ADMIN_PORT: '0',
     },
-    { memoryDb: true },
+    // A form with no answer parks after this wait, not after 30 s.
+    { memoryDb: true, formFallbackMs: 300 },
   );
   adminId = (await ctx.users.create({ username: 'admin', password: PASSWORD })).id;
   const pair = await generateKeyPair('RS256');
@@ -380,6 +381,57 @@ describe('MCP endpoint with bearer tokens', () => {
     expect(
       parse(await client.callTool({ name: 'resume', arguments: { executionId: locked.executionId } })),
     ).toMatchObject({ error: 'PERMISSION_DENIED' });
+    await client.close();
+  });
+
+  it('parks a call whose form the client never answers, and the approval card then decides it', async () => {
+    const inst = await ctx.instances.create({
+      pluginId: 'echo',
+      slug: 'echo-hidden-form',
+      connection: {},
+      settings: { formElicitationApprovals: 'ask' },
+    });
+    await ctx.instances.syncNow(inst.id);
+    setGroupLevel(ctx.db, inst.id, 'echo', 'ask');
+    const { token } = ctx.tokens.create({ name: 'hidden', scope: [inst.id], access: 'write' }, { userId: adminId });
+    // Advertises forms, but never shows one.
+    const client = new Client({ name: 'e2e', version: '1.0.0' }, { capabilities: { elicitation: {} } });
+    const shown: unknown[] = [];
+    client.setRequestHandler(ElicitRequestSchema, (req) => {
+      shown.push(req.params);
+      return new Promise(() => undefined);
+    });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/echo-hidden-form`), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const parked = parse(
+      await client.callTool({
+        name: 'execute',
+        arguments: { code: `return (await echo.call('echo.set', { name: 'vol/h' })).params.name;` },
+      }),
+    );
+    expect(shown).toHaveLength(1);
+    expect(parked).toMatchObject({
+      status: 'awaiting_approval',
+      approval: { inSession: true, url: expect.stringContaining(`${base}/a/`) },
+    });
+    const decided = await client.callTool({
+      name: 'approval_decide',
+      arguments: { executionId: parked.executionId, approve: true },
+    });
+    expect(decided.structuredContent).toEqual({ decided: true });
+    expect(parse(await client.callTool({ name: 'resume', arguments: { executionId: parked.executionId } }))).toEqual({
+      result: 'vol/h',
+    });
+    const trail = ctx.db
+      .select()
+      .from(auditLog)
+      .all()
+      .filter((a) => (a.detail as { executionId?: string } | null)?.executionId === parked.executionId);
+    expect(trail.find((a) => a.decision === 'awaiting_approval')?.detail).toMatchObject({ formFallback: true });
+    expect(trail.find((a) => a.decision === 'human-approved')?.detail).toMatchObject({ approvalChannel: 'card' });
     await client.close();
   });
 

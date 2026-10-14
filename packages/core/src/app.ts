@@ -93,6 +93,8 @@ export interface AppOptions {
   repoAllowHttp?: boolean;
   /** Replaces the LOG_LEVEL logger (tests). */
   log?: Logger;
+  /** How long a form prompt waits before its call parks (tests). */
+  formFallbackMs?: number;
 }
 
 export async function createAppContext(config: Config, opts: AppOptions = {}): Promise<AppContext> {
@@ -125,7 +127,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
       'PUBLIC_MCP_URL is not set: OAuth is off (bearer tokens still work). Set it to the public address of the MCP port.',
     );
   const links = new ApprovalLinkService(db, now);
-  const approvals = new ApprovalService(db, links, now);
+  const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
   const executions = new ExecutionRegistry(() => now().getTime());
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
