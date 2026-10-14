@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isSdkCompatible, parseManifest, SDK_VERSION } from '../src/index.js';
+import {
+  decodeInstructions,
+  INSTRUCTIONS_MAX_BYTES,
+  isSdkCompatible,
+  parseManifest,
+  SDK_VERSION,
+} from '../src/index.js';
 
 const minimal = {
   id: 'example',
@@ -27,10 +33,36 @@ describe('parseManifest', () => {
     ['invalid sdk range', { sdk: 'not a range' }],
     ['absolute entry', { entry: '/etc/passwd' }],
     ['entry escaping the package', { entry: '../core/dist/main.js' }],
+    ['absolute instructions', { instructions: '/etc/motd.md' }],
+    ['instructions escaping the package', { instructions: '../other/instructions.md' }],
+    ['nested instructions escaping the package', { instructions: 'docs/../../x.md' }],
+    ['instructions that are not Markdown', { instructions: 'dist/index.js' }],
+    ['empty instructions path', { instructions: '' }],
     ['reserved namespace', { binding: { namespace: 'catalog', functions: ['call'] } }],
     ['non-identifier function', { binding: { namespace: 'x', functions: ['do-it'] } }],
   ])('rejects %s', (_name, patch) => {
     expect(() => parseManifest({ ...minimal, ...patch })).toThrow();
+  });
+
+  it('accepts an instructions file inside the package', () => {
+    expect(parseManifest(minimal).instructions).toBeUndefined();
+    expect(parseManifest({ ...minimal, instructions: 'instructions.md' }).instructions).toBe('instructions.md');
+    expect(parseManifest({ ...minimal, instructions: 'docs/agent.md' }).instructions).toBe('docs/agent.md');
+  });
+
+  it('decodes instructions within the cap, as UTF-8 text only', () => {
+    const enc = new TextEncoder();
+    expect(decodeInstructions(enc.encode('\uFEFF# Shape\n\nKeys are `GET /x`. ✓\n'))).toBe(
+      '# Shape\n\nKeys are `GET /x`. ✓',
+    );
+    expect(decodeInstructions(enc.encode('a'.repeat(INSTRUCTIONS_MAX_BYTES)))).toHaveLength(INSTRUCTIONS_MAX_BYTES);
+    expect(() => decodeInstructions(enc.encode('é'.repeat(INSTRUCTIONS_MAX_BYTES / 2 + 1)))).toThrow(
+      `limit is ${INSTRUCTIONS_MAX_BYTES}`,
+    );
+    expect(() => decodeInstructions(new Uint8Array([0x41, 0xff, 0x41]))).toThrow('not valid UTF-8');
+    expect(() => decodeInstructions(enc.encode('a\u0000b'))).toThrow('control characters');
+    expect(() => decodeInstructions(enc.encode('a\u001b[31mb'))).toThrow('control characters');
+    expect(decodeInstructions(enc.encode('a\tb\r\nc'))).toBe('a\tb\r\nc');
   });
 
   it('refuses an options source shared by the connection form and a rule picker', () => {

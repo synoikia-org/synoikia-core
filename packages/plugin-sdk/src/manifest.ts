@@ -121,6 +121,9 @@ export const ManifestSchema = z
     sdk: z.string().refine((r) => semver.validRange(r) !== null, 'must be a semver range'),
     description: z.string().optional(),
     entry: relativePath,
+    /** Markdown file in the package that tells the agent how the upstream API works; core adds it to the
+     * MCP instructions (design §2.2). At most `INSTRUCTIONS_MAX_BYTES` of UTF-8 text. */
+    instructions: relativePath.refine((p) => p.endsWith('.md'), 'must be a .md file').optional(),
     binding: z.object({
       namespace: jsIdentifier,
       functions: z.array(jsIdentifier).min(1),
@@ -246,6 +249,25 @@ export const ManifestSchema = z
     }
   });
 export type Manifest = z.infer<typeof ManifestSchema>;
+
+/** Largest `instructions` file core accepts; a larger one fails the check, it is never truncated. */
+export const INSTRUCTIONS_MAX_BYTES = 4096;
+
+/** The text of an `instructions` file. Throws for a file over the cap, invalid UTF-8 or control characters. */
+export function decodeInstructions(bytes: Uint8Array): string {
+  if (bytes.byteLength > INSTRUCTIONS_MAX_BYTES)
+    throw new Error(`instructions are ${bytes.byteLength} bytes; the limit is ${INSTRUCTIONS_MAX_BYTES}`);
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch {
+    throw new Error('instructions are not valid UTF-8');
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text))
+    throw new Error('instructions contain control characters');
+  return text.trim();
+}
 
 /** Parses and validates a manifest. Throws a `ZodError` describing every problem found. */
 export function parseManifest(input: unknown): Manifest {

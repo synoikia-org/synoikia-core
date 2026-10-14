@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ErrorCodes, HttpJsonClient, queryString } from '../src/index.js';
+import { encodeBody, ErrorCodes, HttpJsonClient, queryString } from '../src/index.js';
 
 const SECRET = 'super-secret-token';
 const seen: { method?: string; url?: string; headers: http.IncomingHttpHeaders; body: string }[] = [];
@@ -22,6 +22,7 @@ beforeAll(async () => {
       const path = req.url!.split('?')[0];
       if (path === '/api/ok') return send(200, { ok: true, echo: body ? JSON.parse(body) : null });
       if (path === '/api/empty') return send(204);
+      if (path === '/api/raw') return send(200, { ok: true });
       if (path === '/api/text') return send(200, 'plain');
       if (path === '/api/denied') return send(403, { message: 'no access' });
       if (path === '/api/invalid') return send(422, { message: 'bad field' });
@@ -131,6 +132,75 @@ describe('HttpJsonClient', () => {
     expect(await c.request('GET', '/session')).toEqual({ ok: 1 });
     expect(await c.request('GET', '/session')).toEqual({ ok: 1 });
     expect(sessions - before).toBe(1);
+  });
+});
+
+describe('form and multipart bodies', () => {
+  const fields = { name: 'a&b=c d', tags: ['x', 'y'], on: true, off: false, n: 0, skip: null, gone: undefined };
+
+  it('sends a urlencoded form', async () => {
+    await client().request('POST', '/raw', { body: fields, bodyEncoding: 'form' });
+    const req = seen.at(-1)!;
+    expect(req.headers['content-type']).toBe('application/x-www-form-urlencoded');
+    expect(req.body).toBe('name=a%26b%3Dc+d&tags=x&tags=y&on=true&off=false&n=0');
+    expect(req.headers['content-length']).toBe(String(Buffer.byteLength(req.body)));
+    expect(new URLSearchParams(req.body).get('name')).toBe('a&b=c d');
+  });
+
+  it('sends multipart text fields under a random boundary', async () => {
+    await client().request('POST', '/raw', {
+      body: { urls: 'magnet:?xt=urn:btih:abc\nhttp://x/y', 'we"ird\r\nname': 'é', obj: { a: 1 } },
+      bodyEncoding: 'multipart',
+    });
+    const req = seen.at(-1)!;
+    const boundary = /^multipart\/form-data; boundary=(synoikia-[0-9a-f]{32})$/.exec(req.headers['content-type']!)?.[1];
+    expect(boundary).toBeDefined();
+    expect(req.body).toBe(
+      [
+        `--${boundary}`,
+        'content-disposition: form-data; name="urls"',
+        '',
+        'magnet:?xt=urn:btih:abc\nhttp://x/y',
+        `--${boundary}`,
+        'content-disposition: form-data; name="we%22ird%0D%0Aname"',
+        '',
+        'é',
+        `--${boundary}`,
+        'content-disposition: form-data; name="obj"',
+        '',
+        '{"a":1}',
+        `--${boundary}--`,
+        '',
+      ].join('\r\n'),
+    );
+    const again = encodeBody({ a: '1' }, 'multipart')!;
+    expect(again.contentType).not.toBe(req.headers['content-type']);
+  });
+
+  it('keeps JSON the default and rejects bodies that are not fields', async () => {
+    expect(encodeBody({ a: [1] })).toEqual({ data: Buffer.from('{"a":[1]}'), contentType: 'application/json' });
+    expect(encodeBody(undefined, 'form')).toBeUndefined();
+    expect(encodeBody({}, 'form')!.data.toString()).toBe('');
+    const before = seen.length;
+    for (const [body, bodyEncoding] of [
+      ['text', 'form'],
+      [[1, 2], 'multipart'],
+      [{ a: 1 }, 'xml'],
+    ] as const) {
+      await expect(
+        client().request('POST', '/raw', { body, bodyEncoding: bodyEncoding as 'form' }),
+      ).rejects.toMatchObject({ code: ErrorCodes.InvalidParams });
+    }
+    await expect(client().request('POST', '/raw', { body: { n: 1n } })).rejects.toMatchObject({
+      code: ErrorCodes.InvalidParams,
+    });
+    expect(seen.length).toBe(before);
+  });
+
+  it('exposes Set-Cookie from a raw sign-in response', async () => {
+    const res = await client().raw('POST', '/login', { body: { username: 'u', password: 'p' }, bodyEncoding: 'form' });
+    expect(res.headers['set-cookie']).toEqual(['sid=1; HttpOnly']);
+    expect(seen.at(-1)!.body).toBe('username=u&password=p');
   });
 });
 

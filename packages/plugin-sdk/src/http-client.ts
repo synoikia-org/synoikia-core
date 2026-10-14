@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
 import https from 'node:https';
@@ -28,11 +29,17 @@ export interface HttpJsonClientOptions {
   onAuthFailure?: (deadline: number) => Promise<boolean>;
 }
 
+/** How a request body is sent: JSON, `application/x-www-form-urlencoded`, or `multipart/form-data` text fields. */
+export const BODY_ENCODINGS = ['json', 'form', 'multipart'] as const;
+export type BodyEncoding = (typeof BODY_ENCODINGS)[number];
+
 export interface HttpRequestOptions {
   /** Arrays repeat the key, objects are sent as JSON, null and undefined are dropped. */
   query?: Record<string, unknown>;
-  /** Sent as JSON (not for GET). */
+  /** Not sent for GET. With `form` or `multipart` it must be an object, encoded like `query`. */
   body?: unknown;
+  /** Default `json`. */
+  bodyEncoding?: BodyEncoding;
   timeoutMs?: number;
   /** Absolute deadline (ms since epoch); overrides `timeoutMs`. */
   deadline?: number;
@@ -48,18 +55,56 @@ export interface HttpResponse {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
 
-/** `?a=1&b=2&b=3`: arrays repeat the key, objects are sent as JSON, null/undefined are dropped. */
-export function queryString(query: Record<string, unknown> | undefined): string {
-  if (!query) return '';
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
+/** Name/value pairs of a query or form: arrays repeat the key, objects are sent as JSON, booleans and
+ * numbers as text, null/undefined are dropped. */
+export function formFields(fields: Record<string, unknown>): [string, string][] {
+  const out: [string, string][] = [];
+  for (const [key, value] of Object.entries(fields)) {
     for (const v of Array.isArray(value) ? value : [value]) {
       if (v === undefined || v === null) continue;
-      search.append(key, typeof v === 'object' ? JSON.stringify(v) : String(v));
+      out.push([key, typeof v === 'object' ? JSON.stringify(v) : String(v)]);
     }
   }
-  const s = search.toString();
+  return out;
+}
+
+/** `?a=1&b=2&b=3`, from `formFields`. */
+export function queryString(query: Record<string, unknown> | undefined): string {
+  if (!query) return '';
+  const s = new URLSearchParams(formFields(query)).toString();
   return s ? `?${s}` : '';
+}
+
+/** Multipart field names escape `"`, CR and LF as browsers do. */
+const multipartName = (name: string) => name.replace(/"/g, '%22').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+
+/** The bytes and content type of a request body, or undefined for none. */
+export function encodeBody(
+  body: unknown,
+  encoding: BodyEncoding = 'json',
+): { data: Buffer; contentType: string } | undefined {
+  if (body === undefined) return undefined;
+  if (!BODY_ENCODINGS.includes(encoding))
+    throw new PluginError(ErrorCodes.InvalidParams, `Unknown body encoding ${String(encoding)}`);
+  if (encoding === 'json') return { data: Buffer.from(JSON.stringify(body)), contentType: 'application/json' };
+  if (!isPlainObject(body))
+    throw new PluginError(ErrorCodes.InvalidParams, `A ${encoding} body must be an object of fields`);
+  const fields = formFields(body);
+  if (encoding === 'form')
+    return {
+      data: Buffer.from(new URLSearchParams(fields).toString()),
+      contentType: 'application/x-www-form-urlencoded',
+    };
+  const boundary = `synoikia-${randomBytes(16).toString('hex')}`;
+  if (fields.some(([k, v]) => k.includes(boundary) || v.includes(boundary)))
+    throw new PluginError(ErrorCodes.InvalidParams, 'A multipart field contains the boundary');
+  const parts = fields.map(
+    ([k, v]) => `--${boundary}\r\ncontent-disposition: form-data; name="${multipartName(k)}"\r\n\r\n${v}\r\n`,
+  );
+  return {
+    data: Buffer.from(`${parts.join('')}--${boundary}--\r\n`),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 function parseBody(text: string): unknown {
@@ -127,7 +172,14 @@ export class HttpJsonClient {
     const url = new URL(`${this.base}${path}${queryString(opts.query)}`);
     if (url.host !== this.host || !`${url.pathname}/`.startsWith(`${this.basePath}/`))
       return Promise.reject(new PluginError(ErrorCodes.InvalidParams, `${label}: invalid path`));
-    const data = opts.body === undefined || method === 'GET' ? undefined : JSON.stringify(opts.body);
+    let data: ReturnType<typeof encodeBody>;
+    try {
+      data = method === 'GET' ? undefined : encodeBody(opts.body, opts.bodyEncoding);
+    } catch (err) {
+      return Promise.reject(
+        err instanceof PluginError ? err : new PluginError(ErrorCodes.InvalidParams, `${label}: invalid body`),
+      );
+    }
     const lib = url.protocol === 'https:' ? https : http;
     const maxBytes = this.opts.maxBytes ?? DEFAULT_MAX_BYTES;
     return new Promise((resolve, reject) => {
@@ -147,9 +199,7 @@ export class HttpJsonClient {
           headers: {
             accept: 'application/json',
             ...this.opts.headers?.(),
-            ...(data !== undefined
-              ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) }
-              : {}),
+            ...(data !== undefined ? { 'content-type': data.contentType, 'content-length': data.data.length } : {}),
           },
           ...(url.protocol === 'https:' ? { rejectUnauthorized: this.opts.verifyTls !== false } : {}),
         },
@@ -177,7 +227,7 @@ export class HttpJsonClient {
       req.on('error', () =>
         fail(new PluginError(ErrorCodes.UpstreamError, `${this.opts.service} is unreachable at ${this.host}`)),
       );
-      if (data !== undefined) req.write(data);
+      if (data !== undefined) req.write(data.data);
       req.end();
     });
   }
