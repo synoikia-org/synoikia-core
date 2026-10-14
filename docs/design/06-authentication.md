@@ -32,7 +32,7 @@ The Admin listener (port 8081) has its own sign-in.
 
 - Local password sign-in is always available, unless `security.disableLocalLogin` is true.
 - The admin can set that only while OIDC is on and at least one enabled user is linked to it.
-- While it is set, core refuses these actions with 409 `local_login_disabled`: turn OIDC off, unlink, or disable the last enabled linked user.
+- While it is set, core refuses these actions with 409 `local_login_disabled`: turn OIDC off, unlink, or disable or delete the last enabled linked user.
 - `ADMIN_FORCE_LOCAL_LOGIN=true` turns local sign-in on again.
 
 **Sessions.**
@@ -41,6 +41,20 @@ The Admin listener (port 8081) has its own sign-in.
 - The cookie is `__Host-syn_admin`: `HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure` behind TLS.
 - A session ends after 30 minutes without use, and after 12 hours in total. Both values are settings.
 - Sign-out deletes the session. A password change ends the other sessions of the user.
+
+**Delete a user.** An admin deletes a user on Settings → Users (`DELETE /api/users/:id`). The delete is permanent.
+
+- Core refuses to delete:
+  - the admin who asks (409 `self_delete`);
+  - the last user (409 `last_user`);
+  - the last enabled admin (409 `last_admin`);
+  - the last enabled linked user while local sign-in is off (409 `local_login_disabled`).
+- Before the delete, core revokes the sessions, OAuth grants and bearer tokens of the user (§6.2). It also cancels the pending approvals that the user owns, and ends the session grants that the user gave (§5.8). The delete fails with 409 `approvals_pending` while a pending approval of the user remains.
+- Then, in one transaction, core:
+  - deletes the user, their personal levels and their own pre-approval rules;
+  - keeps the other rows that name the user, and clears that name: admin pre-approval rules that the user made, bearer tokens that the user made, decided approvals, operation acknowledgements and group level changes;
+  - writes the audit event `user_deleted` with the user id, user name and `registered_via`.
+- Core does not change the audit log. The log shows the user name from `user_deleted` for the events of a deleted user, and marks it as deleted (`actorDeleted`). The actor filter also finds a deleted user by name.
 
 **CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it.
 
@@ -120,7 +134,8 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 - **Revocation.**
   - The Clients & Tokens page lists the grants of each user and client. The admin can revoke them.
   - A password change or a disabled user revokes all grants of the user, and their tokens.
-  - A disabled user also loses the bearer tokens that they made. `refresh` refuses a disabled user.
+  - A disabled user also loses the bearer tokens that they made, and the session grants that they gave (§5.8). `refresh` refuses a disabled user.
+  - A deleted user loses all grants, their tokens and the bearer tokens that they made (§6.1).
   - When the admin enables a user again, no grant or token comes back.
 
 **Scope check.** For each request to `/{slug}`, core checks that the scope or audience of the credential includes that instance. This applies to both token kinds.
@@ -187,7 +202,7 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 
 Self-registration is off by default. It is on while an admin sets a default role (Settings → User auth). The default role can be any role, also Admin. The portal then asks for a typed confirmation.
 
-A user that self-registration makes gets the default role. Core records the source in `registered_via` and audits it as `user_registered`. User names are unique without regard to case. A name from the sign-up form or OIDC cannot contain `:`. The sign-up form gives one error for a taken name, and does not tell that the name exists.
+A user that self-registration makes gets the default role. Core records the source in `registered_via` and audits it as `user_registered`. While self-registration is on, a deleted `oidc` or `external` user comes back as a new user at their next sign-in (§6.1). User names are unique without regard to case. A name from the sign-up form or OIDC cannot contain `:`. The sign-up form gives one error for a taken name, and does not tell that the name exists.
 
 | Source     | When                                                                                                                                |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |

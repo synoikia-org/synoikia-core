@@ -199,12 +199,12 @@ A human must make an approval, not the client that made the call. The answer to 
 
 **Approval states.**
 
-| From      | To          | When                                                                                                         |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
-| `pending` | `approved`  | A human approves on the page, or the client approves an allowed form.                                        |
-| `pending` | `denied`    | A human denies, the client declines, there is no channel, or core restarts.                                  |
-| `pending` | `timed_out` | `expires_at` passes.                                                                                         |
-| `pending` | `cancelled` | The `execute` ends, the session closes (not for a parked execution), the endpoint stops, or core shuts down. |
+| From      | To          | When                                                                                                                                      |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `pending` | `approved`  | A human approves on the page, or the client approves an allowed form.                                                                     |
+| `pending` | `denied`    | A human denies, the client declines, there is no channel, or core restarts.                                                               |
+| `pending` | `timed_out` | `expires_at` passes.                                                                                                                      |
+| `pending` | `cancelled` | The `execute` ends, the session closes (not for a parked execution), the endpoint stops, the owner is deleted (§6.1), or core shuts down. |
 
 ## 5.4 Sandbox
 
@@ -347,5 +347,5 @@ A session grant lets one principal run the operations at `ask` on one endpoint w
   - Locked operations and operations with typed confirmation always need a human. The page does not offer a grant for them.
   - Level `none`, a group at `read` and the access ceiling still refuse.
   - The write rate limit, attestation, target resolution, redaction and the audit still apply.
-- **End.** At its expiry, with **Revoke** on the card or in the portal (endpoint settings, "Active session approvals"), when the endpoint stops, or at a restart. Core keeps grants in memory only.
-- **Audit.** `config` events `session_grant.created` (approver, client, approval, expiry) and `session_grant.ended` (reason: `expired`, `revoked`, `replaced`, `endpoint_stopped`).
+- **End.** At its expiry, with **Revoke** on the card or in the portal (endpoint settings, "Active session approvals"), when the endpoint stops, when the approver is disabled or deleted (§6.1), or at a restart. Core keeps grants in memory only.
+- **Audit.** `config` events `session_grant.created` (approver, client, approval, expiry) and `session_grant.ended` (reason: `expired`, `revoked`, `replaced`, `endpoint_stopped`, `user_disabled`, `user_deleted`).

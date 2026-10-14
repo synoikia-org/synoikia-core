@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DbLike } from './db/index.js';
@@ -24,6 +24,10 @@ export type AuditQuery = z.infer<typeof AuditQuerySchema>;
 
 const escapeLike = (s: string) => s.replace(/[%_\\]/g, (c) => `\\${c}`);
 
+const deletedUserId = sql<string>`json_extract(${auditLog.detail}, '$.userId')`;
+const deletedUsername = sql<string>`json_extract(${auditLog.detail}, '$.username')`;
+const isUserDeleted = and(eq(auditLog.kind, 'auth'), eq(auditLog.decision, 'user_deleted'));
+
 function where(q: AuditQuery): SQL | undefined {
   const c: SQL[] = [];
   if (q.instance) c.push(eq(auditLog.instanceId, q.instance));
@@ -33,7 +37,9 @@ function where(q: AuditQuery): SQL | undefined {
   if (q.target) c.push(sql`${auditLog.resolvedTargets} LIKE ${`%${escapeLike(q.target)}%`} ESCAPE '\\'`);
   if (q.actor) {
     const byName = sql`${auditLog.actorKind} = 'user' AND ${auditLog.actorId} IN (SELECT ${users.id} FROM ${users} WHERE lower(${users.username}) = lower(${q.actor}))`;
-    c.push(or(eq(auditLog.actorId, q.actor), byName)!);
+    // A deleted user's name lives on in their `user_deleted` row.
+    const byDeletedName = sql`${auditLog.actorKind} = 'user' AND ${auditLog.actorId} IN (SELECT ${deletedUserId} FROM ${auditLog} WHERE ${isUserDeleted} AND lower(${deletedUsername}) = lower(${q.actor}))`;
+    c.push(or(eq(auditLog.actorId, q.actor), byName, byDeletedName)!);
   }
   if (q.from) c.push(gte(auditLog.at, q.from));
   if (q.to) c.push(lte(auditLog.at, q.to));
@@ -47,15 +53,44 @@ const selectWithActorName = (db: DbLike) =>
     .from(auditLog)
     .leftJoin(users, and(eq(auditLog.actorKind, 'user'), eq(auditLog.actorId, users.id)));
 
+type NamedRow = { row: typeof auditLog.$inferSelect; actorName: string | null };
+
+/** Fills deleted users' names with one lookup per page, only when the page has one. */
+function withDeletedNames(db: DbLike, rows: NamedRow[]) {
+  const gone = [
+    ...new Set(
+      rows.filter((r) => r.row.actorKind === 'user' && !r.actorName && r.row.actorId).map((r) => r.row.actorId!),
+    ),
+  ];
+  const names = new Map(
+    gone.length
+      ? db
+          .select({ id: deletedUserId, name: deletedUsername })
+          .from(auditLog)
+          .where(and(isUserDeleted, inArray(deletedUserId, gone)))
+          .orderBy(auditLog.id)
+          .all()
+          .map((d) => [d.id, d.name])
+      : [],
+  );
+  return rows.map(({ row, actorName }) => {
+    const deletedName = !actorName && row.actorKind === 'user' && row.actorId ? names.get(row.actorId) : undefined;
+    // Marks a deleted actor, so a later user with the same name is told apart.
+    return { ...row, actorName: actorName ?? deletedName ?? null, actorDeleted: deletedName !== undefined };
+  });
+}
+
 export function queryAudit(db: DbLike, raw: unknown) {
   const q = AuditQuerySchema.parse(raw);
-  const rows = selectWithActorName(db)
-    .where(where(q))
-    .orderBy(desc(auditLog.at), desc(auditLog.id))
-    .limit(q.limit)
-    .offset(q.offset)
-    .all()
-    .map(({ row, actorName }) => ({ ...row, actorName }));
+  const rows = withDeletedNames(
+    db,
+    selectWithActorName(db)
+      .where(where(q))
+      .orderBy(desc(auditLog.at), desc(auditLog.id))
+      .limit(q.limit)
+      .offset(q.offset)
+      .all(),
+  );
   const total =
     db
       .select({ n: sql<number>`count(*)` })
@@ -76,6 +111,7 @@ const CSV_COLUMNS = [
   'actorKind',
   'actorId',
   'actorName',
+  'actorDeleted',
   'decidedBy',
   'decidedVia',
   'resultStatus',
@@ -104,12 +140,14 @@ export function* auditCsvChunks(db: DbLike, raw: unknown): Generator<string> {
     const after = last
       ? or(lt(auditLog.at, last.at), and(eq(auditLog.at, last.at), lt(auditLog.id, last.id)))
       : undefined;
-    const rows = selectWithActorName(db)
-      .where(and(where(q), after))
-      .orderBy(desc(auditLog.at), desc(auditLog.id))
-      .limit(CSV_PAGE)
-      .all()
-      .map(({ row, actorName }) => ({ ...row, actorName }));
+    const rows = withDeletedNames(
+      db,
+      selectWithActorName(db)
+        .where(and(where(q), after))
+        .orderBy(desc(auditLog.at), desc(auditLog.id))
+        .limit(CSV_PAGE)
+        .all(),
+    );
     if (rows.length) yield rows.map((r) => `${CSV_COLUMNS.map((c) => csvCell(r[c])).join(',')}\n`).join('');
     if (rows.length < CSV_PAGE) return;
     const tail = rows.at(-1)!;

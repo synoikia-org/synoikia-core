@@ -6,7 +6,15 @@ import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
 import { signPayload } from '../src/auth/tokens.js';
 import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
-import { users } from '../src/db/schema.js';
+import {
+  mcpTokens,
+  operationGroups,
+  operations,
+  pendingApprovals,
+  preApprovalRules,
+  userLevels,
+  users,
+} from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
 import { updateSettings } from '../src/settings.js';
 import { CORE_VERSION } from '../src/version.js';
@@ -248,6 +256,197 @@ describe('setup, login and sessions', () => {
   });
 });
 
+describe('deleting users', () => {
+  async function withVictim() {
+    const t = await setup();
+    const b = await signedIn(t);
+    const add = async (username: string, roleId = 'admin') =>
+      ((await (await b.post('/api/users', { username, password: PASSWORD, roleId })).json()) as { id: string }).id;
+    return { ...t, b, add, me: t.ctx.db.select().from(users).where(eq(users.username, 'admin')).get()!.id };
+  }
+
+  it('deletes a user, revokes their credentials and clears what names them', async () => {
+    const t = await withVictim();
+    const id = await t.add('gone');
+    const victim = await t.client();
+    await victim.post('/auth/login', { username: 'gone', password: PASSWORD });
+    expect((await victim.get('/api/instances')).status).toBe(200);
+
+    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    await t.b.post(`/api/instances/${inst.id}/sync`);
+    const [opRow] = t.ctx.db.select().from(operations).where(eq(operations.instanceId, inst.id)).all();
+    const [group] = t.ctx.db.select().from(operationGroups).where(eq(operationGroups.instanceId, inst.id)).all();
+    t.ctx.db.update(operations).set({ acknowledgedBy: id }).where(eq(operations.id, opRow!.id)).run();
+    t.ctx.db.update(operationGroups).set({ levelChangedBy: id }).where(eq(operationGroups.id, group!.id)).run();
+    t.ctx.db
+      .insert(userLevels)
+      .values({ id: 'level', userId: id, instanceId: inst.id, groupId: group!.id, level: 'read' })
+      .run();
+    const rule = (ownerUserId: string | null, ruleId: string) =>
+      t.ctx.db
+        .insert(preApprovalRules)
+        .values({ id: ruleId, instanceId: inst.id, operationId: opRow!.id, reason: 'r', createdBy: id, ownerUserId })
+        .run();
+    rule(id, 'personal');
+    rule(null, 'shared');
+    const token = t.ctx.tokens.create({ name: 'gone-token', scope: ['*'] }, { userId: id });
+    const grants = vi.spyOn(t.ctx.oauth, 'revokeUserGrants');
+    const approval = (ownerUserId: string) =>
+      t.ctx.approvals.request({
+        instanceId: inst.id,
+        operationId: opRow!.id,
+        operationKey: opRow!.key,
+        classification: 'write',
+        paramsDisplay: {},
+        paramsHash: 'h',
+        resolvedTargets: [],
+        summary: 's',
+        client: { kind: 'token' },
+        ownerUserId,
+        timeoutMs: 60_000,
+        prompts: { url: () => new Promise(() => {}) },
+        formApprovals: false,
+      });
+    const mine = approval(id);
+    const theirs = approval(t.me);
+
+    expect((await t.b.del(`/api/users/${id}`)).status).toBe(204);
+    expect(await mine.decision).toMatchObject({ outcome: 'cancelled', reason: 'user_deleted' });
+    expect(t.ctx.approvals.cancel(theirs.id, 'test')).toBe(true);
+    expect((await victim.get('/api/instances')).status).toBe(401);
+    expect(t.ctx.tokens.verify(token.token)).toBeNull();
+    expect(grants).toHaveBeenCalledWith(id, 'user_deleted', { userId: t.me });
+
+    const db = t.ctx.db;
+    expect(db.select().from(users).where(eq(users.id, id)).get()).toBeUndefined();
+    expect(db.select().from(userLevels).where(eq(userLevels.userId, id)).all()).toEqual([]);
+    expect(db.select().from(operations).where(eq(operations.id, opRow!.id)).get()).toMatchObject({
+      acknowledgedBy: null,
+    });
+    expect(db.select().from(operationGroups).where(eq(operationGroups.id, group!.id)).get()).toMatchObject({
+      levelChangedBy: null,
+    });
+    // The personal rule goes: a null owner would make it an admin rule for every caller.
+    expect(db.select().from(preApprovalRules).all()).toEqual([
+      expect.objectContaining({ id: 'shared', createdBy: null, ownerUserId: null }),
+    ]);
+    expect(db.select().from(mcpTokens).where(eq(mcpTokens.id, token.id)).get()).toMatchObject({ createdBy: null });
+    expect(db.select().from(pendingApprovals).where(eq(pendingApprovals.id, mine.id)).get()).toMatchObject({
+      status: 'cancelled',
+      ownerUserId: null,
+    });
+    expect(await (await t.b.get('/api/users')).json()).toEqual([expect.objectContaining({ username: 'admin' })]);
+
+    type Row = { decision: string; actorName: string | null; detail: unknown };
+    const audit = async (q: string) => ((await (await t.b.get(`/api/audit?${q}`)).json()) as { rows: Row[] }).rows;
+    expect(await audit('decision=user_deleted')).toEqual([
+      expect.objectContaining({
+        actorName: 'admin',
+        detail: { userId: id, username: 'gone', registeredVia: null },
+      }),
+    ]);
+    const byGone = await audit('actor=GONE');
+    expect(byGone.map((r) => r.decision).sort()).toEqual(['login', 'mcp_token_created']);
+    expect(byGone.every((r) => r.actorName === 'gone')).toBe(true);
+    const csv = await (await t.b.get('/api/audit/export.csv?decision=mcp_token_created')).text();
+    expect(csv).toContain(`,user,${id},gone,`);
+  });
+
+  it('ends the session grants the user approved, so a new user with the name gets none', async () => {
+    const t = await withVictim();
+    const grant = (createdBy: string, principal: string) =>
+      t.ctx.grants.create({
+        instanceId: 'i1',
+        principal,
+        createdBy,
+        approvalId: 'a1',
+        expiresAt: new Date(Date.now() + 3_600_000),
+      });
+    const bob = await t.add('bob');
+    grant('bob', 'external:bob');
+    grant('admin', 'external:admin');
+    expect((await t.b.patch(`/api/users/${bob}`, { disabled: true })).status).toBe(200);
+    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
+
+    grant('bob', 'external:bob');
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: bob });
+    expect((await t.b.del(`/api/users/${bob}`)).status).toBe(204);
+    const again = await t.add('bob');
+    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
+    expect(t.ctx.grants.active('i1', 'external:admin')).toBeDefined();
+
+    // Audit rows of the deleted bob and the new bob stay apart.
+    type Row = { actorId: string; actorName: string; actorDeleted: boolean };
+    const rows = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
+    const by = (id: string) => [
+      ...new Set(rows.filter((r) => r.actorId === id).map((r) => [r.actorName, r.actorDeleted].join())),
+    ];
+    expect(by(bob)).toEqual(['bob,true']);
+    expect(by(again)).toEqual([]);
+    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: again });
+    const now = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
+    expect(now.filter((r) => r.actorId === again).map((r) => r.actorDeleted)).toEqual([false]);
+    expect(now.filter((r) => r.actorId === bob).map((r) => r.actorDeleted)).toEqual([true]);
+    const csv = await (await t.b.get('/api/audit/export.csv?decision=probe')).text();
+    expect(csv.split('\n')[0]).toContain(',actorName,actorDeleted,');
+    expect(csv).toContain(`,user,${again},bob,false,`);
+    expect(csv).toContain(`,user,${bob},bob,true,`);
+  });
+
+  it('refuses a direct delete while the user still owns a live approval', async () => {
+    const t = await withVictim();
+    const id = await t.add('gone');
+    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    await t.b.post(`/api/instances/${inst.id}/sync`);
+    const [opRow] = t.ctx.db.select().from(operations).where(eq(operations.instanceId, inst.id)).all();
+    const live = t.ctx.approvals.request({
+      instanceId: inst.id,
+      operationId: opRow!.id,
+      operationKey: opRow!.key,
+      classification: 'write',
+      paramsDisplay: {},
+      paramsHash: 'h',
+      resolvedTargets: [],
+      summary: 's',
+      client: { kind: 'token' },
+      ownerUserId: id,
+      timeoutMs: 60_000,
+      prompts: { url: () => new Promise(() => {}) },
+      formApprovals: false,
+    });
+    expect(() => t.ctx.users.delete(id)).toThrow(expect.objectContaining({ code: 'approvals_pending' }));
+    expect(t.ctx.users.get(id)).toMatchObject({ username: 'gone' });
+    expect(t.ctx.approvals.cancel(live.id, 'test')).toBe(true);
+    t.ctx.users.delete(id);
+    expect(t.ctx.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, live.id)).get()).toMatchObject({
+      ownerUserId: null,
+    });
+  });
+
+  it('refuses to delete yourself, the last admin, the last user or the last SSO user', async () => {
+    const t = await withVictim();
+    const refused = async (id: string, error: string) =>
+      expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
+    await refused(t.me, 'self_delete');
+    expect((await t.b.del('/api/users/nobody')).status).toBe(404);
+    expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'last_user' }));
+
+    const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);
+    expect(() => t.ctx.users.delete(t.me)).toThrow(expect.objectContaining({ code: 'last_admin' }));
+
+    const sso = await t.add('sso');
+    t.ctx.db
+      .update(users)
+      .set({ oidcIssuer: 'https://idp.example.com', oidcSubject: 'sub-1' })
+      .where(eq(users.id, sso))
+      .run();
+    updateSettings(t.ctx.db, 'security', { disableLocalLogin: true });
+    await refused(sso, 'local_login_disabled');
+    expect((await t.b.del(`/api/users/${viewer}`)).status).toBe(204);
+    expect(t.ctx.users.get(sso)).toMatchObject({ oidcSubject: 'sub-1' });
+  });
+});
+
 describe('audit log', () => {
   it('names user actors, filters by username and exports the name', async () => {
     const t = await setup();
@@ -271,7 +470,7 @@ describe('audit log', () => {
     expect(await decisions('deleted-user')).toEqual(['probe_gone']);
 
     const csv = (await (await b.get('/api/audit/export.csv?decision=probe_user')).text()).split('\n');
-    expect(csv[0]).toContain(',actorKind,actorId,actorName,decidedBy,');
+    expect(csv[0]).toContain(',actorKind,actorId,actorName,actorDeleted,decidedBy,');
     expect(csv[1]).toContain(`,user,${admin.id},admin,`);
   });
 });

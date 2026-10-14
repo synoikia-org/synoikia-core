@@ -5,7 +5,7 @@ import ModalDialog from '../../components/ModalDialog.vue';
 import { latestError } from '../../composables/useApiMutation';
 import { useConfirm } from '../../composables/useConfirm';
 import { useRolesQuery } from '../../composables/useRoles';
-import { useCreateUser, useResetTotp, useUpdateUser, useUsersQuery } from '../../composables/useUsers';
+import { useCreateUser, useDeleteUser, useResetTotp, useUpdateUser, useUsersQuery } from '../../composables/useUsers';
 import { ago } from '../../format';
 import { useSessionStore } from '../../stores/session';
 import type { PublicUser } from '../../types';
@@ -20,6 +20,8 @@ const setPassword = useUpdateUser();
 const { confirm } = useConfirm();
 const createError = create.errorText;
 const passwordError = setPassword.errorText;
+const remove = useDeleteUser();
+const deleteError = remove.errorText;
 
 // Both lists show together, once both have loaded.
 const ready = computed(() => !!usersQuery.data.value && !!rolesQuery.data.value);
@@ -29,6 +31,7 @@ const users = computed(() => (ready.value ? (usersQuery.data.value ?? []) : []))
 const roles = computed(() => (ready.value ? (rolesQuery.data.value ?? []) : []));
 const adding = ref<{ username: string; password: string; roleId: string }>();
 const resetting = ref<{ user: PublicUser; password: string }>();
+const deleting = ref<{ user: PublicUser; confirm: string }>();
 
 // One page alert: the latest row action's failure, else a failed load.
 const error = computed(() => {
@@ -86,6 +89,17 @@ function reset() {
   const r = resetting.value;
   if (!r) return;
   setPassword.mutate({ id: r.user.id, password: r.password }, { onSuccess: () => (resetting.value = undefined) });
+}
+
+function openDelete(u: PublicUser) {
+  remove.reset();
+  deleting.value = { user: u, confirm: '' };
+}
+
+function confirmDelete() {
+  const d = deleting.value;
+  if (!d || d.confirm !== d.user.username) return;
+  remove.mutate(d.user.id, { onSuccess: () => (deleting.value = undefined) });
 }
 </script>
 
@@ -155,6 +169,15 @@ function reset() {
               >
                 {{ u.disabled ? 'Enable' : 'Disable' }}
               </button>
+              <button
+                v-if="u.id !== session.user?.id"
+                class="btn btn-sm btn-danger"
+                type="button"
+                :aria-describedby="`${uid}-${u.id}`"
+                @click="openDelete(u)"
+              >
+                Delete
+              </button>
             </td>
           </tr>
         </tbody>
@@ -210,6 +233,34 @@ function reset() {
         <button class="btn" type="button" @click="resetting = undefined">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="resetting.password.length < 12" @click="reset">
           Set password
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog v-if="deleting" :title="`Delete ${deleting.user.username}?`" @close="deleting = undefined">
+      <p class="small">This removes the account for good, and with it:</p>
+      <ul class="small">
+        <li>their sessions, MCP tokens and OAuth grants</li>
+        <li>their personal access levels and pre-approval rules</li>
+        <li>their pending approvals, which are cancelled</li>
+      </ul>
+      <p class="small">The audit log keeps their name.</p>
+      <div class="field">
+        <label for="d-confirm"
+          >Type <code>{{ deleting.user.username }}</code> to confirm</label
+        >
+        <input id="d-confirm" v-model="deleting.confirm" autocomplete="off" />
+      </div>
+      <p v-if="deleteError" class="alert error" role="alert">{{ deleteError }}</p>
+      <template #footer>
+        <button class="btn" type="button" @click="deleting = undefined">Cancel</button>
+        <button
+          class="btn btn-danger-solid"
+          type="button"
+          :disabled="deleting.confirm !== deleting.user.username"
+          @click="confirmDelete"
+        >
+          Delete
         </button>
       </template>
     </ModalDialog>

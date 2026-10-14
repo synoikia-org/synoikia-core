@@ -27,3 +27,7 @@ export function useUpdateUser() {
 export function useResetTotp() {
   return useApiMutation((id: string) => http.post<PublicUser>(`/api/users/${id}/reset-totp`), changed());
 }
+
+export function useDeleteUser() {
+  return useApiMutation((id: string) => http.del(`/api/users/${id}`), changed());
+}

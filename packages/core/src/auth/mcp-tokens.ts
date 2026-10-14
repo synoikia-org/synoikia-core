@@ -130,8 +130,12 @@ export class McpTokenService {
     this.revoke(id, { userId });
   }
 
-  /** Their creator was disabled: bearer tokens they made are revoked (re-enabling revives none). */
-  revokeCreatedBy(userId: string, actor: { userId?: string } = {}) {
+  /** Their creator was disabled or deleted: bearer tokens they made are revoked (re-enabling revives none). */
+  revokeCreatedBy(
+    userId: string,
+    actor: { userId?: string } = {},
+    reason: 'user_disabled' | 'user_deleted' = 'user_disabled',
+  ) {
     return this.db.transaction((tx) => {
       const live = tx
         .select({ id: mcpTokens.id, name: mcpTokens.name })
@@ -153,7 +157,7 @@ export class McpTokenService {
         decision: 'mcp_tokens_revoked',
         actorKind: actor.userId ? 'user' : 'system',
         actorId: actor.userId,
-        detail: { createdBy: userId, reason: 'user_disabled', tokens: live.map((t) => t.name) },
+        detail: { createdBy: userId, reason, tokens: live.map((t) => t.name) },
       });
       return live.length;
     });

@@ -7,7 +7,15 @@ import type { LevelTarget, LevelView } from '../catalog/role-levels.js';
 import { aad } from '../crypto/index.js';
 import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
-import { roles, users } from '../db/schema.js';
+import {
+  mcpTokens,
+  operationGroups,
+  operations,
+  pendingApprovals,
+  preApprovalRules,
+  roles,
+  users,
+} from '../db/schema.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
 import { ADMIN_ROLE_ID } from '../gate/access.js';
 import type { AccessLevel } from '../gate/access.js';
@@ -301,6 +309,51 @@ export class UserService {
         actorKind: 'user',
         actorId: actor.userId,
         detail: { username: user.username },
+      });
+    });
+  }
+
+  /** Refuses a delete that would leave no user, no enabled admin or (local login off) no SSO user. */
+  assertDeletable(userId: string) {
+    const user = this.get(userId);
+    if (this.count() === 1) throw new ConflictError('last_user', 'You cannot delete the last user');
+    if (user.roleId === ADMIN_ROLE_ID && !user.disabled && this.otherAdmins(userId) === 0)
+      throw new ConflictError('last_admin', 'You cannot delete the last enabled admin');
+    this.assertSsoRemains({ losingUser: userId });
+    return user;
+  }
+
+  /** Hard delete (design §6.1): the caller revokes credentials and cancels approvals first. History stays. */
+  delete(userId: string, actor: { userId?: string } = {}) {
+    this.db.transaction((tx) => {
+      const user = this.assertDeletable(userId);
+      // Attribution columns without ON DELETE; personal rules go, as a null owner means every caller.
+      tx.update(operationGroups).set({ levelChangedBy: null }).where(eq(operationGroups.levelChangedBy, userId)).run();
+      tx.update(operations).set({ acknowledgedBy: null }).where(eq(operations.acknowledgedBy, userId)).run();
+      tx.delete(preApprovalRules).where(eq(preApprovalRules.ownerUserId, userId)).run();
+      tx.update(preApprovalRules).set({ createdBy: null }).where(eq(preApprovalRules.createdBy, userId)).run();
+      tx.update(mcpTokens).set({ createdBy: null }).where(eq(mcpTokens.createdBy, userId)).run();
+      // A null owner lets any admin decide, so only decided rows lose it; the caller cancels live ones first.
+      const mine = eq(pendingApprovals.ownerUserId, userId);
+      if (
+        tx
+          .select({ id: pendingApprovals.id })
+          .from(pendingApprovals)
+          .where(and(mine, eq(pendingApprovals.status, 'pending')))
+          .get()
+      )
+        throw new ConflictError('approvals_pending', 'The user still has pending approvals');
+      tx.update(pendingApprovals)
+        .set({ ownerUserId: null })
+        .where(and(mine, ne(pendingApprovals.status, 'pending')))
+        .run();
+      tx.delete(users).where(eq(users.id, userId)).run();
+      writeAudit(tx, {
+        kind: 'auth',
+        decision: 'user_deleted',
+        actorKind: 'user',
+        actorId: actor.userId,
+        detail: { userId, username: user.username, registeredVia: user.registeredVia },
       });
     });
   }

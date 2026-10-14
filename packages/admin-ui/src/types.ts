@@ -283,6 +283,8 @@ export interface AuditRow {
   actorId: string | null;
   /** The username of the actor, when the actor is a user. */
   actorName: string | null;
+  /** The name comes from the actor's `user_deleted` audit row. */
+  actorDeleted: boolean;
   decidedBy: string | null;
   decidedVia: string | null;
   params: unknown;

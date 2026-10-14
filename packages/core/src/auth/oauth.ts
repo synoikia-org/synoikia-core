@@ -208,8 +208,12 @@ export class OAuthService {
     this.revokeGrant(id, { userId });
   }
 
-  /** Password changed or user disabled: revoke every live grant and its tokens; re-enabling revives nothing. */
-  revokeUserGrants(userId: string, reason: 'password_changed' | 'user_disabled', actor: { userId?: string } = {}) {
+  /** Password changed, user disabled or deleted: revoke every live grant and its tokens; re-enabling revives nothing. */
+  revokeUserGrants(
+    userId: string,
+    reason: 'password_changed' | 'user_disabled' | 'user_deleted',
+    actor: { userId?: string } = {},
+  ) {
     const now = this.now();
     return this.db.transaction((tx) => {
       const live = tx
