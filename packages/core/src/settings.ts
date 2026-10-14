@@ -9,6 +9,12 @@ import { cleanStored } from './lenient.js';
 
 /** Global settings (design §8.2 "Settings"), one JSON document per section in the `settings` table. */
 
+/** Keeps the first spelling of each name; upper and lower case do not matter. */
+function dedupeNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  return names.filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+}
+
 const SETTINGS_SCHEMAS = {
   security: z
     .object({
@@ -63,6 +69,13 @@ const SETTINGS_SCHEMAS = {
         .max(24 * 60)
         .default(60),
       refreshTokenTtlDays: z.number().int().min(1).max(365).default(30),
+      /** Allowed or denied MCP clients by their self-declared name (design §6.6). */
+      clientPolicy: z
+        .object({
+          mode: z.enum(['off', 'allow', 'deny']).default('off'),
+          names: z.array(z.string().trim().min(1).max(100)).max(50).transform(dedupeNames).default([]),
+        })
+        .prefault({}),
     })
     .prefault({}),
   audit: z
@@ -83,6 +96,8 @@ function mcpProblems(value: Settings<'mcp'>): string[] {
   const provider = externalProvider(value);
   if (value.clientAuth.external && !provider.configured(value))
     problems.push(`external: configure ${provider.name} before you enable external auth`);
+  if (value.clientPolicy.mode === 'allow' && !value.clientPolicy.names.length)
+    problems.push('clientPolicy: add at least one client name to allow');
   return problems;
 }
 

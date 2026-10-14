@@ -764,6 +764,99 @@ describe('credential owners', () => {
   });
 });
 
+describe('client policy', () => {
+  const policy = (mode: 'off' | 'allow' | 'deny', names: string[] = []) =>
+    updateSettings(ctx.db, 'mcp', { clientPolicy: { mode, names } });
+  // Refusal log lines are throttled per client IP: each request comes from its own (trusted-proxy) address.
+  let nextIp = 0;
+  const initAs = (token: string, clientInfo?: { name?: unknown; version: string }) =>
+    fetch(`${base}/echo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+        'x-forwarded-for': `198.51.100.${++nextIp}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, ...(clientInfo ? { clientInfo } : {}) },
+      }),
+    });
+  const refusals = () =>
+    ctx.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.decision, 'client_refused'))
+      .all()
+      .map((r) => r.detail as { clientName: string | null; mode: string });
+
+  it('allows only listed names in allow mode, case-insensitively, and refuses a missing name', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy', scope: [instanceId] }, { userId: adminId });
+    const before = refusals().length;
+    try {
+      policy('allow', ['Listed-Client']);
+      const listed = await initAs(token, { name: 'listed-client', version: '1' });
+      expect(listed.status).toBe(200);
+      expect(listed.headers.get('mcp-session-id')).toBeTruthy();
+      const other = await initAs(token, { name: 'other-client', version: '2' });
+      expect(other.status).toBe(403);
+      expect(other.headers.get('mcp-session-id')).toBeNull();
+      expect(await other.json()).toMatchObject({
+        error: { code: -32003, message: 'This MCP client is not allowed on this server' },
+      });
+      expect((await initAs(token)).status).toBe(403);
+      expect((await initAs(token, { name: 42, version: '1' })).status).toBe(403);
+      expect(refusals().slice(before)).toEqual([
+        { slug: 'echo', clientName: 'other-client', mode: 'allow' },
+        { slug: 'echo', clientName: null, mode: 'allow' },
+        { slug: 'echo', clientName: null, mode: 'allow' },
+      ]);
+      expect(ctx.seenClients.list().slice(0, 2)).toMatchObject([
+        { name: 'other-client', version: '2' },
+        { name: 'listed-client', version: '1' },
+      ]);
+    } finally {
+      policy('off');
+    }
+  });
+
+  it('refuses listed names in deny mode, with a log line, and closes open sessions after a policy change', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-deny', scope: [instanceId] }, { userId: adminId });
+    const lines: string[] = [];
+    const saved = ctx.log;
+    const config = ctx.config as { TRUST_PROXY: number | boolean };
+    const savedProxy = config.TRUST_PROXY;
+    config.TRUST_PROXY = 1;
+    (ctx as { log: Logger }).log = createLogger('debug', (line) => lines.push(line));
+    const client = await connect('echo', token);
+    try {
+      policy('deny', ['blocked']);
+      expect((await initAs(token, { name: 'BLOCKED', version: '1' })).status).toBe(403);
+      expect((await initAs(token, { name: 'fine', version: '1' })).status).toBe(200);
+      // The open session's client ("e2e") is refused at its next request once it is denied.
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+      policy('deny', ['E2E']);
+      await expect(client.listTools()).rejects.toThrow();
+      policy('off');
+      await expect(client.listTools()).rejects.toThrow();
+      const text = lines.join('\n');
+      expect(text).toMatch(/WARN MCP request refused .*status=403 reason="MCP client not allowed .*clientName=BLOCKED/);
+      expect(refusals().slice(-2)).toEqual([
+        { slug: 'echo', clientName: 'BLOCKED', mode: 'deny' },
+        { slug: 'echo', clientName: 'e2e', mode: 'deny' },
+      ]);
+    } finally {
+      (ctx as { log: Logger }).log = saved;
+      config.TRUST_PROXY = savedProxy;
+      policy('off');
+      await client.close().catch(() => undefined);
+    }
+  });
+});
+
 describe('OAuth 2.1 authorization server', () => {
   /** A tiny cookie-keeping browser for the MCP-port HTML flow. */
   function browserSession() {

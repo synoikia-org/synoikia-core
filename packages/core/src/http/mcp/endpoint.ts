@@ -8,6 +8,8 @@ import { z } from 'zod';
 import type { AppContext } from '../../app.js';
 import type { Config } from '../../config/env.js';
 import type { ClientPrompts } from '../../approvals/service.js';
+import { writeAudit } from '../../audit.js';
+import { CLIENT_INFO_MAX, clientAllowed } from '../../auth/client-policy.js';
 import { authenticateMcp, ownerLive, principalLive, publicMcpBase } from '../../auth/mcp-auth.js';
 import { TOKEN_PREFIX } from '../../auth/mcp-tokens.js';
 import { ACCESS_PREFIX } from '../../auth/oauth.js';
@@ -18,6 +20,7 @@ import { effectiveAuthMethods } from '../../instances/manager.js';
 import { executeCode, resumeExecution, searchCode } from '../../runtime/index.js';
 import type { ExecuteResult } from '../../runtime/executions.js';
 import type { LogFields } from '../../log.js';
+import { getSettings } from '../../settings.js';
 import { clientIp } from '../common.js';
 import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION } from './approval-card.js';
 
@@ -36,7 +39,36 @@ interface Session {
   closed: AbortController;
   instanceId: string;
   principal: string;
+  /** The self-declared `clientInfo.name` of its `initialize` (design §6.6). */
+  clientName?: string;
   lastSeen: number;
+}
+
+/** The `clientInfo` of an `initialize` message; malformed fields read as absent. */
+const InitializeMessage = z.object({
+  method: z.literal('initialize'),
+  params: z
+    .object({
+      clientInfo: z
+        .object({
+          name: z.string().min(1).optional().catch(undefined),
+          version: z.string().optional().catch(undefined),
+        })
+        .optional()
+        .catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
+});
+
+/** Read from a copy of the body before the transport parses it, so a refused client never gets a session. */
+async function initializeClientInfo(req: Request) {
+  const body: unknown = await req
+    .clone()
+    .json()
+    .catch(() => undefined);
+  const msg = InitializeMessage.safeParse(body);
+  return msg.success ? { info: msg.data.params?.clientInfo ?? {} } : undefined;
 }
 
 const jsonRpcError = (code: number, message: string) => ({
@@ -439,6 +471,30 @@ export class McpEndpoints {
     });
   }
 
+  /** Applies the client policy (design §6.6); a refusal is logged and audited, and gets 403. */
+  private refuseClient(c: Context, slug: string, instanceId: string, identity: McpIdentity, name: string | undefined) {
+    const { clientPolicy } = getSettings(this.ctx.db, 'mcp');
+    if (clientAllowed(clientPolicy, name)) return undefined;
+    const clientName = name?.slice(0, CLIENT_INFO_MAX) ?? null;
+    this.refused(c, slug, 403, `MCP client not allowed by the client policy (${clientPolicy.mode} list)`, {
+      client: identity.label,
+      clientName: clientName ?? '(none)',
+    });
+    writeAudit(
+      this.ctx.db,
+      {
+        kind: 'auth',
+        decision: 'client_refused',
+        instanceId,
+        actorKind: 'mcp_client',
+        actorId: identity.label,
+        detail: { slug, clientName, mode: clientPolicy.mode },
+      },
+      this.ctx.now(),
+    );
+    return c.json(jsonRpcError(-32003, 'This MCP client is not allowed on this server'), 403);
+  }
+
   /** A 4xx/5xx from the MCP transport itself (bad JSON-RPC, wrong Accept header, …), with its message. */
   private async logTransportError(c: Context, slug: string, response: Response, principal: string) {
     if (response.status < 400) return;
@@ -512,6 +568,12 @@ export class McpEndpoints {
         });
         return c.json(jsonRpcError(-32001, 'Session not found'), 404);
       }
+      // A policy change applies to open sessions at their next request.
+      const refusal = this.refuseClient(c, slug, instance.id, auth.identity, s.clientName);
+      if (refusal) {
+        await this.closeSession(sessionId);
+        return refusal;
+      }
       s.lastSeen = Date.now();
       const response = await s.transport.handleRequest(c.req.raw);
       await this.logTransportError(c, slug, response, client);
@@ -521,6 +583,13 @@ export class McpEndpoints {
     if (c.req.method !== 'POST') {
       this.refused(c, slug, 400, 'no Mcp-Session-Id on a non-POST request', { client });
       return c.json(jsonRpcError(-32000, 'Missing Mcp-Session-Id'), 400);
+    }
+    const init = await initializeClientInfo(c.req.raw);
+    const clientName = init?.info.name;
+    if (init) {
+      if (clientName) this.ctx.seenClients.record(clientName, init.info.version);
+      const refusal = this.refuseClient(c, slug, instance.id, auth.identity, clientName);
+      if (refusal) return refusal;
     }
     try {
       await this.ctx.instances.ensureFresh(instance.id, { forceVersionCheck: true });
@@ -547,6 +616,7 @@ export class McpEndpoints {
           closed,
           instanceId: instance.id,
           principal: auth.identity.principal,
+          clientName,
           lastSeen: Date.now(),
         });
       },

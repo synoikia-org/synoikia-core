@@ -2,6 +2,7 @@ import path from 'node:path';
 import { SessionGrantService } from './approvals/grants.js';
 import { ApprovalLinkService } from './approvals/links.js';
 import { ApprovalService } from './approvals/service.js';
+import { SeenClients } from './auth/client-policy.js';
 import { McpTokenService } from './auth/mcp-tokens.js';
 import { OAuthService } from './auth/oauth.js';
 import { OidcService } from './auth/oidc.js';
@@ -47,6 +48,8 @@ export interface AppContext {
   oidc: OidcService;
   tokens: McpTokenService;
   oauth: OAuthService;
+  /** Client names seen at MCP `initialize` (design §6.6). */
+  seenClients: SeenClients;
   instances: InstanceManager;
   approvals: ApprovalService;
   /** Session grants (design §5.8). */
@@ -186,6 +189,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     oidc: new OidcService(db, secrets, keys.state, opts.oidcAllowInsecure ?? false),
     tokens: new McpTokenService(db, now),
     oauth: new OAuthService(db, now),
+    seenClients: new SeenClients(now),
     instances,
     approvals,
     grants,
