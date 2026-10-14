@@ -436,6 +436,12 @@ describe('My profile', () => {
     expect(wrapper.text()).toContain('Single sign-on linked.');
   });
 
+  it('says when an SSO link expired or the session changed', async () => {
+    profileApi({ 'GET /api/profile': { ...me, oidcLinked: true } });
+    const { wrapper } = await mountAt('/profile?error=session_changed');
+    expect(wrapper.text()).toContain('Linking expired or your session changed. Try again.');
+  });
+
   it('revokes a token or a grant only after the dialog confirms it', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const { calls } = profileApi({

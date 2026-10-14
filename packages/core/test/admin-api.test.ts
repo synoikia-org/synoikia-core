@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
+import { signPayload } from '../src/auth/tokens.js';
 import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
 import {
@@ -162,7 +163,7 @@ describe('setup, login and sessions', () => {
     expect((await b.patch(`/api/users/${sso.id}`, { disabled: true })).status).toBe(200);
   });
 
-  it('returns an OIDC identity link to the profile page', async () => {
+  it('links an OIDC identity through a same-site hop, since the IdP redirect carries no session cookie', async () => {
     const t = await setup();
     const b = await signedIn(t);
     const { user } = (await (await b.get('/api/session')).json()) as { user: { id: string } };
@@ -173,16 +174,67 @@ describe('setup, login and sessions', () => {
       verifier: 'v',
       state: 's',
       nonce: 'n',
-      redirectUri: 'r',
+      redirectUri: 'https://admin.lan/auth/oidc/callback',
     };
     vi.spyOn(t.ctx.oidc, 'complete').mockResolvedValue({ identity, state });
     const allowed = vi.spyOn(t.ctx.oidc, 'isAllowed').mockReturnValue(false);
-    const location = async () => (await b.get('/auth/oidc/callback?code=c&state=s')).headers.get('location');
+    // A cross-site redirect from the IdP: the SameSite=Strict session cookie is not sent.
+    const crossSite = await t.client();
+    const callback = () => crossSite.get('/auth/oidc/callback?code=c&state=s');
 
-    expect(await location()).toBe('/profile?error=oidc_not_allowed');
+    expect((await callback()).headers.get('location')).toBe('/profile?error=oidc_not_allowed');
     allowed.mockReturnValue(true);
-    expect(await location()).toBe('/profile?linked=1');
+    const hop = await callback();
+    expect(hop.headers.get('cache-control')).toBe('no-store');
+    expect(hop.headers.get('referrer-policy')).toBe('no-referrer');
+    const finish = /url=([^"]+)"/.exec(await hop.text())?.[1];
+    expect(finish).toMatch(/^\/auth\/oidc\/link\/finish\?t=/);
+    expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
+
+    // Without the session (or as another user) the hop links nothing.
+    expect((await crossSite.get(finish!)).headers.get('location')).toBe('/login?error=session_changed');
+    await t.ctx.users.create({ username: 'other', password: PASSWORD, roleId: 'admin' });
+    const other = await t.client();
+    await other.post('/auth/login', { username: 'other', password: PASSWORD });
+    expect((await other.get(finish!)).headers.get('location')).toBe('/profile?error=session_changed');
+    expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
+
+    expect((await b.get(finish!)).headers.get('location')).toBe('/profile?linked=1');
     expect(t.ctx.users.get(user.id)).toMatchObject({ oidcSubject: 'sub-1' });
+  });
+
+  it('refuses a link callback whose state names no user', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const { user } = (await (await b.get('/api/session')).json()) as { user: { id: string } };
+    const state = { purpose: 'admin_link' as const, verifier: 'v', state: 's', nonce: 'n', redirectUri: 'r' };
+    const identity = { issuer: 'https://idp.example.com', subject: 'sub-1', groups: [] };
+    vi.spyOn(t.ctx.oidc, 'complete').mockResolvedValue({ identity, state });
+    vi.spyOn(t.ctx.oidc, 'isAllowed').mockReturnValue(true);
+    const res = await (await t.client()).get('/auth/oidc/callback?code=c&state=s');
+    expect(res.headers.get('location')).toBe('/login?error=wrong_flow');
+    expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
+  });
+
+  it('refuses a link token that is tampered, expired or signed for another purpose', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const { user } = (await (await b.get('/api/session')).json()) as { user: { id: string } };
+    const link = { purpose: 'oidc_link', userId: user.id, issuer: 'https://idp.example.com', subject: 'sub-1' };
+    const finish = async (token: string) =>
+      (await b.get(`/auth/oidc/link/finish?t=${encodeURIComponent(token)}`)).headers.get('location');
+    const good = signPayload(t.ctx.keys.state, link, 60_000);
+
+    expect(await finish(`${good}x`)).toBe('/profile?error=session_changed');
+    expect(await finish(signPayload(t.ctx.keys.state, link, -1))).toBe('/profile?error=session_changed');
+    expect(await finish(signPayload(t.ctx.keys.state, { mfaUser: user.id }, 60_000))).toBe(
+      '/profile?error=session_changed',
+    );
+    expect(await finish(signPayload(t.ctx.keys.state, { ...link, purpose: 'other' }, 60_000))).toBe(
+      '/profile?error=session_changed',
+    );
+    expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
+    expect(await finish(good)).toBe('/profile?linked=1');
   });
 
   it('manages users; password changes sign out other sessions', async () => {

@@ -50,6 +50,7 @@ const OIDC_RESULT: Record<string, Message> = {
   linked: { kind: 'ok', text: 'Single sign-on linked.' },
   oidc_not_allowed: { kind: 'error', text: 'That single sign-on account is not allowed by the policy.' },
   oidc_taken: { kind: 'error', text: 'That single sign-on account is already linked to another user.' },
+  session_changed: { kind: 'error', text: 'Linking expired or your session changed. Try again.' },
 };
 
 onMounted(() => {
