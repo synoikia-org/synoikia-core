@@ -11,9 +11,9 @@ export const InstanceSettingsSchema = z
       .min(10_000)
       .max(24 * 60 * 60_000)
       .default(15 * 60_000),
-    /** Let form-prompt-only clients approve plain writes. Off by default: any client could then approve its
-     * own writes. URL prompts always work. */
-    formElicitationApprovals: z.enum(['off', 'writes']).default('off'),
+    /** `ask`: approve non-locked Ask operations (reads too) in the agent session, by form prompt or the approval
+     * card (design §5.3). Off by default: a client could then approve its own calls. Other stored values read as off. */
+    formElicitationApprovals: z.enum(['off', 'ask']).default('off'),
     /** Longest session grant an approver can give (design §5.8); 0 turns "Approve for this session" off. */
     sessionGrantMaxHours: z.number().int().min(0).max(24).default(8),
     /** `execute` and `search` runs per minute, per principal (design §5.2). */

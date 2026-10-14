@@ -152,7 +152,7 @@ describe('InstanceManager', () => {
     const t = setup();
     const inst = await create(t.manager, { version: '1.0' });
     await t.manager.ensureFresh(inst.id, { forceVersionCheck: true });
-    expect(t.db.select().from(operations).all()).toHaveLength(5);
+    expect(t.db.select().from(operations).all()).toHaveLength(6);
     expect(t.manager.get(inst.id)).toMatchObject({ upstreamVersion: '1.0', lastSyncStatus: 'ok' });
 
     await t.manager.updateConnection(inst.id, { config: { version: '2.0' } });

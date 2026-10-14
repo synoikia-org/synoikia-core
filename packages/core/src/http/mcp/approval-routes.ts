@@ -11,7 +11,7 @@ import { getSettings } from '../../settings.js';
 import { sha256 } from '../../auth/tokens.js';
 import { clientIp } from '../common.js';
 import { boundCsrf, checkBoundCsrf, renderLogin, uiSession } from './oauth-routes.js';
-import { approvalPage, errorPage } from './pages.js';
+import { approvalPage, decidedPage, errorPage } from './pages.js';
 
 /** The approval page (design §5.3): deciding needs the call's owner, signed in on this page or named by the
  * endpoint's external provider, and a CSRF-protected POST, so neither the link holder nor a prefetch decides. */
@@ -148,11 +148,11 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     const granted = sessionGrantUntil
       ? ` Ask operations of this client on /${data.instance.slug} run without asking until ${sessionGrantUntil.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
       : '';
-    return errorPage(
+    return decidedPage(
       c,
       approve ? 'Approved' : 'Denied',
-      `${data.op.key} on /${data.instance.slug} was ${approve ? 'approved' : 'denied'}.${granted} You can close this page; your chat continues by itself.`,
-      200,
+      `${data.op.key} on /${data.instance.slug} was ${approve ? 'approved' : 'denied'}.${granted} Your chat continues by itself.`,
+      data.approval.clientId,
     );
   });
 }

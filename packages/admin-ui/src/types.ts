@@ -72,7 +72,7 @@ export interface SessionInfo {
 
 export interface InstanceSettings {
   approvalTimeoutMs: number;
-  formElicitationApprovals: 'off' | 'writes';
+  formElicitationApprovals: 'off' | 'ask';
   sessionGrantMaxHours: number;
   executePerMinute: number;
   writesPerMinute: number;

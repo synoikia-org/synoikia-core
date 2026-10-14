@@ -3,21 +3,25 @@ import { and, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { Db } from '../db/index.js';
 import { operations, pendingApprovals, pluginInstances } from '../db/schema.js';
-import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
+import { readInstanceSettings } from '../instances/settings.js';
 import type { ApprovalLinkService } from './links.js';
 
-/** Human approval (design §5.3): URL mode sends a human to our page to decide; form mode only for opted-in
- * plain writes; otherwise the execution parks and hands out the page link (§5.6). Any timeout is denied.
- * A client's answer never approves a risky call. */
+/** Human approval (design §5.3): an opted-in, non-locked call is decided in the agent session (form prompt,
+ * or the card on a parked call); else URL mode sends a human to our page, else the execution parks with the
+ * page link (§5.6). Any timeout is denied. A client's answer never approves a locked call. */
 
 export type DecisionOutcome = 'approved' | 'denied' | 'timed_out' | 'cancelled';
 export type DecisionChannel = 'elicitation' | 'url';
+/** Where the decision was offered: `card` is the approval card's buttons (§5.7). */
+export type ApprovalChannel = 'form' | 'url' | 'link' | 'card';
 /** How the approval page knew the approver (design §5.3). */
 export type ApproverSignIn = 'session' | 'external';
 
 export interface Decision {
   outcome: DecisionOutcome;
   via?: DecisionChannel;
+  channel?: ApprovalChannel;
   decidedBy?: string;
   /** Set for decisions on the approval page. */
   signIn?: ApproverSignIn;
@@ -68,6 +72,8 @@ export interface ParkedApproval {
   operationKey: string;
   summary: string;
   expiresAt: Date;
+  /** The approval card may decide it in the agent session (§5.7). */
+  inSession: boolean;
 }
 
 /** Lets an execution park (design §5.6) when the client has no usable prompt. */
@@ -95,7 +101,7 @@ export interface ApprovalRequestInput {
   mcpSessionId?: string;
   timeoutMs: number;
   prompts?: ClientPrompts;
-  /** The endpoint lets form prompts approve, and this is a plain write (not locked, no typed confirmation). */
+  /** The endpoint allows in-session approval, and the operation is not locked and needs no typed confirmation. */
   formApprovals: boolean;
   /** Present when the execution can park; used only when no client prompt applies. */
   park?: ParkHook;
@@ -107,6 +113,7 @@ export const mayDecide = (approval: { ownerUserId: string | null }, userId: stri
 
 interface Live {
   row: typeof pendingApprovals.$inferSelect;
+  formApprovals: boolean;
   settle: (d: Decision) => void;
 }
 
@@ -171,11 +178,9 @@ export class ApprovalService {
     };
 
     const prompts = input.prompts ?? {};
-    let channel: 'url' | 'form' | 'link' | null = prompts.url
-      ? 'url'
-      : prompts.form && input.formApprovals
-        ? 'form'
-        : null;
+    // In the session first (§5.3): the form prompt, then the card on a parked call; the page otherwise.
+    let channel: 'url' | 'form' | 'link' | null =
+      prompts.form && input.formApprovals ? 'form' : prompts.url ? 'url' : null;
     let parkRefused: string | null = null;
     if (!channel && input.park) {
       parkRefused = input.park.reserve();
@@ -205,9 +210,9 @@ export class ApprovalService {
           .run();
         this.links.consumeAll(id);
         if (channel === 'url') prompts.urlComplete?.(id);
-        resolve(d);
+        resolve({ ...d, channel: d.channel ?? channel! });
       };
-      this.live.set(id, { row, settle });
+      this.live.set(id, { row, formApprovals: input.formApprovals, settle });
     });
 
     if (channel === 'url') this.offerUrl(id, row.expiresAt, input);
@@ -219,6 +224,7 @@ export class ApprovalService {
         operationKey: input.operationKey,
         summary: input.summary,
         expiresAt: row.expiresAt,
+        inSession: input.formApprovals,
       });
     } else this.offerForm(id, input);
     return { id, decision };
@@ -287,17 +293,20 @@ export class ApprovalService {
     );
   }
 
+  private open(id: string): Live {
+    const live = this.live.get(id);
+    if (live) return live;
+    const row = this.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id)).get();
+    if (!row) throw new NotFoundError('approval_not_found', 'No such approval');
+    throw new ConflictError('approval_closed', `This approval is already ${row.status}`);
+  }
+
   /** The approval page's decision. A wrong typed confirmation is rejected so the approver can retry. */
   decide(
     id: string,
     input: { approve: boolean; confirm?: string; decidedBy: string; signIn?: ApproverSignIn; sessionGrantUntil?: Date },
   ): Decision {
-    const live = this.live.get(id);
-    if (!live) {
-      const row = this.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id)).get();
-      if (!row) throw new NotFoundError('approval_not_found', 'No such approval');
-      throw new ConflictError('approval_closed', `This approval is already ${row.status}`);
-    }
+    const live = this.open(id);
     if (input.approve && live.row.confirmLiteral && input.confirm !== live.row.confirmLiteral) {
       throw new ValidationError('confirmation_mismatch', `Type "${live.row.confirmLiteral}" exactly to approve`);
     }
@@ -307,6 +316,31 @@ export class ApprovalService {
       decidedBy: input.decidedBy,
       ...(input.signIn ? { signIn: input.signIn } : {}),
       ...(input.approve && input.sessionGrantUntil ? { sessionGrantUntil: input.sessionGrantUntil } : {}),
+    };
+    live.settle(decision);
+    return decision;
+  }
+
+  /** The approval card's decision in the agent session (§5.7): only where the endpoint still allows it, and
+   * never with a session grant. The caller checks that the approval belongs to the calling principal. */
+  decideInSession(id: string, input: { approve: boolean; decidedBy: string }): Decision {
+    const live = this.open(id);
+    const instance = this.db
+      .select({ slug: pluginInstances.slug, settings: pluginInstances.settings })
+      .from(pluginInstances)
+      .where(eq(pluginInstances.id, live.row.instanceId))
+      .get();
+    const allowed =
+      live.formApprovals &&
+      !live.row.confirmLiteral &&
+      !!instance &&
+      readInstanceSettings(instance.settings, `/${instance.slug} settings`).formElicitationApprovals === 'ask';
+    if (!allowed) throw new ForbiddenError('approval_not_in_session', 'This approval needs the approval page');
+    const decision: Decision = {
+      outcome: input.approve ? 'approved' : 'denied',
+      via: 'elicitation',
+      channel: 'card',
+      decidedBy: input.decidedBy,
     };
     live.settle(decision);
     return decision;
