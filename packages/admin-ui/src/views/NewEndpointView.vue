@@ -52,7 +52,7 @@ function create() {
       displayName: displayName.value || undefined,
       authMethods: authMethods.value,
       connection: { ...config.value, ...filled },
-      ...(inSessionApprovals.value ? { settings: { formElicitationApprovals: 'writes' } } : {}),
+      ...(inSessionApprovals.value ? { settings: { formElicitationApprovals: 'ask' } } : {}),
     },
     { onSuccess: (created) => router.push(`/endpoints/${created.slug}/connection`) },
   );

@@ -229,7 +229,7 @@ describe('New endpoint', () => {
     await flushPromises();
     expect(writes(calls)[0]).toMatchObject({
       path: '/api/instances',
-      body: { slug: 'mine', settings: { formElicitationApprovals: 'writes' } },
+      body: { slug: 'mine', settings: { formElicitationApprovals: 'ask' } },
     });
   });
 });

@@ -33,7 +33,7 @@ const form = ref({
   enabled: props.instance.enabled,
   authMethods: props.instance.authMethods ? [...props.instance.authMethods] : null,
   approvalTimeoutMin: s.approvalTimeoutMs / 60_000,
-  formApprovals: s.formElicitationApprovals === 'writes',
+  formApprovals: s.formElicitationApprovals === 'ask',
   sessionGrantMaxHours: s.sessionGrantMaxHours,
   executePerMinute: s.executePerMinute,
   writesPerMinute: s.writesPerMinute,
@@ -66,7 +66,7 @@ async function save() {
       authMethods: f.authMethods,
       settings: {
         approvalTimeoutMs: Math.round(f.approvalTimeoutMin * 60_000),
-        formElicitationApprovals: f.formApprovals ? 'writes' : 'off',
+        formElicitationApprovals: f.formApprovals ? 'ask' : 'off',
         sessionGrantMaxHours: f.sessionGrantMaxHours,
         executePerMinute: f.executePerMinute,
         writesPerMinute: f.writesPerMinute,

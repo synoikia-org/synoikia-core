@@ -332,8 +332,9 @@ export class ApprovalService {
       .get();
     const allowed =
       live.formApprovals &&
+      !live.row.confirmLiteral &&
       !!instance &&
-      readInstanceSettings(instance.settings, `/${instance.slug} settings`).formElicitationApprovals === 'writes';
+      readInstanceSettings(instance.settings, `/${instance.slug} settings`).formElicitationApprovals === 'ask';
     if (!allowed) throw new ForbiddenError('approval_not_in_session', 'This approval needs the approval page');
     const decision: Decision = {
       outcome: input.approve ? 'approved' : 'denied',

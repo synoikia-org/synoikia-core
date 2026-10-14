@@ -313,7 +313,7 @@ describe('MCP endpoint with bearer tokens', () => {
       pluginId: 'echo',
       slug: 'echo-session',
       connection: {},
-      settings: { formElicitationApprovals: 'writes' },
+      settings: { formElicitationApprovals: 'ask' },
     });
     await ctx.instances.syncNow(inSession.id);
     setGroupLevel(ctx.db, inSession.id, 'echo', 'ask');

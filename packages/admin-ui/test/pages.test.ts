@@ -352,7 +352,7 @@ describe('Endpoint settings', () => {
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({
-      settings: { formElicitationApprovals: 'writes' },
+      settings: { formElicitationApprovals: 'ask' },
     });
   });
 

@@ -384,7 +384,7 @@ export function createGateBindings(
             prompts: caller.prompts,
             // In-session approval (§5.3) covers every Ask operation that is not locked, reads too.
             formApprovals:
-              rt.settings.formElicitationApprovals === 'writes' && !operation.locked && !operation.typedConfirmation,
+              rt.settings.formElicitationApprovals === 'ask' && !operation.locked && !operation.typedConfirmation,
             park,
           });
           audit.detail.approvalId = request.id;

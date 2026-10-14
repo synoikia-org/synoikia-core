@@ -293,11 +293,16 @@ export class InstanceManager {
   }
 
   /** Startup step: removes stored instance settings fields the current schema rejects. */
-  normalizeStoredSettings(): string[] {
+  normalizeStoredSettings(): { changed: string[]; inSessionOff: string[] } {
     const changed: string[] = [];
+    const inSessionOff: string[] = [];
     for (const row of this.db.select().from(pluginInstances).all()) {
       const { cleaned, dropped } = cleanInstanceSettings(row.settings, `/${row.slug} settings`);
       if (!dropped.length) continue;
+      if (dropped.includes('formElicitationApprovals') || dropped.includes('*')) {
+        const stored = (row.settings as Record<string, unknown> | null)?.formElicitationApprovals;
+        if (stored !== undefined && stored !== 'off') inSessionOff.push(row.slug);
+      }
       this.db
         .update(pluginInstances)
         .set({ settings: cleaned as Record<string, unknown> })
@@ -305,7 +310,7 @@ export class InstanceManager {
         .run();
       changed.push(row.slug);
     }
-    return changed;
+    return { changed, inSessionOff };
   }
 
   /** Everything the gate needs for one instance. */

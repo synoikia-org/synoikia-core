@@ -25,7 +25,7 @@ import { issueAttestationKey } from '../src/gate/attestation.js';
 import type { CallerContext, GateDeps, InstanceRuntime } from '../src/gate/pipeline.js';
 import { SlidingWindowLimiter } from '../src/gate/rate-limit.js';
 import { createInstanceRedactor, createRedactor, GLOBAL_SENSITIVE_KEYS } from '../src/gate/redact.js';
-import { parseInstanceSettings } from '../src/instances/settings.js';
+import { parseInstanceSettings, readInstanceSettings } from '../src/instances/settings.js';
 import type { InstanceSettings } from '../src/instances/settings.js';
 import { PluginProcess } from '../src/plugins/process.js';
 import { ExecutionRegistry } from '../src/runtime/executions.js';
@@ -318,7 +318,7 @@ describe('execute → gate → plugin', () => {
     });
 
     it('lets form prompts approve plain writes only where the endpoint opted in', async () => {
-      const t = await setup({ formElicitationApprovals: 'writes' });
+      const t = await setup({ formElicitationApprovals: 'ask' });
       t.setLevel('ask');
       const client = formClient();
       await expect(
@@ -356,7 +356,7 @@ describe('execute → gate → plugin', () => {
         const form = formClient();
         return { prompts: { ...url.prompts, ...form.prompts }, opened: url.opened, asked: form.asked };
       };
-      const t = await setup({ formElicitationApprovals: 'writes' });
+      const t = await setup({ formElicitationApprovals: 'ask' });
       t.setLevel('ask');
       updateOperation(t.db, t.instanceId, t.opId('echo.query'), { level: 'ask' });
       const client = both();
@@ -387,6 +387,40 @@ describe('execute → gate → plugin', () => {
       await denied;
     });
 
+    it('never approves in the session from a stored value it does not know, or for a typed confirmation', async () => {
+      const both = () => {
+        const url = urlClient();
+        const form = formClient();
+        return { prompts: { ...url.prompts, ...form.prompts }, opened: url.opened, asked: form.asked };
+      };
+      // A stored `writes` reads as off, as the instance manager reads it.
+      const legacy = await setup(readInstanceSettings({ formElicitationApprovals: 'writes' }, 'test'));
+      legacy.setLevel('ask');
+      updateOperation(legacy.db, legacy.instanceId, legacy.opId('echo.query'), { level: 'ask' });
+      const formOnly = formClient();
+      await expect(legacy.exec(`await echo.call('echo.query', { q: 1 });`, formOnly.prompts)).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'PERMISSION_DENIED', message: expect.stringContaining('only supports form') },
+      });
+      expect(formOnly.asked).toEqual([]);
+      const dual = both();
+      const run = legacy.exec(`await echo.call('echo.set', { name: 'x' });`, dual.prompts);
+      await waitFor(() => dual.opened.length === 1);
+      expect(dual.asked).toEqual([]);
+      legacy.approvals.cancelAll();
+      await run;
+
+      // Not locked, but a typed confirmation: the page, never the form.
+      const t = await setup({ formElicitationApprovals: 'ask' });
+      t.setLevel('ask');
+      const client = both();
+      const typed = t.exec(`await echo.call('echo.confirm', { name: 'vol/c' });`, client.prompts);
+      await waitFor(() => client.opened.length === 1);
+      expect(client.asked).toEqual([]);
+      t.approvals.cancelAll();
+      await typed;
+    });
+
     it('marks a parked approval for in-session decision only where the card may decide it', async () => {
       const parkedFor = async (settings: Partial<InstanceSettings>, key: string, params: unknown) => {
         const t = await setup(settings);
@@ -404,7 +438,7 @@ describe('execute → gate → plugin', () => {
         const run = () => resumeExecution(deps, t.rt, caller, parked.executionId);
         return { t, offered, run };
       };
-      const open = await parkedFor({ formElicitationApprovals: 'writes' }, 'echo.set', { name: 'x' });
+      const open = await parkedFor({ formElicitationApprovals: 'ask' }, 'echo.set', { name: 'x' });
       expect(open.offered.inSession).toBe(true);
       open.t.approvals.decideInSession(open.offered.approvalId, { approve: true, decidedBy: 'token:me' });
       expect(await open.run()).toMatchObject({ ok: true });
@@ -415,8 +449,21 @@ describe('execute → gate → plugin', () => {
         detail: { approvalChannel: 'card' },
       });
 
+      // A stored value the schema does not know (an older `writes`) turns the card off too.
+      const old = await parkedFor({ formElicitationApprovals: 'ask' }, 'echo.set', { name: 'x' });
+      old.t.db
+        .update(pluginInstances)
+        .set({ settings: { formElicitationApprovals: 'writes' } })
+        .where(eq(pluginInstances.id, old.t.instanceId))
+        .run();
+      expect(() => old.t.approvals.decideInSession(old.offered.approvalId, { approve: true, decidedBy: 'x' })).toThrow(
+        expect.objectContaining({ code: 'approval_not_in_session' }),
+      );
+      old.t.approvals.cancelAll();
+      await old.run();
+
       // The admin turned the setting off while the approval waited.
-      const later = await parkedFor({ formElicitationApprovals: 'writes' }, 'echo.set', { name: 'x' });
+      const later = await parkedFor({ formElicitationApprovals: 'ask' }, 'echo.set', { name: 'x' });
       later.t.db.update(pluginInstances).set({ settings: {} }).where(eq(pluginInstances.id, later.t.instanceId)).run();
       expect(() =>
         later.t.approvals.decideInSession(later.offered.approvalId, { approve: true, decidedBy: 'x' }),
@@ -431,7 +478,8 @@ describe('execute → gate → plugin', () => {
       );
 
       for (const [settings, key, params] of [
-        [{ formElicitationApprovals: 'writes' }, 'echo.delete', { name: 'vol/x' }],
+        [{ formElicitationApprovals: 'ask' }, 'echo.delete', { name: 'vol/x' }],
+        [{ formElicitationApprovals: 'ask' }, 'echo.confirm', { name: 'vol/c' }],
         [{}, 'echo.set', { name: 'x' }],
       ] as const) {
         const { t, offered, run } = await parkedFor(settings, key, params);
@@ -474,7 +522,7 @@ describe('execute → gate → plugin', () => {
     });
 
     it('hides secrets in a config diff from the approval, the stored row and a form prompt', async () => {
-      const t = await setup({ formElicitationApprovals: 'writes' });
+      const t = await setup({ formElicitationApprovals: 'ask' });
       t.setLevel('ask');
       // Make echo.set a config write whose prepareWrite returns a diff that touches secrets.
       t.db.update(operations).set({ kind: 'config' }).where(eq(operations.key, 'echo.set')).run();
@@ -958,6 +1006,7 @@ describe('search', () => {
     );
     expect(all).toMatchObject({
       value: [
+        ['echo.confirm', 'write', 'level_none'],
         ['echo.delete', 'locked', 'locked_not_opted_in'],
         ['echo.guided', 'write', 'level_none'],
         ['echo.nolit', 'locked', 'locked_not_opted_in'],
@@ -968,7 +1017,7 @@ describe('search', () => {
     await expect(
       search(`return (await catalog.groups()).map((g) => [g.key, g.level, g.counts]);`),
     ).resolves.toMatchObject({
-      value: [['echo', 'read', { read: 1, write: 2, locked: 2, pendingReview: 0, overridden: 0 }]],
+      value: [['echo', 'read', { read: 1, write: 3, locked: 2, pendingReview: 0, overridden: 0 }]],
     });
     await expect(search(`return typeof echo;`)).resolves.toMatchObject({ value: 'undefined' }); // no upstream access from search
 

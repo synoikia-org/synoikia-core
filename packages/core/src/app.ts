@@ -113,7 +113,10 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   const instances = new InstanceManager({ db, secrets, events, now, supervisor: opts.supervisor });
   // Stored JSON from an earlier release is brought to the current schemas once, before anything reads it.
   normalizeStoredSettings(db);
-  instances.normalizeStoredSettings();
+  for (const slug of instances.normalizeStoredSettings().inSessionOff)
+    warnings.push(
+      `/${slug}: in-session approvals were turned off (unknown stored value); turn them on again in Endpoint settings`,
+    );
   if (!config.PUBLIC_MCP_URL)
     warnings.push(
       'PUBLIC_MCP_URL is not set: OAuth is off (bearer tokens still work). Set it to the public address of the MCP port.',
