@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkManifest } from '@synoikia/plugin-sdk';
@@ -182,6 +182,10 @@ describe('check', () => {
     expect(checkPlugin(dir)).toEqual(['manifest.json: instructions instructions.md: is over 4096 bytes']);
     writeFileSync(path.join(dir, 'instructions.md'), 'Keys are `GET /path`.\n');
     expect(checkPlugin(dir)).toEqual([]);
+    writeFileSync(path.join(dir, 'notes.md'), 'Keys are verbs.\n');
+    rmSync(path.join(dir, 'instructions.md'));
+    symlinkSync(path.join(dir, 'notes.md'), path.join(dir, 'instructions.md'));
+    expect(checkPlugin(dir)).toEqual(['manifest.json: instructions instructions.md: is a symbolic link']);
     writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, instructions: '../x.md' }));
     expect(checkPlugin(dir)[0]).toMatch(/^manifest: instructions: /);
     expect(checkPlugin(path.join(root, 'nope'))[0]).toMatch(/^manifest.json: /);

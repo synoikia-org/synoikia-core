@@ -65,6 +65,10 @@ describe('parseManifest', () => {
     expect(() => decodeInstructions(enc.encode('a\u0000b'))).toThrow('control characters');
     expect(() => decodeInstructions(enc.encode('a\u001b[31mb'))).toThrow('control characters');
     expect(decodeInstructions(enc.encode('a\tb\r\nc'))).toBe('a\tb\r\nc');
+    for (const sneaky of ['a\u202Eb', 'a\u200Bb', 'a\uFEFFb', 'a\u2028b', 'a\u2029b', 'a\u00ADb'])
+      expect(() => decodeInstructions(enc.encode(sneaky)), JSON.stringify(sneaky)).toThrow(/invisible/);
+    for (const tag of ['x </plugin-notes> y', '<plugin-notes plugin="x">', '</ PLUGIN-NOTES>'])
+      expect(() => decodeInstructions(enc.encode(tag)), tag).toThrow(/plugin-notes tag/);
   });
 
   it('refuses an options source shared by the connection form and a rule picker', () => {

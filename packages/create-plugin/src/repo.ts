@@ -155,6 +155,7 @@ export function createRepoTool(opts: RepoOptions) {
           dir,
           '-cf',
           '-',
+          '--',
           'manifest.json',
           'package.json',
           'dist',

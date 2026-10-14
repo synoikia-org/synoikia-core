@@ -11,7 +11,7 @@ Core installs each plugin from a plugin repository (§4.2) into `DATA_DIR/plugin
 - validates `manifest.json` against the SDK schema and the `sdk` range;
 - writes or updates a `plugins` row;
 - marks a plugin with a manifest that is not valid as `invalid`, with an error message, and does not load it;
-- reads the instructions file (§3.2) into the `plugins` row. A missing file, a file outside the directory, or a file that is too large or not UTF-8 text makes the plugin `invalid`;
+- reads the instructions file (§3.2) into the `plugins` row. A file that does not pass the checks of §3.2 makes the plugin `invalid`. When the text of an existing plugin changes, core records a `plugin_instructions_changed` audit event with the SHA-256 of the text before and after, not the text. The plugin stays enabled;
 - marks a plugin whose directory is missing as `invalid`, and keeps its instances and history.
 
 **Enabled flag.** Each plugin has an `enabled` flag on the Plugins page. A new plugin starts disabled. The admin creates instances one by one. If the admin disables a plugin, core stops all its instances, and their endpoints return 503. Core keeps their configuration and history.

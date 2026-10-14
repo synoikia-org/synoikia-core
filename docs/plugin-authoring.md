@@ -37,11 +37,11 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 
 ### Agent instructions
 
-`"instructions": "instructions.md"` in the manifest names a Markdown file in the package (letters, digits, `_ . -` and `/`, ending in `.md`, never `..` or absolute). Core appends its text to the MCP server `instructions` and to the `search` tool description, after core's own text, under "How the <name> API works (from the plugin):". The agent reads it once per session, so it spends fewer `search` calls on conventions.
+`"instructions": "instructions.md"` in the manifest names a Markdown file in the package (letters, digits, `_ . -` and `/`, ending in `.md`, never `..` or absolute, not a symbolic link). Core adds its text to the MCP server `instructions` and to the `search` tool description in a `<plugin-notes plugin="<id>">` block between core's own text and core's approval rule. The agent reads it once per session, so it spends fewer `search` calls on conventions.
 
 - Write what the agent can't guess: the base path and versioning, how keys and IDs are built, pagination and filter parameters, async patterns (start a job, then poll it), and the three to five most common workflows as key sequences. Say in one line what is locked or excluded.
 - Never describe auth, secrets or approvals: core handles them.
-- At most 4 KiB of UTF-8 text, without control characters other than tab and newline. A larger or binary file, or a missing one, fails `synoikia-plugin check`, and core marks the plugin `invalid`; core never truncates it. Core sends it as plain text, with no templating.
+- At most 4 KiB of UTF-8 text, without control characters other than tab and newline, invisible format characters (bidi, zero-width), U+2028/U+2029 or a `plugin-notes` tag. A change to the text is audited by its SHA-256. A larger or binary file, or a missing one, fails `synoikia-plugin check`, and core marks the plugin `invalid`; core never truncates it. Core sends it as plain text, with no templating.
 - `synoikia-plugin repo pack` ships it in the tarball next to `manifest.json`; the harness stages it. Review a change to it like a golden diff: it is text the model reads.
 
 An `optionsSource` of a match field fills a rule picker, which core also serves to users who may write their own rules (design §6.4). `optionsFor` can't tell who asks, so the manifest is refused if a match field and a connection-form field share a source: give each its own.

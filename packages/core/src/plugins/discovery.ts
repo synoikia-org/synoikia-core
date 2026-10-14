@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { isSdkCompatible, parseManifest, readInstructionsFile, SDK_VERSION } from '@synoikia/plugin-sdk';
@@ -91,6 +91,8 @@ export function discoverPlugins(root: string): DiscoveredPlugin[] {
     .map((dir) => inspectPluginDir(dir));
 }
 
+const sha256 = (text: string | null | undefined) => (text ? createHash('sha256').update(text).digest('hex') : null);
+
 const pluginIdOf = (p: DiscoveredPlugin) => (p.status === 'ok' ? p.manifest.id : p.pluginId);
 
 /** Upserts discovered plugins: new ones start disabled (design §4.2), duplicate ids keep the first, and
@@ -139,13 +141,34 @@ export function syncPluginRegistry(
             kind: 'plugin',
             decision: 'plugin_discovered',
             actorKind: 'system',
-            detail: { pluginId, ...fields, manifest: undefined, instructions: undefined, enabled: false },
+            detail: {
+              pluginId,
+              ...fields,
+              manifest: undefined,
+              instructions: undefined,
+              instructionsSha256: sha256(fields.instructions),
+              enabled: false,
+            },
           },
           now,
         );
       } else {
         tx.update(plugins).set(fields).where(eq(plugins.id, prev.id)).run();
         out.updated.push(pluginId);
+        // The text reaches the model (§2.2); a change is recorded by hash, not by text.
+        const before = sha256(prev.instructions);
+        const after = sha256(fields.instructions);
+        if (before !== after)
+          writeAudit(
+            tx,
+            {
+              kind: 'plugin',
+              decision: 'plugin_instructions_changed',
+              actorKind: 'system',
+              detail: { pluginId, version: fields.version, before, after },
+            },
+            now,
+          );
       }
     }
     for (const prev of existing.values()) {
