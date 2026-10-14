@@ -2,11 +2,12 @@
 import { messageRole } from '../../a11y';
 import { computed, ref, toRaw, useId, watch } from 'vue';
 import { errorText } from '../../api';
+import ChipsInput from '../../components/ChipsInput.vue';
 import { useCopy } from '../../composables/useCopy';
-import { useSaveSettings, useSettingsQuery } from '../../composables/useSettings';
-import { AUTH_METHOD_LABELS, EXTERNAL_PROVIDER_LABELS } from '../../format';
+import { useClientsSeenQuery, useSaveSettings, useSettingsQuery } from '../../composables/useSettings';
+import { AUTH_METHOD_LABELS, EXTERNAL_PROVIDER_LABELS, ago } from '../../format';
 import { AUTH_METHODS } from '../../types';
-import type { AuthMethod, ExternalProvider, Settings } from '../../types';
+import type { AuthMethod, ClientPolicyMode, ExternalProvider, Settings } from '../../types';
 
 const settingsQuery = useSettingsQuery();
 const saveMcp = useSaveSettings('mcp');
@@ -31,6 +32,24 @@ watch(
 );
 
 const noMethod = computed(() => !!form.value && !AUTH_METHODS.some((m) => form.value?.clientAuth[m]));
+const noAllowedClient = computed(
+  () => form.value?.clientPolicy.mode === 'allow' && !form.value.clientPolicy.names.length,
+);
+
+const clientsSeen = useClientsSeenQuery();
+const listed = (name: string) => !!form.value?.clientPolicy.names.some((n) => n.toLowerCase() === name.toLowerCase());
+const unlistedSeen = computed(() => (clientsSeen.data.value ?? []).filter((c) => !listed(c.name)));
+const seenSuggestions = computed(() =>
+  unlistedSeen.value.map((c) => ({ value: c.name, label: c.version ? `${c.name} ${c.version}` : c.name })),
+);
+function addClient(name: string) {
+  if (form.value && !listed(name)) form.value.clientPolicy.names.push(name);
+}
+const POLICY_MODES: { value: ClientPolicyMode; label: string }[] = [
+  { value: 'off', label: 'Off: every client can connect' },
+  { value: 'allow', label: 'Allow only these clients' },
+  { value: 'deny', label: 'Deny these clients' },
+];
 
 function save() {
   saved.value = undefined;
@@ -129,6 +148,67 @@ const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
       <p class="small">
         Public MCP URL: <span class="mono">{{ publicMcpUrl ?? 'not set — derived from each request' }}</span>
       </p>
+    </section>
+
+    <section class="card" data-card="clients">
+      <h2>Clients</h2>
+      <p id="m-clients-help" class="small muted">
+        Allow or deny MCP clients by the name they send when they connect, for example <code>claude-code</code>. Upper
+        and lower case do not matter. A change also ends open sessions of a client it refuses.
+      </p>
+      <p class="alert warn" role="note" data-warn="client-names">
+        Clients declare their own names. The list stops honest clients that you do not want used, but it is not a
+        security boundary: any client can send any name. Client auth and the endpoint's access levels are the boundary.
+      </p>
+      <fieldset class="methods" aria-describedby="m-clients-help">
+        <legend class="sr-only">Client policy</legend>
+        <label v-for="m in POLICY_MODES" :key="m.value" class="row small"
+          ><input v-model="form.clientPolicy.mode" type="radio" name="m-client-mode" :value="m.value" />
+          {{ m.label }}</label
+        >
+      </fieldset>
+      <template v-if="form.clientPolicy.mode !== 'off'">
+        <div class="field">
+          <label for="m-names">Client names</label>
+          <ChipsInput
+            v-model="form.clientPolicy.names"
+            input-id="m-names"
+            placeholder="Type a client name and press Enter"
+            :suggestions="seenSuggestions"
+            aria-describedby="m-names-help"
+          />
+          <p id="m-names-help" class="help">Up to 50 names.</p>
+        </div>
+        <p v-if="noAllowedClient" class="alert warn" data-warn="no-client">
+          Add at least one client. An empty allow list refuses every client.
+        </p>
+      </template>
+      <div class="seen">
+        <h3>Seen since the server started</h3>
+        <p v-if="clientsSeen.error.value" class="alert error" role="alert">{{ errorText(clientsSeen.error.value) }}</p>
+        <p v-else-if="clientsSeen.isPending.value" class="small muted" role="status">Loading…</p>
+        <p v-else-if="!clientsSeen.data.value?.length" class="small muted">No client has connected yet.</p>
+        <ul v-else class="small seen-list">
+          <li v-for="c in clientsSeen.data.value" :key="c.name">
+            <span class="seen-who">
+              <span class="mono seen-name">{{ c.name }}</span>
+              <span class="muted">{{
+                [c.version, c.client && `from ${c.client}`, ago(c.lastSeen)].filter(Boolean).join(' · ')
+              }}</span>
+            </span>
+            <button
+              v-if="form.clientPolicy.mode !== 'off' && !listed(c.name)"
+              class="btn btn-sm"
+              type="button"
+              :aria-label="`Add ${c.name}`"
+              @click="addClient(c.name)"
+            >
+              Add
+            </button>
+            <span v-else-if="form.clientPolicy.mode !== 'off'" class="pill">Listed</span>
+          </li>
+        </ul>
+      </div>
     </section>
 
     <section v-if="form.clientAuth.oauth" class="card">
@@ -245,7 +325,7 @@ const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
 
     <p v-if="message" class="alert" :class="message.kind" :role="messageRole(message.kind)">{{ message.text }}</p>
     <div class="actions">
-      <button class="btn btn-primary" type="submit" :disabled="noMethod || saving">Save</button>
+      <button class="btn btn-primary" type="submit" :disabled="noMethod || noAllowedClient || saving">Save</button>
     </div>
   </form>
   <p v-else-if="message" class="alert error" role="alert">{{ message.text }}</p>
@@ -301,5 +381,30 @@ h3 {
 }
 .provider {
   max-width: 320px;
+}
+.seen-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.seen-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seen-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  min-width: 0;
+}
+.seen-name {
+  white-space: nowrap;
+}
+.methods + .field {
+  margin-top: 12px;
+}
+.seen-list li + li {
+  margin-top: 4px;
 }
 </style>

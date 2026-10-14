@@ -758,6 +758,41 @@ describe('instances and access', () => {
       expect(await (await put(retired)).json()).toMatchObject({ error: 'invalid_settings' });
   });
 
+  it('validates the client policy and lists the clients seen at initialize', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const put = (clientPolicy: unknown) => b.put('/api/settings/mcp', { clientPolicy });
+    expect(await (await b.get('/api/settings')).json()).toMatchObject({
+      mcp: { clientPolicy: { mode: 'off', names: [] } },
+    });
+    const saved = await put({ mode: 'allow', names: [' Client-A ', 'client-a', 'other'] });
+    expect(await saved.json()).toMatchObject({ clientPolicy: { mode: 'allow', names: ['Client-A', 'other'] } });
+    expect(await (await put({ mode: 'deny' })).json()).toMatchObject({
+      clientPolicy: { mode: 'deny', names: ['Client-A', 'other'] },
+    });
+    for (const bad of [
+      { mode: 'maybe' },
+      { mode: 'allow', names: [] },
+      { names: [''] },
+      { names: ['x'.repeat(101)] },
+      { names: Array.from({ length: 51 }, (_, i) => `c${i}`) },
+    ])
+      expect(await (await put(bad)).json()).toMatchObject({ error: 'invalid_settings' });
+
+    t.ctx.seenClients.record('client-a', '1.0');
+    t.ctx.seenClients.record('client-b', '2.0');
+    t.ctx.seenClients.record('CLIENT-A', '1.1');
+    for (let i = 0; i < 60; i++) t.ctx.seenClients.record(`bulk-${i}`);
+    const seen = (await (await b.get('/api/settings/mcp/clients-seen')).json()) as { name: string; version: string }[];
+    expect(seen).toHaveLength(50);
+    expect(seen[0]).toMatchObject({ name: 'bulk-59', version: '' });
+    t.ctx.seenClients.record('CLIENT-A', '1.1');
+    const latest = (await (await b.get('/api/settings/mcp/clients-seen')).json()) as { name: string }[];
+    expect(latest[0]).toMatchObject({ name: 'CLIENT-A', version: '1.1' });
+    expect(latest.filter((c) => c.name.toLowerCase() === 'client-a')).toHaveLength(1);
+    expect((await (await t.client()).get('/api/settings/mcp/clients-seen')).status).toBe(401);
+  });
+
   it('issues MCP bearer tokens once and never lists their value', async () => {
     const t = await withInstance();
     const created = (await (await t.b.post('/api/tokens', { name: 'claude code', scope: [t.id] })).json()) as {

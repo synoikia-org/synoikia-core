@@ -222,6 +222,9 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     }),
   );
 
+  // Suggestions for the client policy (design §6.6): names seen at initialize since the server started.
+  app.get('/api/settings/mcp/clients-seen', (c) => c.json(ctx.seenClients.list()));
+
   app.put('/api/settings/oidc', async (c) => {
     const body = await readJson(c, z.record(z.string(), z.unknown()));
     if (body.enabled === false) ctx.users.assertSsoRemains({ oidcOff: true });

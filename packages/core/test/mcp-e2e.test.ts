@@ -841,6 +841,163 @@ describe('credential owners', () => {
   });
 });
 
+describe('client policy', () => {
+  const policy = (mode: 'off' | 'allow' | 'deny', names: string[] = []) =>
+    updateSettings(ctx.db, 'mcp', { clientPolicy: { mode, names } });
+  // Refusal log lines are throttled per client IP: each request comes from its own (trusted-proxy) address.
+  let nextIp = 0;
+  const initAs = (token: string, clientInfo?: { name?: unknown; version: string }, batch = false) => {
+    const message = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, ...(clientInfo ? { clientInfo } : {}) },
+    };
+    return fetch(`${base}/echo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+        'x-forwarded-for': `198.51.100.${++nextIp}`,
+      },
+      body: JSON.stringify(batch ? [message] : message),
+    });
+  };
+  const refusals = () =>
+    ctx.db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.decision, 'client_refused'))
+      .all()
+      .map((r) => r.detail as { clientName: string | null; mode: string });
+
+  it('allows only listed names in allow mode, case-insensitively, and refuses a missing name', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy', scope: [instanceId] }, { userId: adminId });
+    const before = refusals().length;
+    try {
+      policy('allow', ['Listed-Client']);
+      const listed = await initAs(token, { name: 'listed-client', version: '1' });
+      expect(listed.status).toBe(200);
+      expect(listed.headers.get('mcp-session-id')).toBeTruthy();
+      const other = await initAs(token, { name: 'other-client', version: '2' });
+      expect(other.status).toBe(403);
+      expect(other.headers.get('mcp-session-id')).toBeNull();
+      expect(await other.json()).toMatchObject({
+        error: { code: -32003, message: 'This MCP client is not allowed on this server' },
+      });
+      expect((await initAs(token)).status).toBe(403);
+      expect((await initAs(token, { name: 42, version: '1' })).status).toBe(403);
+      expect(refusals().slice(before)).toEqual([
+        { slug: 'echo', clientName: 'other-client', mode: 'allow' },
+        { slug: 'echo', clientName: null, mode: 'allow' },
+        { slug: 'echo', clientName: null, mode: 'allow' },
+      ]);
+      // Only clients that got a session are seen.
+      expect(ctx.seenClients.list()[0]).toMatchObject({ name: 'listed-client', version: '1', client: 'token:policy' });
+      expect(ctx.seenClients.list().map((c) => c.name)).not.toContain('other-client');
+    } finally {
+      policy('off');
+    }
+  });
+
+  it('refuses listed names in deny mode, with a log line, and closes open sessions after a policy change', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-deny', scope: [instanceId] }, { userId: adminId });
+    const lines: string[] = [];
+    const saved = ctx.log;
+    const config = ctx.config as { TRUST_PROXY: number | boolean };
+    const savedProxy = config.TRUST_PROXY;
+    config.TRUST_PROXY = 1;
+    (ctx as { log: Logger }).log = createLogger('debug', (line) => lines.push(line));
+    const client = await connect('echo', token);
+    try {
+      policy('deny', ['blocked']);
+      expect((await initAs(token, { name: 'BLOCKED', version: '1' })).status).toBe(403);
+      // An initialize as the only message of a batch is still checked.
+      expect((await initAs(token, { name: 'blocked', version: '1' }, true)).status).toBe(403);
+      expect((await initAs(token, { name: 'fine', version: '1' })).status).toBe(200);
+      // The open session's client ("e2e") is refused at its next request once it is denied.
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+      policy('deny', ['E2E']);
+      await expect(client.listTools()).rejects.toThrow();
+      policy('off');
+      await expect(client.listTools()).rejects.toThrow();
+      const text = lines.join('\n');
+      expect(text).toMatch(/WARN MCP request refused .*status=403 reason="MCP client not allowed .*clientName=BLOCKED/);
+      expect(refusals().slice(-3)).toEqual([
+        { slug: 'echo', clientName: 'BLOCKED', mode: 'deny' },
+        { slug: 'echo', clientName: 'blocked', mode: 'deny' },
+        { slug: 'echo', clientName: 'e2e', mode: 'deny' },
+      ]);
+    } finally {
+      (ctx as { log: Logger }).log = saved;
+      config.TRUST_PROXY = savedProxy;
+      policy('off');
+      await client.close().catch(() => undefined);
+    }
+  });
+
+  it('reads the body with the transport limits, and records no client a session did not open', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-body', scope: [instanceId] }, { userId: adminId });
+    const post = (body: string, accept = 'application/json, text/event-stream') =>
+      fetch(`${base}/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept, authorization: `Bearer ${token}` },
+        body,
+      });
+    const init = (name: string, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name, version: '1' }, ...extra },
+      });
+    const before = refusals().length;
+    try {
+      policy('deny', ['huge-client']);
+      const huge = await post(init('huge-client', { pad: 'x'.repeat(4 * 1024 * 1024) }));
+      expect(huge.status).toBe(413);
+      expect(huge.headers.get('mcp-session-id')).toBeNull();
+      const batch = Array.from({ length: 101 }, (_, i) => ({ jsonrpc: '2.0', method: 'notifications/x', id: i }));
+      expect((await post(JSON.stringify(batch))).status).toBe(400);
+      expect((await post('{not json')).status).toBe(400);
+      expect((await post(init('wrong-accept'), 'application/json')).status).toBe(406);
+      expect(refusals().length).toBe(before);
+      const seen = ctx.seenClients.list().map((c) => c.name);
+      expect(seen).not.toContain('huge-client');
+      expect(seen).not.toContain('wrong-accept');
+    } finally {
+      policy('off');
+    }
+  });
+
+  it('refuses GET and DELETE on a session once its client is denied', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-methods', scope: [instanceId] }, { userId: adminId });
+    const open = async () =>
+      (await initAs(token, { name: 'later-denied', version: '1' })).headers.get('mcp-session-id')!;
+    const [forGet, forDelete] = [await open(), await open()];
+    const on = (method: string, sessionId: string) =>
+      fetch(`${base}/echo`, {
+        method,
+        headers: {
+          accept: 'text/event-stream',
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': sessionId,
+          'mcp-protocol-version': '2025-06-18',
+        },
+      });
+    try {
+      policy('deny', ['later-denied']);
+      expect((await on('GET', forGet)).status).toBe(403);
+      expect((await on('DELETE', forDelete)).status).toBe(403);
+      policy('off');
+      expect((await on('DELETE', forDelete)).status).toBe(404);
+    } finally {
+      policy('off');
+    }
+  });
+});
+
 describe('OAuth 2.1 authorization server', () => {
   /** A tiny cookie-keeping browser for the MCP-port HTML flow. */
   function browserSession() {

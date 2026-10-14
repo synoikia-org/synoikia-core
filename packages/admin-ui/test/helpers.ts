@@ -63,6 +63,7 @@ export const mcpSettings: Settings['mcp'] = {
   cfAccess: { teamDomain: '', aud: '' },
   accessTokenTtlMinutes: 60,
   refreshTokenTtlDays: 30,
+  clientPolicy: { mode: 'off', names: [] },
 };
 
 /** Mounts the app at `path`; `body` also finds what dialogs teleport out of the wrapper. */

@@ -268,6 +268,7 @@ describe('the Client auth settings', () => {
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
       'GET /api/settings': settings,
+      'GET /api/settings/mcp/clients-seen': [],
       'PUT /api/settings/mcp': (b: unknown) =>
         fail
           ? json(400, {
@@ -338,6 +339,54 @@ describe('the Client auth settings', () => {
     expect(wrapper.get('[data-warn="no-method"]').text()).toContain('Enable at least one method');
     expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
     expect(writes(calls)).toEqual([]);
+  });
+
+  it('saves the client policy mode and names, with seen clients to add', async () => {
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/overview': overview,
+      'GET /api/settings': settings,
+      'GET /api/settings/mcp/clients-seen': [
+        { name: 'seen-client', version: '2.1', client: 'token:laptop', lastSeen: new Date().toISOString() },
+        { name: 'typed-client', version: '', client: '', lastSeen: new Date().toISOString() },
+      ],
+      'PUT /api/settings/mcp': (b: unknown) => b,
+    });
+    const { wrapper } = await mountAt('/settings/client-auth');
+    await flushPromises();
+    const card = () => wrapper.get('[data-card="clients"]');
+    expect(card().get('[data-warn="client-names"]').text()).toContain('not a security boundary');
+    expect(card().find('#m-names').exists()).toBe(false);
+    expect(card().get('ul.seen-list li').text()).toMatch(/^seen-client\s*2\.1 · from token:laptop · just now/);
+    const mode = (label: string) =>
+      card()
+        .findAll('label')
+        .find((l) => l.text() === label)!
+        .get('input');
+    await mode('Allow only these clients').setValue(true);
+    expect(card().get('[data-warn="no-client"]').text()).toContain('refuses every client');
+    expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+    await card().get('#m-names').setValue('typed-client');
+    await card().get('#m-names').trigger('keydown', { key: 'Enter' });
+    await card().get('button[aria-label="Add seen-client"]').trigger('click');
+    expect(card().find('button[aria-label="Add typed-client"]').exists()).toBe(false);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(writes(calls).at(-1)!.body).toMatchObject({
+      clientPolicy: { mode: 'allow', names: ['typed-client', 'seen-client'] },
+    });
+    await card().get('button[aria-label="Remove typed-client"]').trigger('click');
+    await mode('Deny these clients').setValue(true);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(writes(calls).at(-1)!.body).toMatchObject({ clientPolicy: { mode: 'deny', names: ['seen-client'] } });
+  });
+
+  it('shows why the seen clients could not load', async () => {
+    fakeApi({ 'GET /api/session': signedIn, 'GET /api/overview': overview, 'GET /api/settings': settings });
+    const { wrapper } = await mountAt('/settings/client-auth');
+    await flushPromises();
+    expect(wrapper.get('[data-card="clients"] [role="alert"]').text()).toBeTruthy();
   });
 
   it('sends the old MCP access address to Client auth', async () => {
