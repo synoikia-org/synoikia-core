@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { errorText } from '../../api';
 import AuthMethodsPicker from '../../components/AuthMethodsPicker.vue';
 import ChipsInput from '../../components/ChipsInput.vue';
+import InSessionApprovalsField from '../../components/InSessionApprovalsField.vue';
 import ModalDialog from '../../components/ModalDialog.vue';
 import {
   useDeleteInstance,
@@ -163,20 +164,7 @@ async function remove() {
           </p>
         </div>
       </div>
-      <div class="field check">
-        <label>
-          <input
-            v-model="form.formApprovals"
-            type="checkbox"
-            :aria-describedby="form.formApprovals ? 's-form-note' : undefined"
-          />
-          Let clients that only show forms approve ordinary writes
-        </label>
-      </div>
-      <p v-if="form.formApprovals" id="s-form-note" class="alert warn" role="note">
-        Any client connected to this endpoint could then approve its own writes, with nobody checking. Locked operations
-        and ones that need a typed confirmation still need the approval page.
-      </p>
+      <InSessionApprovalsField v-model="form.formApprovals" />
     </section>
 
     <section class="card">

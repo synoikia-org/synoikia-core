@@ -342,13 +342,13 @@ describe('Endpoint settings', () => {
       'PATCH /api/instances/i1': { ...instance, settings },
     });
     const { wrapper } = await mountAt('/endpoints/nas/settings');
-    expect(wrapper.text()).not.toContain('could then approve its own writes');
+    expect(wrapper.text()).not.toContain('could then approve those calls itself');
     const box = wrapper
       .findAll('label')
-      .find((l) => l.text().includes('only show forms'))!
+      .find((l) => l.text().includes('in the agent session'))!
       .get('input');
     await box.setValue(true);
-    expect(wrapper.text()).toContain('could then approve its own writes');
+    expect(wrapper.text()).toContain('could then approve those calls itself');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({

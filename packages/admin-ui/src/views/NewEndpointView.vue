@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AuthMethodsPicker from '../components/AuthMethodsPicker.vue';
+import InSessionApprovalsField from '../components/InSessionApprovalsField.vue';
 import PageHeader from '../components/PageHeader.vue';
 import SchemaForm from '../components/SchemaForm.vue';
 import { useCreateInstance } from '../composables/useInstance';
@@ -18,6 +19,7 @@ const pluginId = ref('');
 const slug = ref('');
 const displayName = ref('');
 const authMethods = ref<AuthMethod[] | null>(null);
+const inSessionApprovals = ref(false);
 const enabledMethods = useEnabledAuthMethods();
 const config = ref<Record<string, unknown>>({});
 const secrets = ref<Record<string, string | null>>({});
@@ -50,6 +52,7 @@ function create() {
       displayName: displayName.value || undefined,
       authMethods: authMethods.value,
       connection: { ...config.value, ...filled },
+      ...(inSessionApprovals.value ? { settings: { formElicitationApprovals: 'writes' } } : {}),
     },
     { onSuccess: (created) => router.push(`/endpoints/${created.slug}/connection`) },
   );
@@ -90,6 +93,7 @@ function create() {
         </div>
       </div>
       <AuthMethodsPicker v-model="authMethods" :enabled="enabledMethods" />
+      <InSessionApprovalsField v-model="inSessionApprovals" />
 
       <template v-if="plugin?.manifest.connection">
         <h2>Connection</h2>
