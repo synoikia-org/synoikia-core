@@ -190,10 +190,12 @@ const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
         <p v-else-if="!clientsSeen.data.value?.length" class="small muted">No client has connected yet.</p>
         <ul v-else class="small seen-list">
           <li v-for="c in clientsSeen.data.value" :key="c.name">
-            <span class="mono seen-name">{{ c.name }}</span>
-            <span class="muted">{{
-              [c.version, c.client && `from ${c.client}`, ago(c.lastSeen)].filter(Boolean).join(' · ')
-            }}</span>
+            <span class="seen-who">
+              <span class="mono seen-name">{{ c.name }}</span>
+              <span class="muted">{{
+                [c.version, c.client && `from ${c.client}`, ago(c.lastSeen)].filter(Boolean).join(' · ')
+              }}</span>
+            </span>
             <button
               v-if="form.clientPolicy.mode !== 'off' && !listed(c.name)"
               class="btn btn-sm"
@@ -387,9 +389,14 @@ h3 {
 }
 .seen-list li {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 8px;
+}
+.seen-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  min-width: 0;
 }
 .seen-name {
   white-space: nowrap;
