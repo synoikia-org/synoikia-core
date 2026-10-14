@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 
-/** Server-rendered pages on the MCP port (design §2.1); every value HTML-escaped by `html`, no scripts. */
+/** Server-rendered pages on the MCP port (design §2.1); every value HTML-escaped by `html`. The only script
+ * is the decided page's static `window.close()`, allowed by its hash. */
 
 type Body = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -58,10 +60,19 @@ const BRAND = `<div class="brand"><svg viewBox="0 0 120 120" width="36" height="
 <rect x="52" y="96" width="16" height="16" rx="4"/><rect x="8" y="52" width="16" height="16" rx="4"/></g>
 <rect class="hearth" x="48" y="48" width="24" height="24" rx="6"/></svg><span>Syn<span class="root">oikia</span></span></div>`;
 
-function page(c: Context, title: string, body: Body, status: 200 | 400 | 401 | 403 | 404 | 429 = 200) {
+export const CLOSE_SCRIPT = 'window.close();';
+const CLOSE_SCRIPT_SRC = `'sha256-${createHash('sha256').update(CLOSE_SCRIPT).digest('base64')}'`;
+
+function page(
+  c: Context,
+  title: string,
+  body: Body,
+  status: 200 | 400 | 401 | 403 | 404 | 429 = 200,
+  closeTab = false,
+) {
   c.header(
     'Content-Security-Policy',
-    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'none'; base-uri 'none'",
+    `default-src 'none'; style-src 'unsafe-inline'; img-src data:;${closeTab ? ` script-src ${CLOSE_SCRIPT_SRC};` : ''} frame-ancestors 'none'; base-uri 'none'`,
   );
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'no-referrer');
@@ -80,6 +91,7 @@ function page(c: Context, title: string, body: Body, status: 200 | 400 | 401 | 4
         <body>
           ${raw(BRAND)}
           <main>${body}</main>
+          ${closeTab ? raw(`<script>${CLOSE_SCRIPT}</script>`) : ''}
         </body>
       </html>`,
     status,
@@ -93,6 +105,19 @@ export function errorPage(c: Context, title: string, message: string, status: 20
     html`<h1>${title}</h1>
       <p class="sub">${message}</p>`,
     status,
+  );
+}
+
+/** After a decision on the approval page: tries to close the tab, else sends the user back to the chat. */
+export function decidedPage(c: Context, title: string, message: string, client: string | null) {
+  return page(
+    c,
+    title,
+    html`<h1>${title}</h1>
+      <p class="sub">${message}</p>
+      <p>Done — return to your chat${client ? html` (<strong>${client}</strong>)` : ''}. You can close this tab.</p>`,
+    200,
+    true,
   );
 }
 

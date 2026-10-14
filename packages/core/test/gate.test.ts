@@ -11,7 +11,15 @@ import type { ClientPrompts, FormPromptRequest, UrlPromptRequest } from '../src/
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
 import { applyCatalogSync } from '../src/catalog/sync.js';
 import { openDatabase } from '../src/db/index.js';
-import { approvalLinks, auditLog, guides, operations, pendingApprovals, preApprovalRules } from '../src/db/schema.js';
+import {
+  approvalLinks,
+  auditLog,
+  guides,
+  operations,
+  pendingApprovals,
+  pluginInstances,
+  preApprovalRules,
+} from '../src/db/schema.js';
 import type { AccessCeiling, AccessLevel } from '../src/gate/access.js';
 import { issueAttestationKey } from '../src/gate/attestation.js';
 import type { CallerContext, GateDeps, InstanceRuntime } from '../src/gate/pipeline.js';
@@ -20,7 +28,9 @@ import { createInstanceRedactor, createRedactor, GLOBAL_SENSITIVE_KEYS } from '.
 import { parseInstanceSettings } from '../src/instances/settings.js';
 import type { InstanceSettings } from '../src/instances/settings.js';
 import { PluginProcess } from '../src/plugins/process.js';
-import { executeCode, SANDBOX_CONCURRENCY, searchCode } from '../src/runtime/index.js';
+import { ExecutionRegistry } from '../src/runtime/executions.js';
+import type { PendingResult } from '../src/runtime/executions.js';
+import { executeCode, resumeExecution, SANDBOX_CONCURRENCY, searchCode } from '../src/runtime/index.js';
 import { seedInstance } from './helpers.js';
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/plugins/echo');
@@ -33,6 +43,7 @@ afterEach(async () => {
 
 async function setup(settings: Partial<InstanceSettings> = {}) {
   const { db, instanceId } = seedInstance(openDatabase(':memory:'), 'echo');
+  db.update(pluginInstances).set({ settings }).where(eq(pluginInstances.id, instanceId)).run();
   const proc = new PluginProcess({ dir: FIXTURE, entry: manifest.entry, instanceId, defaultTimeoutMs: 5000 });
   proc.start();
   cleanup.push(() => proc.stop(500));
@@ -330,13 +341,107 @@ describe('execute → gate → plugin', () => {
       );
       expect(client.asked).toHaveLength(1);
 
-      // A read the admin put at its own Ask always needs a human, whatever the setting allows for writes.
+      // A read the admin put at its own Ask is approved in the session too.
       updateOperation(t.db, t.instanceId, t.opId('echo.query'), { level: 'ask' });
-      await expect(t.exec(`await echo.call('echo.query', { q: 1 });`, client.prompts)).resolves.toMatchObject({
-        ok: false,
-        error: { code: 'PERMISSION_DENIED', message: expect.stringContaining('only supports form') },
+      await expect(
+        t.exec(`return (await echo.call('echo.query', { q: 1 })).key;`, client.prompts),
+      ).resolves.toMatchObject({ ok: true, value: 'echo.query' });
+      expect(client.asked).toHaveLength(2);
+      expect(t.audits().at(-1)).toMatchObject({ decidedVia: 'elicitation', detail: { approvalChannel: 'form' } });
+    });
+
+    it('approves in the session first and opens the page only for what the session cannot approve', async () => {
+      const both = () => {
+        const url = urlClient();
+        const form = formClient();
+        return { prompts: { ...url.prompts, ...form.prompts }, opened: url.opened, asked: form.asked };
+      };
+      const t = await setup({ formElicitationApprovals: 'writes' });
+      t.setLevel('ask');
+      updateOperation(t.db, t.instanceId, t.opId('echo.query'), { level: 'ask' });
+      const client = both();
+      for (const code of [
+        `return (await echo.call('echo.set', { name: 'x' })).key;`,
+        `return (await echo.call('echo.query', { q: 1 })).key;`,
+      ])
+        expect(await t.exec(code, client.prompts)).toMatchObject({ ok: true });
+      expect(client.asked).toHaveLength(2);
+      expect(client.opened).toEqual([]);
+
+      // Locked (typed confirmation): the page through the URL prompt, never the form.
+      updateOperation(t.db, t.instanceId, t.opId('echo.delete'), { level: 'ask' });
+      const run = t.exec(`await echo.call('echo.delete', { name: 'vol/x' });`, client.prompts);
+      await waitFor(() => client.opened.length === 1);
+      expect(client.asked).toHaveLength(2);
+      t.approvals.cancelAll();
+      await run;
+
+      // Setting off: the page, also for a plain write.
+      const off = await setup();
+      off.setLevel('ask');
+      const other = both();
+      const denied = off.exec(`await echo.call('echo.set', { name: 'x' });`, other.prompts);
+      await waitFor(() => other.opened.length === 1);
+      expect(other.asked).toEqual([]);
+      off.approvals.cancelAll();
+      await denied;
+    });
+
+    it('marks a parked approval for in-session decision only where the card may decide it', async () => {
+      const parkedFor = async (settings: Partial<InstanceSettings>, key: string, params: unknown) => {
+        const t = await setup(settings);
+        t.setLevel('ask');
+        updateOperation(t.db, t.instanceId, t.opId('echo.delete'), { level: 'ask' });
+        const deps = { ...t.deps, executions: new ExecutionRegistry() };
+        const caller = { ...t.caller(), parkable: true };
+        const parked = (await executeCode(
+          deps,
+          t.rt,
+          caller,
+          `await echo.call(${JSON.stringify(key)}, ${JSON.stringify(params)});`,
+        )) as PendingResult;
+        const offered = parked.approval!;
+        const run = () => resumeExecution(deps, t.rt, caller, parked.executionId);
+        return { t, offered, run };
+      };
+      const open = await parkedFor({ formElicitationApprovals: 'writes' }, 'echo.set', { name: 'x' });
+      expect(open.offered.inSession).toBe(true);
+      open.t.approvals.decideInSession(open.offered.approvalId, { approve: true, decidedBy: 'token:me' });
+      expect(await open.run()).toMatchObject({ ok: true });
+      expect(open.t.audits().find((a) => a.decision === 'human-approved')).toMatchObject({
+        decision: 'human-approved',
+        decidedVia: 'elicitation',
+        decidedBy: 'token:me',
+        detail: { approvalChannel: 'card' },
       });
-      expect(client.asked).toHaveLength(1);
+
+      // The admin turned the setting off while the approval waited.
+      const later = await parkedFor({ formElicitationApprovals: 'writes' }, 'echo.set', { name: 'x' });
+      later.t.db.update(pluginInstances).set({ settings: {} }).where(eq(pluginInstances.id, later.t.instanceId)).run();
+      expect(() =>
+        later.t.approvals.decideInSession(later.offered.approvalId, { approve: true, decidedBy: 'x' }),
+      ).toThrow(expect.objectContaining({ code: 'approval_not_in_session' }));
+      later.t.approvals.decide(later.offered.approvalId, { approve: false, decidedBy: 'admin' });
+      expect(await later.run()).toMatchObject({ ok: false });
+      expect(() =>
+        later.t.approvals.decideInSession(later.offered.approvalId, { approve: true, decidedBy: 'x' }),
+      ).toThrow(expect.objectContaining({ code: 'approval_closed' }));
+      expect(() => later.t.approvals.decideInSession('nope', { approve: true, decidedBy: 'x' })).toThrow(
+        expect.objectContaining({ code: 'approval_not_found' }),
+      );
+
+      for (const [settings, key, params] of [
+        [{ formElicitationApprovals: 'writes' }, 'echo.delete', { name: 'vol/x' }],
+        [{}, 'echo.set', { name: 'x' }],
+      ] as const) {
+        const { t, offered, run } = await parkedFor(settings, key, params);
+        expect(offered.inSession).toBe(false);
+        expect(() => t.approvals.decideInSession(offered.approvalId, { approve: true, decidedBy: 'x' })).toThrow(
+          expect.objectContaining({ code: 'approval_not_in_session' }),
+        );
+        t.approvals.cancelAll();
+        expect(await run()).toMatchObject({ ok: false });
+      }
     });
 
     it('rejects a read whose own Ask was lowered while its approval waited', async () => {

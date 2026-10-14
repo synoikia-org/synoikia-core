@@ -382,12 +382,9 @@ export function createGateBindings(
             mcpSessionId: caller.mcpSessionId,
             timeoutMs: rt.settings.approvalTimeoutMs,
             prompts: caller.prompts,
-            // Only plain writes, as the setting's name says: a read the admin put at Ask always needs a human.
+            // In-session approval (§5.3) covers every Ask operation that is not locked, reads too.
             formApprovals:
-              rt.settings.formElicitationApprovals === 'writes' &&
-              isWrite &&
-              !operation.locked &&
-              !operation.typedConfirmation,
+              rt.settings.formElicitationApprovals === 'writes' && !operation.locked && !operation.typedConfirmation,
             park,
           });
           audit.detail.approvalId = request.id;
@@ -403,6 +400,7 @@ export function createGateBindings(
           audit.decidedBy = approval.decidedBy;
           audit.decidedVia = approval.via;
           if (approval.signIn) audit.detail.approverSignIn = approval.signIn;
+          if (approval.channel) audit.detail.approvalChannel = approval.channel;
           if (approval.outcome === 'cancelled' && signal.aborted) ensureRunning();
           if (approval.outcome !== 'approved') {
             const label = approval.outcome === 'timed_out' ? 'timed-out' : 'denied';

@@ -110,6 +110,11 @@ export class ExecutionRegistry {
     return e && e.owner === owner && e.instanceId === instanceId ? e : undefined;
   }
 
+  /** The approval the owner's run waits on now, for a decision on the approval card. */
+  currentApproval(id: string, owner: string, instanceId: string): ParkedApproval | undefined {
+    return this.find(id, owner, instanceId)?.approval;
+  }
+
   status(id: string, owner: string, instanceId: string): ExecutionStatus | undefined {
     const e = this.find(id, owner, instanceId);
     if (!e) return undefined;
@@ -187,7 +192,7 @@ export function pendingResult(executionId: string, approval?: ParkedApproval): P
         approval,
         error: {
           code: 'AWAITING_APPROVAL',
-          message: `${approval.operationKey} waits for a human to approve it on the approval page. Show the link to the user; after they decide, call resume with this executionId.`,
+          message: `${approval.operationKey} waits for a human to approve it ${approval.inSession ? 'on the approval card in the chat or on the approval page' : 'on the approval page'}. Show the link to the user; after they decide, call resume with this executionId.`,
         },
         logs: [],
       }
