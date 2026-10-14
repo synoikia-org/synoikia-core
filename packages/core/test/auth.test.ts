@@ -268,7 +268,7 @@ describe('OidcService', () => {
     const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
     const codes = new Map<
       string,
-      { nonce: string; sub: string; email: string; groups: string[]; emailVerified?: boolean }
+      { nonce: string; sub: string; email: string; groups: string[]; emailVerified?: boolean; redirectUri: string }
     >();
     const app = new Hono();
     let issuer = '';
@@ -289,6 +289,8 @@ describe('OidcService', () => {
       const form = await c.req.parseBody();
       const grant = codes.get(String(form.code));
       if (!grant || !form.code_verifier) return c.json({ error: 'invalid_grant' }, 400);
+      if (form.redirect_uri !== grant.redirectUri)
+        return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
       const idToken = await new SignJWT({
         nonce: grant.nonce,
         email: grant.email,
@@ -330,11 +332,12 @@ describe('OidcService', () => {
       groups: who.groups ?? [],
       // null: the IdP leaves the claim out; default: it vouches for the address.
       emailVerified: who.emailVerified === null ? undefined : (who.emailVerified ?? true),
+      redirectUri: params.get('redirect_uri')!,
     });
-    const callback = new URL(
-      `https://admin.lan/auth/oidc/callback?code=code-1&state=${params.get('state')}&iss=${encodeURIComponent(idp.issuer)}`,
+    return service.complete(
+      `?code=code-1&state=${params.get('state')}&iss=${encodeURIComponent(idp.issuer)}`,
+      stateToken,
     );
-    return service.complete(callback, stateToken);
   }
 
   it('completes code + PKCE sign-in and applies link / allow-policy / auto-provision rules', async () => {
@@ -427,6 +430,41 @@ describe('OidcService', () => {
     expect(service.isAllowed(verified.identity)).toBe(true);
   });
 
+  it('names the IdP error when the code exchange fails', async () => {
+    const t = setup();
+    const idp = await fakeIdp();
+    const service = new OidcService(t.db, t.box, randomBytes(32), true);
+    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal', clientSecret: 'shh' });
+    const { url, stateToken } = await service.begin({
+      purpose: 'admin_login',
+      redirectUri: 'https://admin.lan/auth/oidc/callback',
+    });
+    const params = new URL(url).searchParams;
+    idp.codes.set('code-1', {
+      nonce: params.get('nonce')!,
+      sub: 'u-1',
+      email: 'a@corp.example',
+      groups: [],
+      redirectUri: 'https://elsewhere.lan/auth/oidc/callback',
+    });
+    await expect(
+      service.complete(`?code=code-1&state=${params.get('state')}&iss=${encodeURIComponent(idp.issuer)}`, stateToken),
+    ).rejects.toThrow('Sign-in failed: invalid_grant: redirect_uri mismatch');
+  });
+
+  it('rejects a payload the same key signed for another purpose', async () => {
+    const t = setup();
+    const idp = await fakeIdp();
+    const key = randomBytes(32);
+    const service = new OidcService(t.db, t.box, key, true);
+    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal' });
+    for (const other of [{ mfaUser: 'x' }, { purpose: 'mcp_login', redirectUri: 'javascript:alert(1)' }]) {
+      await expect(service.complete('?code=x&state=y', signPayload(key, other, 60_000))).rejects.toThrow(
+        /expired or invalid/,
+      );
+    }
+  });
+
   it('rejects tampered or replayed state', async () => {
     const t = setup();
     const idp = await fakeIdp();
@@ -434,8 +472,6 @@ describe('OidcService', () => {
     service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal' });
     const { url } = await service.begin({ purpose: 'admin_login', redirectUri: 'https://admin.lan/cb' });
     const state = new URL(url).searchParams.get('state');
-    await expect(
-      service.complete(new URL(`https://admin.lan/cb?code=x&state=${state}`), 'forged.token'),
-    ).rejects.toThrow(/expired or invalid/);
+    await expect(service.complete(`?code=x&state=${state}`, 'forged.token')).rejects.toThrow(/expired or invalid/);
   });
 });
