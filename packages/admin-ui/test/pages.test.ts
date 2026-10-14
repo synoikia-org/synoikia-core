@@ -855,7 +855,7 @@ describe('Shell and settings', () => {
     });
     const { wrapper } = await mountAt('/settings/client-auth');
     const headings = wrapper.findAll('section.card h2').map((h) => h.text());
-    expect(headings).toEqual(['How MCP access works', 'Client auth methods', 'OAuth', 'Cloudflare Access']);
+    expect(headings).toEqual(['How MCP access works', 'Client auth methods', 'Clients', 'OAuth', 'Cloudflare Access']);
     expect(wrapper.text()).not.toContain('Other reverse proxies');
     expect(wrapper.text()).not.toContain('Trusted identity header');
     const oauthCard = wrapper.findAll('section.card').find((s) => s.get('h2').text() === 'OAuth')!;

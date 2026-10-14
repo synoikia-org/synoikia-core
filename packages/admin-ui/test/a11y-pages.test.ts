@@ -329,6 +329,7 @@ describe('Alerts and notices', () => {
         publicMcpUrl: null,
         publicAdminUrl: null,
       },
+      'GET /api/settings/mcp/clients-seen': [],
       'PUT /api/settings/mcp': (b: unknown) => (fail ? json(400, { error: 'invalid', message: 'Bad value' }) : b),
     });
     await mountAt('/settings/client-auth');

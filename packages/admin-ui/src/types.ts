@@ -382,6 +382,15 @@ export interface Notifier {
   lastError: string | null;
 }
 
+export type ClientPolicyMode = 'off' | 'allow' | 'deny';
+
+/** A client name seen at MCP `initialize` since the server started. */
+export interface SeenClient {
+  name: string;
+  version: string;
+  lastSeen: string;
+}
+
 export interface Settings {
   security: {
     requireTotp: boolean;
@@ -401,6 +410,8 @@ export interface Settings {
     cfAccess: { teamDomain: string; aud: string };
     accessTokenTtlMinutes: number;
     refreshTokenTtlDays: number;
+    /** Allowed or denied MCP clients by their self-declared name (design §6.6). */
+    clientPolicy: { mode: ClientPolicyMode; names: string[] };
   };
   audit: { retentionDays: number | null };
   oidc: {
