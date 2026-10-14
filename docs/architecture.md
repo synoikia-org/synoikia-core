@@ -603,8 +603,9 @@ sequenceDiagram
   AP->>DB: pending_approvals row (redacted params, params_hash, expires +15 min)
   Note over AP: unredacted params kept only in memory
   alt in-session approval opted in, not locked, client supports forms
-    AP->>C: elicitInput(form: approve boolean)
-    C-->>AP: approve, decided_via=elicitation, channel=form
+    AP->>C: elicitInput(form, no fields)
+    C-->>AP: Accept approves, Decline denies, decided_via=elicitation, channel=form
+    Note over AP,C: no answer after 30 s and the caller can park: the form is cancelled and the same approval parks (§5.6)
   else client supports URL elicitation
     AP->>DB: approval_links (token hash, single use)
     AP->>C: elicitInput(mode url, PUBLIC_MCP_URL/a/token)
