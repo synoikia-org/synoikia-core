@@ -67,8 +67,12 @@ async function initializeClientInfo(req: Request) {
     .clone()
     .json()
     .catch(() => undefined);
-  const msg = InitializeMessage.safeParse(body);
-  return msg.success ? { info: msg.data.params?.clientInfo ?? {} } : undefined;
+  // The transport also accepts an initialize as the only message of a batch.
+  for (const raw of Array.isArray(body) ? body : [body]) {
+    const msg = InitializeMessage.safeParse(raw);
+    if (msg.success) return { info: msg.data.params?.clientInfo ?? {} };
+  }
+  return undefined;
 }
 
 const jsonRpcError = (code: number, message: string) => ({

@@ -769,8 +769,14 @@ describe('client policy', () => {
     updateSettings(ctx.db, 'mcp', { clientPolicy: { mode, names } });
   // Refusal log lines are throttled per client IP: each request comes from its own (trusted-proxy) address.
   let nextIp = 0;
-  const initAs = (token: string, clientInfo?: { name?: unknown; version: string }) =>
-    fetch(`${base}/echo`, {
+  const initAs = (token: string, clientInfo?: { name?: unknown; version: string }, batch = false) => {
+    const message = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, ...(clientInfo ? { clientInfo } : {}) },
+    };
+    return fetch(`${base}/echo`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -778,13 +784,9 @@ describe('client policy', () => {
         authorization: `Bearer ${token}`,
         'x-forwarded-for': `198.51.100.${++nextIp}`,
       },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: { protocolVersion: '2025-06-18', capabilities: {}, ...(clientInfo ? { clientInfo } : {}) },
-      }),
+      body: JSON.stringify(batch ? [message] : message),
     });
+  };
   const refusals = () =>
     ctx.db
       .select()
@@ -835,6 +837,8 @@ describe('client policy', () => {
     try {
       policy('deny', ['blocked']);
       expect((await initAs(token, { name: 'BLOCKED', version: '1' })).status).toBe(403);
+      // An initialize as the only message of a batch is still checked.
+      expect((await initAs(token, { name: 'blocked', version: '1' }, true)).status).toBe(403);
       expect((await initAs(token, { name: 'fine', version: '1' })).status).toBe(200);
       // The open session's client ("e2e") is refused at its next request once it is denied.
       expect((await client.listTools()).tools.length).toBeGreaterThan(0);
@@ -844,8 +848,9 @@ describe('client policy', () => {
       await expect(client.listTools()).rejects.toThrow();
       const text = lines.join('\n');
       expect(text).toMatch(/WARN MCP request refused .*status=403 reason="MCP client not allowed .*clientName=BLOCKED/);
-      expect(refusals().slice(-2)).toEqual([
+      expect(refusals().slice(-3)).toEqual([
         { slug: 'echo', clientName: 'BLOCKED', mode: 'deny' },
+        { slug: 'echo', clientName: 'blocked', mode: 'deny' },
         { slug: 'echo', clientName: 'e2e', mode: 'deny' },
       ]);
     } finally {
