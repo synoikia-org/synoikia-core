@@ -44,17 +44,18 @@ const OidcSettingsSchema = z.object({
 });
 export type OidcSettings = z.infer<typeof OidcSettingsSchema>;
 
-export type OidcPurpose = 'admin_login' | 'admin_link' | 'mcp_login';
-
-export interface OidcState extends Record<string, unknown> {
-  purpose: OidcPurpose;
-  verifier: string;
-  state: string;
-  nonce: string;
-  redirectUri: string;
-  returnTo?: string;
-  userId?: string;
-}
+// The state key also signs other payloads, so a verified token must still have this shape.
+const OidcStateSchema = z.object({
+  purpose: z.enum(['admin_login', 'admin_link', 'mcp_login']),
+  verifier: z.string(),
+  state: z.string(),
+  nonce: z.string(),
+  redirectUri: z.url({ protocol: /^https?$/ }),
+  returnTo: z.string().optional(),
+  userId: z.string().optional(),
+});
+export type OidcState = z.infer<typeof OidcStateSchema>;
+export type OidcPurpose = OidcState['purpose'];
 
 export interface OidcIdentity {
   issuer: string;
@@ -208,14 +209,17 @@ export class OidcService {
     return { url: url.toString(), stateToken: signPayload(this.stateKey, state, STATE_TTL_MS) };
   }
 
-  /** Validates the callback (state, PKCE, nonce, ID token) and returns the identity plus the flow state. */
+  /** Validates the callback query (state, PKCE, nonce, ID token) and returns the identity plus the flow state. */
   async complete(
-    callbackUrl: URL,
+    callbackQuery: string,
     stateToken: string | undefined,
   ): Promise<{ identity: OidcIdentity; state: OidcState }> {
-    const state = verifyPayload<OidcState>(this.stateKey, stateToken);
+    const state = OidcStateSchema.safeParse(verifyPayload(this.stateKey, stateToken)).data;
     if (!state) throw new OidcError('oidc_state', 'Sign-in session expired or invalid; try again');
     const config = await this.configuration();
+    // The token request's redirect_uri must equal the one sent to the IdP, not the URL a proxy forwarded.
+    const callbackUrl = new URL(state.redirectUri);
+    callbackUrl.search = callbackQuery;
     let claims: oidc.IDToken | undefined;
     try {
       const tokens = await oidc.authorizationCodeGrant(config, callbackUrl, {
@@ -226,7 +230,13 @@ export class OidcService {
       });
       claims = tokens.claims();
     } catch (err) {
-      throw new OidcError('oidc_failed', `Sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
+      const detail =
+        err instanceof oidc.ResponseBodyError
+          ? `${err.error.slice(0, 100)}${err.error_description ? `: ${err.error_description.slice(0, 200)}` : ''}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      throw new OidcError('oidc_failed', `Sign-in failed: ${detail}`);
     }
     if (!claims) throw new OidcError('oidc_failed', 'The identity provider returned no ID token');
     const settings = this.getSettings()!;

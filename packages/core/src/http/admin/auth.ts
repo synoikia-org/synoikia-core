@@ -285,7 +285,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     const fail = (code: string) => c.redirect(`/login?error=${encodeURIComponent(code)}`);
     let result;
     try {
-      result = await ctx.oidc.complete(new URL(c.req.url, adminCallbackUrl(c, ctx)), getCookie(c, OIDC_COOKIE));
+      result = await ctx.oidc.complete(new URL(c.req.url).search, getCookie(c, OIDC_COOKIE));
     } catch (err) {
       writeAudit(ctx.db, {
         kind: 'auth',

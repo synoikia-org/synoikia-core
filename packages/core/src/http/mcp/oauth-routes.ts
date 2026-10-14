@@ -419,10 +419,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
 
   app.get('/oauth/oidc/callback', async (c) => {
     try {
-      const { identity, state } = await ctx.oidc.complete(
-        new URL(c.req.url, `${issuer(c)}/oauth/oidc/callback`),
-        getCookie(c, OIDC_COOKIE),
-      );
+      const { identity, state } = await ctx.oidc.complete(new URL(c.req.url).search, getCookie(c, OIDC_COOKIE));
       if (state.purpose !== 'mcp_login') return errorPage(c, 'Sign-in failed', 'Unexpected sign-in flow.');
       const user = await ctx.oidc.resolveUser(ctx.users, identity);
       if (!user) return errorPage(c, 'Not allowed', 'Your account is not allowed to sign in here.', 403);
