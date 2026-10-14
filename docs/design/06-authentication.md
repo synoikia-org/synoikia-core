@@ -209,3 +209,21 @@ A user that self-registration makes gets the default role. Core records the sour
 | `oidc`     | OIDC `autoProvision` is on and the allow policy accepts the identity.                                                               |
 | `external` | The external provider (§6.2) identifies a caller with no user.                                                                      |
 | `signup`   | The "Create account" form on the sign-in page. It needs `localSignup` and local sign-in on. The per-IP budget of `/auth/*` applies. |
+
+## 6.6 MCP client policy
+
+The client policy allows or denies MCP clients by their client name. The client name is the `clientInfo.name` that a client sends in its MCP `initialize` request. The admin sets the policy under Settings → Client auth (`mcp.clientPolicy`).
+
+| `mode`          | Core refuses                                                     |
+| --------------- | ---------------------------------------------------------------- |
+| `off` (default) | No client                                                        |
+| `allow`         | A client whose name is not in `names`, and a client with no name |
+| `deny`          | A client whose name is in `names`                                |
+
+- `names` holds at most 50 names of 1 to 100 characters. Core trims each name and removes duplicates.
+- The match is exact, but upper and lower case do not matter.
+- Core refuses a save of `allow` mode with no names, with 400 `invalid_settings`.
+- **When.** Core checks the policy after authentication (§6.2), on an `initialize` request, before it makes the MCP session. It reads the client name from the request body. Core checks the policy again on each later request of a session. A policy change thus ends an open session of a refused client at its next request.
+- **Refusal.** Core answers 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server". It keeps no session. It logs the refusal with the client name (§11), and writes an `auth` audit event `client_refused` with the slug, the client name and the mode.
+- **Seen clients.** Core keeps in memory the last 50 client names that authenticated callers sent in `initialize`, with their version and time. `GET /api/settings/mcp/clients-seen` returns them, the newest first. The portal offers them as names to add. A restart clears the list.
+- **Limit.** A client declares its own name, and any client can send any name. The policy stops honest clients that the admin does not want. It is not a security boundary. Client auth (§6.2), the access ceiling (§6.3) and the gate (§5) are the boundary.

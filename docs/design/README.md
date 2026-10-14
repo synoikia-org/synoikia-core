@@ -53,6 +53,7 @@ Diagrams of the system are in [`../architecture.md`](../architecture.md). The pl
 | Self-registration  | The creation of a user without an admin, with the default role (§6.5).                        |
 | Access ceiling     | The most that a principal can do: `read` or `write`.                                          |
 | Client auth method | How an MCP client proves who it is: `bearer`, `oauth` or `external` (§6.2).                   |
+| Client name        | The `clientInfo.name` that an MCP client declares in `initialize`. It is not authentication.  |
 | External provider  | A service in front of the MCP listener that identifies the user of a request (§6.2).          |
 | Approval           | A human decision on one call, made on the approval page.                                      |
 | Parked execution   | An `execute` that waits on the server for an approval after its tool call answered.           |

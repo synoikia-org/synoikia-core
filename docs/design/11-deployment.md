@@ -40,6 +40,7 @@ Core writes one `LEVEL message key=value` line for each event to stdout or stder
   - the `iss` and `aud` that a Cloudflare Access assertion claims;
   - a `Host` or `Origin` outside the allowed set;
   - an endpoint that is not available;
+  - a client that the client policy refuses, with its client name (§6.6);
   - the JSON-RPC error of the transport.
 - **Levels.** A request with a token-shaped credential logs at `warn`. Probes and bad headers log at `debug`, also the first step of OAuth discovery without credentials.
 - **Throttle.** Core logs one refusal for each client IP and status in each minute. The next line gives the number of lines it did not write.

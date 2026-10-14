@@ -35,6 +35,11 @@ We're especially interested in reports touching:
 - Plugin isolation (child processes under the Node permission model) and
   plugin repository signature verification
 
+Out of scope: a client that gets past the MCP client allow or deny list
+(design §6.6) by sending another client name. A client declares its own
+name, so the list is not authentication. Authentication and the permission
+gate are the boundary.
+
 ## Response
 
 We aim to acknowledge new reports within a few business days and to keep you
