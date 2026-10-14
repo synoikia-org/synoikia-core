@@ -158,7 +158,7 @@ export function createRepoTool(opts: RepoOptions) {
           'manifest.json',
           'package.json',
           'dist',
-          ...(manifest.instructions ? [manifest.instructions] : []),
+          ...(manifest.instructions && !manifest.instructions.startsWith('dist/') ? [manifest.instructions] : []),
         ],
         { maxBuffer: 256 * 1024 * 1024 },
       );

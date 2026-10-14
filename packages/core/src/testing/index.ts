@@ -96,11 +96,10 @@ function stagePlugin(pluginDir: string, manifest: Manifest, root: string): strin
     const from = path.join(pluginDir, name);
     if (existsSync(from)) cpSync(from, path.join(dest, name), { recursive: true });
   }
-  const from = manifest.instructions && path.join(pluginDir, manifest.instructions);
-  if (manifest.instructions && from && existsSync(from)) {
-    const to = path.join(dest, manifest.instructions);
-    mkdirSync(path.dirname(to), { recursive: true });
-    cpSync(from, to);
+  const notes = manifest.instructions;
+  if (notes && existsSync(path.join(pluginDir, notes))) {
+    mkdirSync(path.dirname(path.join(dest, notes)), { recursive: true });
+    cpSync(path.join(pluginDir, notes), path.join(dest, notes));
   }
   return dest;
 }
