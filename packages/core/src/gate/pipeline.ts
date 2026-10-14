@@ -346,7 +346,7 @@ export function createGateBindings(
           let parked = false;
           const park: ParkHook | undefined = opts.park && {
             reserve: () => opts.park!.reserve(),
-            offer: (a) => {
+            offer: (a, info) => {
               parked = true;
               writeAudit(
                 deps.db,
@@ -354,7 +354,12 @@ export function createGateBindings(
                   ...audit,
                   decision: 'awaiting_approval',
                   durationMs: Date.now() - started,
-                  detail: { ...audit.detail, approvalId: a.approvalId, channel: 'link' },
+                  detail: {
+                    ...audit.detail,
+                    approvalId: a.approvalId,
+                    channel: 'link',
+                    ...(info?.formFallback ? { formFallback: true } : {}),
+                  },
                 },
                 now(),
               );

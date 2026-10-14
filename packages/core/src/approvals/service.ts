@@ -41,27 +41,27 @@ export interface UrlPromptResponse {
   action: 'accept' | 'decline' | 'cancel';
 }
 
+/** The form has no fields: Accept approves, Decline and Cancel deny. */
 export interface FormPromptRequest {
   approvalId: string;
   message: string;
-  requestedSchema: {
-    type: 'object';
-    properties: Record<string, { type: 'boolean'; title: string; description?: string }>;
-    required: string[];
-  };
+  requestedSchema: { type: 'object'; properties: Record<string, never> };
 }
 
 export interface FormPromptResponse {
   action: 'accept' | 'decline' | 'cancel';
-  content?: { approve?: unknown };
 }
+
+/** How long a form prompt waits for an answer before its call parks, below a client's usual 60 s tool timeout. */
+export const FORM_FALLBACK_MS = 30_000;
 
 /** What the connected MCP client can show; present only for a live session that advertised it. */
 export interface ClientPrompts {
   url?: (req: UrlPromptRequest) => Promise<UrlPromptResponse>;
   /** Tells the client a URL prompt was decided, so it can close it. */
   urlComplete?: (approvalId: string) => void;
-  form?: (req: FormPromptRequest) => Promise<FormPromptResponse>;
+  /** `signal` aborts when the call parks instead (§5.6). */
+  form?: (req: FormPromptRequest, signal: AbortSignal) => Promise<FormPromptResponse>;
 }
 
 /** A parked approval as the execution hands it to the agent: the page link replaces the client prompt. */
@@ -76,11 +76,11 @@ export interface ParkedApproval {
   inSession: boolean;
 }
 
-/** Lets an execution park (design §5.6) when the client has no usable prompt. */
+/** Lets an execution park (design §5.6) when the client has no usable prompt, or a form gets no answer. */
 export interface ParkHook {
   /** Null when the execution may park; otherwise the denial reason. */
   reserve(): string | null;
-  offer(approval: ParkedApproval): void;
+  offer(approval: ParkedApproval, info?: { formFallback: true }): void;
 }
 
 export interface ApprovalRequestInput {
@@ -103,7 +103,7 @@ export interface ApprovalRequestInput {
   prompts?: ClientPrompts;
   /** The endpoint allows in-session approval, and the operation is not locked and needs no typed confirmation. */
   formApprovals: boolean;
-  /** Present when the execution can park; used only when no client prompt applies. */
+  /** Present when the execution can park; used when no client prompt applies or a form gets no answer. */
   park?: ParkHook;
 }
 
@@ -124,6 +124,7 @@ export class ApprovalService {
     private readonly db: Db,
     private readonly links: ApprovalLinkService,
     private readonly now: () => Date = () => new Date(),
+    private readonly formFallbackMs = FORM_FALLBACK_MS,
   ) {}
 
   /** At startup, deny and audit pending rows from a previous process: their params lived only in memory (§5.5). */
@@ -197,11 +198,13 @@ export class ApprovalService {
     }
 
     this.db.insert(pendingApprovals).values(row).run();
+    let fallback: NodeJS.Timeout | undefined;
     const decision = new Promise<Decision>((resolve) => {
       const timer = setTimeout(() => settle({ outcome: 'timed_out' }), input.timeoutMs);
       const settle = (d: Decision) => {
         if (!this.live.delete(id)) return; // first decision wins
         clearTimeout(timer);
+        clearTimeout(fallback);
         const status = d.outcome === 'timed_out' ? 'timed_out' : d.outcome;
         this.db
           .update(pendingApprovals)
@@ -215,18 +218,35 @@ export class ApprovalService {
       this.live.set(id, { row, formApprovals: input.formApprovals, settle });
     });
 
-    if (channel === 'url') this.offerUrl(id, row.expiresAt, input);
-    else if (channel === 'link') {
+    const offerLink = (park: ParkHook, info?: { formFallback: true }) => {
       const token = this.links.create(id, row.expiresAt);
-      input.park!.offer({
-        approvalId: id,
-        path: `/a/${token}`,
-        operationKey: input.operationKey,
-        summary: input.summary,
-        expiresAt: row.expiresAt,
-        inSession: input.formApprovals,
-      });
-    } else this.offerForm(id, input);
+      park.offer(
+        {
+          approvalId: id,
+          path: `/a/${token}`,
+          operationKey: input.operationKey,
+          summary: input.summary,
+          expiresAt: row.expiresAt,
+          inSession: input.formApprovals,
+        },
+        info,
+      );
+    };
+    if (channel === 'url') this.offerUrl(id, row.expiresAt, input);
+    else if (channel === 'link') offerLink(input.park!);
+    else {
+      const form = new AbortController();
+      this.offerForm(id, input, form.signal);
+      const park = input.park;
+      // A client may advertise forms and never show them (§5.6): the same approval moves to the link.
+      if (park)
+        fallback = setTimeout(() => {
+          if (!this.live.has(id) || park.reserve()) return;
+          channel = 'link';
+          form.abort();
+          offerLink(park, { formFallback: true });
+        }, this.formFallbackMs);
+    }
     return { id, decision };
   }
 
@@ -256,27 +276,21 @@ export class ApprovalService {
     );
   }
 
-  private offerForm(id: string, input: ApprovalRequestInput) {
+  private offerForm(id: string, input: ApprovalRequestInput, signal: AbortSignal) {
     const message = this.message(
       input,
-      `Parameters: ${JSON.stringify(input.paramsDisplay)}${input.diff ? `\nChanges: ${JSON.stringify(input.diff)}` : ''}`,
+      `Parameters: ${JSON.stringify(input.paramsDisplay)}${input.diff ? `\nChanges: ${JSON.stringify(input.diff)}` : ''}\n\nAccept to approve this call, Decline to deny it.`,
     );
-    input.prompts!.form!({
-      approvalId: id,
-      message,
-      requestedSchema: {
-        type: 'object',
-        properties: { approve: { type: 'boolean', title: 'Approve this call?' } },
-        required: ['approve'],
-      },
-    }).then(
+    input.prompts!.form!({ approvalId: id, message, requestedSchema: { type: 'object', properties: {} } }, signal).then(
       (res) => {
-        const live = this.live.get(id);
-        if (!live) return;
-        const approved = res.action === 'accept' && res.content?.approve === true;
-        live.settle({ outcome: approved ? 'approved' : 'denied', via: 'elicitation', decidedBy: input.client.id });
+        // After the call parked, the link decides; a late answer of the aborted form counts for nothing.
+        if (signal.aborted) return;
+        const outcome = res.action === 'accept' ? 'approved' : 'denied';
+        this.live.get(id)?.settle({ outcome, via: 'elicitation', decidedBy: input.client.id });
       },
-      () => this.live.get(id)?.settle({ outcome: 'denied', reason: 'prompt_failed' }),
+      () => {
+        if (!signal.aborted) this.live.get(id)?.settle({ outcome: 'denied', reason: 'prompt_failed' });
+      },
     );
   }
 

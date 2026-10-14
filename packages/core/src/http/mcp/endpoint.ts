@@ -319,12 +319,12 @@ export class McpEndpoints {
         };
       }
       if (caps.form || !caps.url) {
-        out.form = async (req) => {
+        out.form = async (req, signal) => {
           const res = await server.server.elicitInput(
             { mode: 'form', message: req.message, requestedSchema: req.requestedSchema },
-            { timeout },
+            { timeout, signal },
           );
-          return { action: res.action, content: res.content as { approve?: unknown } | undefined };
+          return { action: res.action };
         };
       }
       return out;
