@@ -327,6 +327,13 @@ export class ApprovalService {
     return mine.length;
   }
 
+  /** Cancels the open requests one user owns (the user is deleted). */
+  cancelForOwner(userId: string, reason: string): number {
+    const mine = [...this.live.values()].filter((l) => l.row.ownerUserId === userId);
+    for (const live of mine) live.settle({ outcome: 'cancelled', reason });
+    return mine.length;
+  }
+
   /** Cancels every open request (shutdown). Cancelled calls are denied to the sandbox. */
   cancelAll(reason = 'shutdown') {
     for (const live of [...this.live.values()]) live.settle({ outcome: 'cancelled', reason });

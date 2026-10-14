@@ -5,7 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
 import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
-import { users } from '../src/db/schema.js';
+import {
+  mcpTokens,
+  operationGroups,
+  operations,
+  pendingApprovals,
+  preApprovalRules,
+  userLevels,
+  users,
+} from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
 import { updateSettings } from '../src/settings.js';
 import { CORE_VERSION } from '../src/version.js';
@@ -193,6 +201,126 @@ describe('setup, login and sessions', () => {
 
     const me = (await (await b.get('/api/profile')).json()) as { id: string };
     expect((await b.patch(`/api/users/${me.id}`, { disabled: true })).status).toBe(409);
+  });
+});
+
+describe('deleting users', () => {
+  async function withVictim() {
+    const t = await setup();
+    const b = await signedIn(t);
+    const add = async (username: string, roleId = 'admin') =>
+      ((await (await b.post('/api/users', { username, password: PASSWORD, roleId })).json()) as { id: string }).id;
+    return { ...t, b, add, me: t.ctx.db.select().from(users).where(eq(users.username, 'admin')).get()!.id };
+  }
+
+  it('deletes a user, revokes their credentials and clears what names them', async () => {
+    const t = await withVictim();
+    const id = await t.add('gone');
+    const victim = await t.client();
+    await victim.post('/auth/login', { username: 'gone', password: PASSWORD });
+    expect((await victim.get('/api/instances')).status).toBe(200);
+
+    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    await t.b.post(`/api/instances/${inst.id}/sync`);
+    const [opRow] = t.ctx.db.select().from(operations).where(eq(operations.instanceId, inst.id)).all();
+    const [group] = t.ctx.db.select().from(operationGroups).where(eq(operationGroups.instanceId, inst.id)).all();
+    t.ctx.db.update(operations).set({ acknowledgedBy: id }).where(eq(operations.id, opRow!.id)).run();
+    t.ctx.db.update(operationGroups).set({ levelChangedBy: id }).where(eq(operationGroups.id, group!.id)).run();
+    t.ctx.db
+      .insert(userLevels)
+      .values({ id: 'level', userId: id, instanceId: inst.id, groupId: group!.id, level: 'read' })
+      .run();
+    const rule = (ownerUserId: string | null, ruleId: string) =>
+      t.ctx.db
+        .insert(preApprovalRules)
+        .values({ id: ruleId, instanceId: inst.id, operationId: opRow!.id, reason: 'r', createdBy: id, ownerUserId })
+        .run();
+    rule(id, 'personal');
+    rule(null, 'shared');
+    const token = t.ctx.tokens.create({ name: 'gone-token', scope: ['*'] }, { userId: id });
+    const grants = vi.spyOn(t.ctx.oauth, 'revokeUserGrants');
+    const approval = (ownerUserId: string) =>
+      t.ctx.approvals.request({
+        instanceId: inst.id,
+        operationId: opRow!.id,
+        operationKey: opRow!.key,
+        classification: 'write',
+        paramsDisplay: {},
+        paramsHash: 'h',
+        resolvedTargets: [],
+        summary: 's',
+        client: { kind: 'token' },
+        ownerUserId,
+        timeoutMs: 60_000,
+        prompts: { url: () => new Promise(() => {}) },
+        formApprovals: false,
+      });
+    const mine = approval(id);
+    const theirs = approval(t.me);
+
+    expect((await t.b.del(`/api/users/${id}`)).status).toBe(204);
+    expect(await mine.decision).toMatchObject({ outcome: 'cancelled', reason: 'user_deleted' });
+    expect(t.ctx.approvals.cancel(theirs.id, 'test')).toBe(true);
+    expect((await victim.get('/api/instances')).status).toBe(401);
+    expect(t.ctx.tokens.verify(token.token)).toBeNull();
+    expect(grants).toHaveBeenCalledWith(id, 'user_deleted', { userId: t.me });
+
+    const db = t.ctx.db;
+    expect(db.select().from(users).where(eq(users.id, id)).get()).toBeUndefined();
+    expect(db.select().from(userLevels).where(eq(userLevels.userId, id)).all()).toEqual([]);
+    expect(db.select().from(operations).where(eq(operations.id, opRow!.id)).get()).toMatchObject({
+      acknowledgedBy: null,
+    });
+    expect(db.select().from(operationGroups).where(eq(operationGroups.id, group!.id)).get()).toMatchObject({
+      levelChangedBy: null,
+    });
+    // The personal rule goes: a null owner would make it an admin rule for every caller.
+    expect(db.select().from(preApprovalRules).all()).toEqual([
+      expect.objectContaining({ id: 'shared', createdBy: null, ownerUserId: null }),
+    ]);
+    expect(db.select().from(mcpTokens).where(eq(mcpTokens.id, token.id)).get()).toMatchObject({ createdBy: null });
+    expect(db.select().from(pendingApprovals).where(eq(pendingApprovals.id, mine.id)).get()).toMatchObject({
+      status: 'cancelled',
+      ownerUserId: null,
+    });
+    expect(await (await t.b.get('/api/users')).json()).toEqual([expect.objectContaining({ username: 'admin' })]);
+
+    type Row = { decision: string; actorName: string | null; detail: unknown };
+    const audit = async (q: string) => ((await (await t.b.get(`/api/audit?${q}`)).json()) as { rows: Row[] }).rows;
+    expect(await audit('decision=user_deleted')).toEqual([
+      expect.objectContaining({
+        actorName: 'admin',
+        detail: { userId: id, username: 'gone', registeredVia: null },
+      }),
+    ]);
+    const byGone = await audit('actor=GONE');
+    expect(byGone.map((r) => r.decision).sort()).toEqual(['login', 'mcp_token_created']);
+    expect(byGone.every((r) => r.actorName === 'gone')).toBe(true);
+    const csv = await (await t.b.get('/api/audit/export.csv?decision=mcp_token_created')).text();
+    expect(csv).toContain(`,user,${id},gone,`);
+  });
+
+  it('refuses to delete yourself, the last admin, the last user or the last SSO user', async () => {
+    const t = await withVictim();
+    const refused = async (id: string, error: string) =>
+      expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
+    await refused(t.me, 'self_delete');
+    expect((await t.b.del('/api/users/nobody')).status).toBe(404);
+    expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'last_user' }));
+
+    const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);
+    expect(() => t.ctx.users.delete(t.me)).toThrow(expect.objectContaining({ code: 'last_admin' }));
+
+    const sso = await t.add('sso');
+    t.ctx.db
+      .update(users)
+      .set({ oidcIssuer: 'https://idp.example.com', oidcSubject: 'sub-1' })
+      .where(eq(users.id, sso))
+      .run();
+    updateSettings(t.ctx.db, 'security', { disableLocalLogin: true });
+    await refused(sso, 'local_login_disabled');
+    expect((await t.b.del(`/api/users/${viewer}`)).status).toBe(204);
+    expect(t.ctx.users.get(sso)).toMatchObject({ oidcSubject: 'sub-1' });
   });
 });
 

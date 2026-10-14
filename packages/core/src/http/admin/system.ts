@@ -187,6 +187,18 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     }
     return c.json(ctx.users.toPublic(ctx.users.get(id)));
   });
+  app.delete('/api/users/:id', (c) => {
+    const id = c.req.param('id');
+    if (id === c.get('user').id) throw new ConflictError('self_delete', 'You cannot delete yourself');
+    ctx.users.assertDeletable(id);
+    // Credentials are revoked while their rows still name the user; the delete then clears the rest.
+    ctx.sessions.revokeUser(id);
+    ctx.oauth.revokeUserGrants(id, 'user_deleted', actor(c));
+    ctx.tokens.revokeCreatedBy(id, actor(c), 'user_deleted');
+    ctx.approvals.cancelForOwner(id, 'user_deleted');
+    ctx.users.delete(id, actor(c));
+    return c.body(null, 204);
+  });
   app.post('/api/users/:id/reset-totp', (c) => {
     ctx.users.resetTotp(c.req.param('id'), actor(c));
     // An approval browser's sign-in must not outlive the authenticator it was made with.
