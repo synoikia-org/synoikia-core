@@ -82,7 +82,8 @@ export interface PluginHarness {
   stop(): Promise<void>;
 }
 
-/** Copies what a release ships (manifest, package.json, the entry's top-level path) into `root/<id>`. */
+/** Copies what a release ships (manifest, package.json, the entry's top-level path, the instructions
+ * file) into `root/<id>`. */
 function stagePlugin(pluginDir: string, manifest: Manifest, root: string): string {
   const entry = path.join(pluginDir, manifest.entry);
   if (!existsSync(entry)) {
@@ -94,6 +95,12 @@ function stagePlugin(pluginDir: string, manifest: Manifest, root: string): strin
   for (const name of new Set(['manifest.json', 'package.json', top])) {
     const from = path.join(pluginDir, name);
     if (existsSync(from)) cpSync(from, path.join(dest, name), { recursive: true });
+  }
+  const from = manifest.instructions && path.join(pluginDir, manifest.instructions);
+  if (manifest.instructions && from && existsSync(from)) {
+    const to = path.join(dest, manifest.instructions);
+    mkdirSync(path.dirname(to), { recursive: true });
+    cpSync(from, to);
   }
   return dest;
 }

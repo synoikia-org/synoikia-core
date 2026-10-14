@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../src/app.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
 import { setRoleLevel } from '../src/catalog/role-levels.js';
-import { auditLog, operations, users } from '../src/db/schema.js';
+import { auditLog, operations, plugins, users } from '../src/db/schema.js';
 import { hostAllowed, LogThrottle, MAX_SESSIONS_PER_PRINCIPAL } from '../src/http/mcp/endpoint.js';
 import { createAdminApp } from '../src/http/admin-app.js';
 import { createMcpApp } from '../src/http/mcp-app.js';
@@ -195,6 +195,31 @@ describe('MCP endpoint with bearer tokens', () => {
       destructiveHint: true,
     });
     await client.close();
+  });
+
+  it('appends the plugin instructions after core’s own text, and leaves it unchanged without them', async () => {
+    const { token } = ctx.tokens.create({ name: 'e2e-notes', scope: [instanceId] }, { userId: adminId });
+    const core =
+      'Echo (test fixture) via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.';
+    const plain = await connect('echo', token);
+    expect(plain.getInstructions()).toBe(core);
+    const search = (await plain.listTools()).tools.find((t) => t.name === 'search')!.description!;
+    expect(search).not.toContain('from the plugin');
+    await plain.close();
+
+    const notes = '# Echo\n\nKeys are `echo.<verb>`; page with `offset`.';
+    ctx.db.update(plugins).set({ instructions: notes }).where(eq(plugins.pluginId, 'echo')).run();
+    try {
+      const client = await connect('echo', token);
+      const appended = `\n\nHow the Echo (test fixture) API works (from the plugin):\n${notes}`;
+      expect(client.getInstructions()).toBe(`${core}${appended}`);
+      expect((await client.listTools()).tools.find((t) => t.name === 'search')!.description).toBe(
+        `${search}${appended}`,
+      );
+      await client.close();
+    } finally {
+      ctx.db.update(plugins).set({ instructions: null }).where(eq(plugins.pluginId, 'echo')).run();
+    }
   });
 
   it('runs search and read-only execute, redacting secrets', async () => {

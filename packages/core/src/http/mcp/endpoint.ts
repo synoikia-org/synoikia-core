@@ -160,7 +160,12 @@ function describeResume(manifest: Manifest): string {
   ].join('\n');
 }
 
-function describeSearch(manifest: Manifest): string {
+/** The plugin's agent instructions (design §2.2), after core's own text and marked as the plugin's. */
+function withPluginNotes(text: string, manifest: Manifest, instructions: string | undefined): string {
+  return instructions ? `${text}\n\nHow the ${manifest.name} API works (from the plugin):\n${instructions}` : text;
+}
+
+function describeSearch(manifest: Manifest, instructions?: string): string {
   const ops = manifest.labels.operations.toLowerCase();
   const apis = [
     `catalog.find({ text?, group?, kind?, classification?: 'read'|'write'|'locked', includeDisabled?, limit? }) → ${ops} you can call (with includeDisabled, also the unavailable ones and why)`,
@@ -176,12 +181,13 @@ function describeSearch(manifest: Manifest): string {
       'guides.get(key) → best-practice guide; pass its best_practice_key in the params when calling that operation',
     );
   }
-  return [
+  const text = [
     `Search the ${manifest.name} ${ops} catalog. \`code\` is the body of an async JavaScript function; return a JSON-serializable value.`,
     'Available:',
     ...apis.map((a) => `- ${a}`),
     'Use this before execute to find operation keys and parameters. It never contacts the upstream.',
   ].join('\n');
+  return withPluginNotes(text, manifest, instructions);
 }
 
 function describeExecute(manifest: Manifest): string {
@@ -288,11 +294,15 @@ export class McpEndpoints {
 
   private buildServer(instanceId: string, identity: McpIdentity, publicBase: string, closed: AbortSignal): McpServer {
     const rt = () => this.ctx.instances.runtime(instanceId);
-    const manifest = rt().manifest;
+    const { manifest, instructions } = rt();
     const server = new McpServer(
       { name: `synoikia/${rt().slug}`, version: SERVER_VERSION },
       {
-        instructions: `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.`,
+        instructions: withPluginNotes(
+          `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.`,
+          manifest,
+          instructions,
+        ),
         capabilities: { extensions: { [MCP_APPS_EXTENSION]: {} } },
       },
     );
@@ -374,7 +384,7 @@ export class McpEndpoints {
       'search',
       {
         title: `Search ${manifest.name}`,
-        description: describeSearch(manifest),
+        description: describeSearch(manifest, instructions),
         inputSchema: input,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

@@ -322,6 +322,7 @@ export class InstanceManager {
       instanceId,
       slug: instance.slug,
       manifest: plugin.parsed,
+      ...(plugin.instructions ? { instructions: plugin.instructions } : {}),
       settings,
       redact: createInstanceRedactor({
         keyLists: [GLOBAL_SENSITIVE_KEYS, plugin.parsed.sensitiveKeys, settings.extraRedactKeys],

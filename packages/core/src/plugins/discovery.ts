@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { isSdkCompatible, parseManifest, SDK_VERSION } from '@synoikia/plugin-sdk';
+import {
+  decodeInstructions,
+  INSTRUCTIONS_MAX_BYTES,
+  isSdkCompatible,
+  parseManifest,
+  SDK_VERSION,
+} from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { eq } from 'drizzle-orm';
 import { ZodError } from 'zod';
@@ -12,7 +18,7 @@ import { plugins } from '../db/schema.js';
 /** Plugin discovery (design §4.1): the plugins installed in `DATA_DIR/plugins`. */
 
 export type DiscoveredPlugin =
-  | { status: 'ok'; dir: string; manifest: Manifest }
+  | { status: 'ok'; dir: string; manifest: Manifest; instructions?: string }
   | {
       status: 'invalid' | 'incompatible';
       dir: string;
@@ -24,6 +30,18 @@ export type DiscoveredPlugin =
 function explain(err: unknown): string {
   if (err instanceof ZodError) return err.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
   return err instanceof Error ? err.message : String(err);
+}
+
+/** The manifest's `instructions` file as text (design §2.2); throws when it is missing, outside the
+ * package, over the cap or not UTF-8 text. */
+function readInstructions(dir: string, realDir: string, file: string): string {
+  const full = path.join(dir, file);
+  if (!existsSync(full)) throw new Error('not found');
+  if (!realpathSync(full).startsWith(realDir + path.sep)) throw new Error('resolves outside the plugin directory');
+  const stat = statSync(full);
+  if (!stat.isFile()) throw new Error('is not a file');
+  if (stat.size > INSTRUCTIONS_MAX_BYTES) throw new Error(`is over ${INSTRUCTIONS_MAX_BYTES} bytes`);
+  return decodeInstructions(readFileSync(full));
 }
 
 export function inspectPluginDir(dir: string): DiscoveredPlugin {
@@ -55,6 +73,20 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
       error: 'entry resolves outside the plugin directory',
     };
   }
+  let instructions: string | undefined;
+  if (manifest.instructions) {
+    try {
+      instructions = readInstructions(dir, realDir, manifest.instructions);
+    } catch (err) {
+      return {
+        status: 'invalid',
+        dir,
+        manifest,
+        pluginId: manifest.id,
+        error: `instructions ${manifest.instructions}: ${explain(err)}`,
+      };
+    }
+  }
   if (!isSdkCompatible(manifest)) {
     return {
       status: 'incompatible',
@@ -64,7 +96,7 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
       error: `requires plugin SDK ${manifest.sdk}; core implements ${SDK_VERSION}`,
     };
   }
-  return { status: 'ok', dir, manifest };
+  return { status: 'ok', dir, manifest, ...(instructions ? { instructions } : {}) };
 }
 
 /** Scans the plugins directory's immediate subdirectories that contain a manifest.json. */
@@ -111,6 +143,7 @@ export function syncPluginRegistry(
         manifest: p.manifest ?? {},
         status: p.status,
         statusError: p.status === 'ok' ? null : p.error,
+        instructions: p.status === 'ok' ? (p.instructions ?? null) : null,
       };
       const prev = existing.get(pluginId);
       if (!prev) {
@@ -124,7 +157,7 @@ export function syncPluginRegistry(
             kind: 'plugin',
             decision: 'plugin_discovered',
             actorKind: 'system',
-            detail: { pluginId, ...fields, manifest: undefined, enabled: false },
+            detail: { pluginId, ...fields, manifest: undefined, instructions: undefined, enabled: false },
           },
           now,
         );

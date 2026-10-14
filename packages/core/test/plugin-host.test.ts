@@ -1,7 +1,8 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INSTRUCTIONS_MAX_BYTES } from '@synoikia/plugin-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../src/db/index.js';
 import { plugins } from '../src/db/schema.js';
@@ -252,6 +253,38 @@ describe('discovery', () => {
     });
     symlinkSync(path.join(FIXTURE, 'index.mjs'), path.join(dir, 'index.mjs'));
     expect(inspectPluginDir(dir)).toMatchObject({ status: 'invalid', error: expect.stringMatching(/outside/) });
+  });
+
+  it('reads the instructions file, and refuses a missing, oversized, escaping or binary one', () => {
+    const root = tmp();
+    const dir = path.join(root, 'echo');
+    cpSync(FIXTURE, dir, { recursive: true });
+    const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, instructions: 'docs/agent.md' }));
+    expect(inspectPluginDir(dir)).toMatchObject({ status: 'invalid', error: 'instructions docs/agent.md: not found' });
+
+    mkdirSync(path.join(dir, 'docs'));
+    const file = path.join(dir, 'docs', 'agent.md');
+    writeFileSync(file, '# Echo\n\nKeys are `echo.<verb>`.\n');
+    expect(inspectPluginDir(dir)).toMatchObject({ status: 'ok', instructions: '# Echo\n\nKeys are `echo.<verb>`.' });
+    const db = openDatabase(':memory:');
+    syncPluginRegistry(db, discoverPlugins(root));
+    expect(db.select().from(plugins).get()?.instructions).toBe('# Echo\n\nKeys are `echo.<verb>`.');
+
+    writeFileSync(file, 'x'.repeat(INSTRUCTIONS_MAX_BYTES + 1));
+    expect(inspectPluginDir(dir)).toMatchObject({ status: 'invalid', error: expect.stringMatching(/over 4096 bytes/) });
+    writeFileSync(file, Buffer.from([0x23, 0xc3, 0x28]));
+    expect(inspectPluginDir(dir)).toMatchObject({ status: 'invalid', error: expect.stringMatching(/UTF-8/) });
+    rmSync(file);
+    const outside = path.join(root, 'outside.md');
+    writeFileSync(outside, 'hello');
+    symlinkSync(outside, file);
+    expect(inspectPluginDir(dir)).toMatchObject({ status: 'invalid', error: expect.stringMatching(/outside/) });
+
+    rmSync(file);
+    writeFileSync(file, '');
+    syncPluginRegistry(db, discoverPlugins(root));
+    expect(db.select().from(plugins).get()).toMatchObject({ status: 'ok', instructions: null });
   });
 
   it('upserts the registry: new plugins start disabled, duplicate ids rejected, missing plugins kept', () => {

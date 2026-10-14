@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,4 +159,24 @@ describe('startPluginHarness failures', () => {
     await t.stop();
     expect(existsSync(staged)).toBe(false);
   });
+});
+
+describe('startPluginHarness with instructions', () => {
+  it('stages the instructions file the manifest names, as a release ships it', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'synoikia-echo-notes-'));
+    try {
+      cpSync(ECHO, dir, { recursive: true });
+      const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+      writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, instructions: 'instructions.md' }));
+      writeFileSync(path.join(dir, 'instructions.md'), 'Keys are `echo.<verb>`.\n');
+      const notes = await startPluginHarness({ pluginDir: dir, connection: {}, slug: 'echo-notes' });
+      try {
+        expect(notes.ctx.instances.runtime(notes.instance().id).instructions).toBe('Keys are `echo.<verb>`.');
+      } finally {
+        await notes.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
