@@ -157,6 +157,51 @@ describe('the Users page', () => {
     expect(dialog()?.querySelector('.alert.error')).toBeNull();
   });
 
+  it('deletes a user only after the username is typed, and never offers it for yourself', async () => {
+    const { calls } = fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/users': [me, olga],
+      'GET /api/roles': roles,
+      'DELETE /api/users/u2': new Response(null, { status: 204 }),
+    });
+    const { body } = await mountAt('/settings/users');
+    const deletes = [...document.body.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Delete');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.getAttribute('aria-describedby')).toContain('u2');
+
+    deletes[0]!.click();
+    await flushPromises();
+    expect(dialogTitle()).toBe('Delete olga?');
+    expect(dialog()?.textContent).toContain('pre-approval rules');
+    const submit = () => button('Delete', dialog()!)!;
+    expect(submit().disabled).toBe(true);
+    await body.get('input#d-confirm').setValue('Olga');
+    expect(submit().disabled).toBe(true);
+    await body.get('input#d-confirm').setValue('olga');
+    submit().click();
+    await flushPromises();
+    expect(calls.find((c) => c.method === 'DELETE')).toMatchObject({ path: '/api/users/u2' });
+    expect(dialog()).toBeNull();
+    expect(gets(calls, '/api/users')).toBe(2);
+    expect(gets(calls, '/api/roles')).toBe(2);
+  });
+
+  it('keeps the delete dialog open with core’s refusal', async () => {
+    fakeApi({
+      'GET /api/session': signedIn,
+      'GET /api/users': [me, olga],
+      'GET /api/roles': roles,
+      'DELETE /api/users/u2': json(409, { error: 'last_admin', message: 'You cannot delete the last enabled admin' }),
+    });
+    const { body } = await mountAt('/settings/users');
+    button('Delete')!.click();
+    await flushPromises();
+    await body.get('input#d-confirm').setValue('olga');
+    button('Delete', dialog()!)!.click();
+    await flushPromises();
+    expect(dialog()?.querySelector('.alert.error')?.textContent).toBe('You cannot delete the last enabled admin');
+  });
+
   it('sets a password from the dialog', async () => {
     const { calls } = fakeApi({
       'GET /api/session': signedIn,
