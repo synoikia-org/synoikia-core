@@ -1052,6 +1052,39 @@ describe('in-session form', () => {
     }
   });
 
+  it('approves on a bare Accept only where the endpoint is at ask, and never shows the form otherwise', async () => {
+    for (const [settings, expected, shown] of [
+      [{ formElicitationApprovals: 'ask' }, { ok: true, value: 'echo.set' }, 1],
+      [{}, { ok: false, error: { code: 'PERMISSION_DENIED' } }, 0],
+    ] as const) {
+      const t = await setup(settings);
+      t.setLevel('ask');
+      const asked: FormPromptRequest[] = [];
+      const prompts: ClientPrompts = {
+        form: async (req) => {
+          asked.push(req);
+          return { action: 'accept' };
+        },
+      };
+      expect(await t.exec(`return (await echo.call('echo.set', { name: 'x' })).key;`, prompts)).toMatchObject(expected);
+      expect(asked).toHaveLength(shown);
+    }
+  });
+
+  it('closes the open form when the approval settles another way', async () => {
+    const t = await setup();
+    const client = heldFormClient();
+    const { id, decision } = t.approvals.request(requestInput(t, { prompts: client.prompts }));
+    expect(client.asked[0]?.signal.aborted).toBe(false);
+    t.approvals.cancel(id, 'execution_ended');
+    await expect(decision).resolves.toMatchObject({ outcome: 'cancelled' });
+    expect(client.asked[0]?.signal.aborted).toBe(true);
+    // The rejection of the closed form changes nothing.
+    client.asked[0]!.fail(new Error('Request cancelled'));
+    await sleep(10);
+    expect(t.db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id)).get()?.status).toBe('cancelled');
+  });
+
   it('keeps waiting for the form when the call cannot park', async () => {
     const t = await setup({}, { formFallbackMs: 20 });
     let reserved = 0;
@@ -1129,13 +1162,51 @@ describe('in-session form', () => {
       });
     });
 
+    it('parks a later form of a parked run only after an approved first approval', async () => {
+      const t = await setup({ formElicitationApprovals: 'ask' }, { formFallbackMs: 50 });
+      t.setLevel('ask');
+      const deps = { ...t.deps, executions: new ExecutionRegistry() };
+      const client = heldFormClient();
+      const caller = { ...t.caller(client.prompts), parkable: true };
+      const code = `const out = [];
+        for (const name of ['a', 'b']) {
+          try { out.push((await echo.call('echo.set', { name })).params.name); } catch (e) { out.push(e.code); }
+        }
+        return out;`;
+      const parkedAudits = () => t.audits().filter((a) => a.decision === 'awaiting_approval');
+
+      // Approved first: the second form parks again on its own link.
+      const ok = (await executeCode(deps, t.rt, caller, code)) as PendingResult;
+      t.approvals.decideInSession(ok.approval!.approvalId, { approve: true, decidedBy: 'token:me' });
+      const second = (await resumeExecution(deps, t.rt, caller, ok.executionId)) as PendingResult;
+      expect(second).toMatchObject({ status: 'awaiting_approval', approval: { inSession: true } });
+      expect(second.approval!.approvalId).not.toBe(ok.approval!.approvalId);
+      expect(client.asked[1]?.signal.aborted).toBe(true);
+      expect(parkedAudits()).toHaveLength(2);
+      t.approvals.decideInSession(second.approval!.approvalId, { approve: true, decidedBy: 'token:me' });
+      expect(await resumeExecution(deps, t.rt, caller, ok.executionId)).toMatchObject({ ok: true, value: ['a', 'b'] });
+
+      // Denied first: the run may not park again, so it keeps waiting on the second form.
+      const denied = (await executeCode(deps, t.rt, caller, code)) as PendingResult;
+      t.approvals.decideInSession(denied.approval!.approvalId, { approve: false, decidedBy: 'token:me' });
+      await waitFor(() => client.asked.length === 4);
+      await sleep(150);
+      const held = client.asked[3]!;
+      expect(held.signal.aborted).toBe(false);
+      expect(parkedAudits()).toHaveLength(3);
+      held.answer({ action: 'accept' });
+      expect(await resumeExecution(deps, t.rt, caller, denied.executionId)).toMatchObject({
+        ok: true,
+        value: ['PERMISSION_DENIED', 'b'],
+      });
+    });
+
     it('never parks a form answered in time', async () => {
       const { t, client, result } = await start(300);
       await waitFor(() => client.asked.length === 1);
       client.asked[0]!.answer({ action: 'accept' });
       expect(await result).toMatchObject({ ok: true, value: 'echo.set' });
       await sleep(400);
-      expect(client.asked[0]!.signal.aborted).toBe(false);
       expect(t.audits().map((a) => a.decision)).toEqual(['human-approved']);
       expect(t.audits()[0]).toMatchObject({ decidedVia: 'elicitation', detail: { approvalChannel: 'form' } });
     });

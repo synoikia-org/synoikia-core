@@ -199,12 +199,15 @@ export class ApprovalService {
 
     this.db.insert(pendingApprovals).values(row).run();
     let fallback: NodeJS.Timeout | undefined;
+    // Aborted when the approval settles or parks, so the client closes the form.
+    const form = channel === 'form' ? new AbortController() : undefined;
     const decision = new Promise<Decision>((resolve) => {
       const timer = setTimeout(() => settle({ outcome: 'timed_out' }), input.timeoutMs);
       const settle = (d: Decision) => {
         if (!this.live.delete(id)) return; // first decision wins
         clearTimeout(timer);
         clearTimeout(fallback);
+        form?.abort();
         const status = d.outcome === 'timed_out' ? 'timed_out' : d.outcome;
         this.db
           .update(pendingApprovals)
@@ -235,15 +238,14 @@ export class ApprovalService {
     if (channel === 'url') this.offerUrl(id, row.expiresAt, input);
     else if (channel === 'link') offerLink(input.park!);
     else {
-      const form = new AbortController();
-      this.offerForm(id, input, form.signal);
+      this.offerForm(id, input, form!.signal);
       const park = input.park;
       // A client may advertise forms and never show them (§5.6): the same approval moves to the link.
       if (park)
         fallback = setTimeout(() => {
           if (!this.live.has(id) || park.reserve()) return;
           channel = 'link';
-          form.abort();
+          form!.abort();
           offerLink(park, { formFallback: true });
         }, this.formFallbackMs);
     }
