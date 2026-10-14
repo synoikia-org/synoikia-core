@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  DEFAULT_MAX_REQUEST_BODY_SIZE,
+  readRequestBody,
+  requestBodyTooLargeMessage,
+} from '@modelcontextprotocol/sdk/server/requestBody.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -61,18 +66,21 @@ const InitializeMessage = z.object({
     .catch(undefined),
 });
 
-/** Read from a copy of the body before the transport parses it, so a refused client never gets a session. */
-async function initializeClientInfo(req: Request) {
-  const body: unknown = await req
-    .clone()
-    .json()
-    .catch(() => undefined);
-  // The transport also accepts an initialize as the only message of a batch.
-  for (const raw of Array.isArray(body) ? body : [body]) {
-    const msg = InitializeMessage.safeParse(raw);
-    if (msg.success) return { info: msg.data.params?.clientInfo ?? {} };
+/** The clientInfo of an initialize body; the transport also takes one as a batch of one message. */
+function initializeClientInfo(body: unknown) {
+  const msg = InitializeMessage.safeParse(Array.isArray(body) && body.length === 1 ? body[0] : body);
+  return msg.success ? { info: msg.data.params?.clientInfo ?? {} } : undefined;
+}
+
+/** Reads the body once, with the transport's own size limit and answers, so it can be checked first. */
+async function readJsonBody(req: Request): Promise<{ body: unknown } | { status: 400 | 413; message: string }> {
+  try {
+    const read = await readRequestBody(req, DEFAULT_MAX_REQUEST_BODY_SIZE);
+    if (read.tooLarge) return { status: 413, message: requestBodyTooLargeMessage(DEFAULT_MAX_REQUEST_BODY_SIZE) };
+    return { body: JSON.parse(read.text) as unknown };
+  } catch {
+    return { status: 400, message: 'Parse error: Invalid JSON' };
   }
-  return undefined;
 }
 
 const jsonRpcError = (code: number, message: string) => ({
@@ -588,10 +596,15 @@ export class McpEndpoints {
       this.refused(c, slug, 400, 'no Mcp-Session-Id on a non-POST request', { client });
       return c.json(jsonRpcError(-32000, 'Missing Mcp-Session-Id'), 400);
     }
-    const init = await initializeClientInfo(c.req.raw);
+    const read = await readJsonBody(c.req.raw);
+    if ('status' in read) {
+      const response = c.json(jsonRpcError(read.status === 413 ? -32000 : -32700, read.message), read.status);
+      await this.logTransportError(c, slug, response, client);
+      return response;
+    }
+    const init = initializeClientInfo(read.body);
     const clientName = init?.info.name;
     if (init) {
-      if (clientName) this.ctx.seenClients.record(clientName, init.info.version);
       const refusal = this.refuseClient(c, slug, instance.id, auth.identity, clientName);
       if (refusal) return refusal;
     }
@@ -627,8 +640,9 @@ export class McpEndpoints {
       onsessionclosed: (id) => void this.closeSession(id),
     });
     await server.connect(transport);
-    const response = await transport.handleRequest(c.req.raw);
+    const response = await transport.handleRequest(c.req.raw, { parsedBody: read.body });
     await this.logTransportError(c, slug, response, client);
+    if (transport.sessionId && clientName) this.ctx.seenClients.record(clientName, init?.info.version, client);
     if (!transport.sessionId) {
       // Not a valid initialize request: nothing to keep.
       await transport.close().catch(() => undefined);

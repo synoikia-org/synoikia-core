@@ -816,10 +816,9 @@ describe('client policy', () => {
         { slug: 'echo', clientName: null, mode: 'allow' },
         { slug: 'echo', clientName: null, mode: 'allow' },
       ]);
-      expect(ctx.seenClients.list().slice(0, 2)).toMatchObject([
-        { name: 'other-client', version: '2' },
-        { name: 'listed-client', version: '1' },
-      ]);
+      // Only clients that got a session are seen.
+      expect(ctx.seenClients.list()[0]).toMatchObject({ name: 'listed-client', version: '1', client: 'token:policy' });
+      expect(ctx.seenClients.list().map((c) => c.name)).not.toContain('other-client');
     } finally {
       policy('off');
     }
@@ -858,6 +857,66 @@ describe('client policy', () => {
       config.TRUST_PROXY = savedProxy;
       policy('off');
       await client.close().catch(() => undefined);
+    }
+  });
+
+  it('reads the body with the transport limits, and records no client a session did not open', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-body', scope: [instanceId] }, { userId: adminId });
+    const post = (body: string, accept = 'application/json, text/event-stream') =>
+      fetch(`${base}/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept, authorization: `Bearer ${token}` },
+        body,
+      });
+    const init = (name: string, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name, version: '1' }, ...extra },
+      });
+    const before = refusals().length;
+    try {
+      policy('deny', ['huge-client']);
+      const huge = await post(init('huge-client', { pad: 'x'.repeat(4 * 1024 * 1024) }));
+      expect(huge.status).toBe(413);
+      expect(huge.headers.get('mcp-session-id')).toBeNull();
+      const batch = Array.from({ length: 101 }, (_, i) => ({ jsonrpc: '2.0', method: 'notifications/x', id: i }));
+      expect((await post(JSON.stringify(batch))).status).toBe(400);
+      expect((await post('{not json')).status).toBe(400);
+      expect((await post(init('wrong-accept'), 'application/json')).status).toBe(406);
+      expect(refusals().length).toBe(before);
+      const seen = ctx.seenClients.list().map((c) => c.name);
+      expect(seen).not.toContain('huge-client');
+      expect(seen).not.toContain('wrong-accept');
+    } finally {
+      policy('off');
+    }
+  });
+
+  it('refuses GET and DELETE on a session once its client is denied', async () => {
+    const { token } = ctx.tokens.create({ name: 'policy-methods', scope: [instanceId] }, { userId: adminId });
+    const open = async () =>
+      (await initAs(token, { name: 'later-denied', version: '1' })).headers.get('mcp-session-id')!;
+    const [forGet, forDelete] = [await open(), await open()];
+    const on = (method: string, sessionId: string) =>
+      fetch(`${base}/echo`, {
+        method,
+        headers: {
+          accept: 'text/event-stream',
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': sessionId,
+          'mcp-protocol-version': '2025-06-18',
+        },
+      });
+    try {
+      policy('deny', ['later-denied']);
+      expect((await on('GET', forGet)).status).toBe(403);
+      expect((await on('DELETE', forDelete)).status).toBe(403);
+      policy('off');
+      expect((await on('DELETE', forDelete)).status).toBe(404);
+    } finally {
+      policy('off');
     }
   });
 });

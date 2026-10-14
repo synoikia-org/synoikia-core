@@ -76,6 +76,7 @@ describe('roles: admin API', () => {
         !open.some((p) => r.path === p || r.path.startsWith(`${p}/`)),
     );
     expect(routes.length).toBeGreaterThan(40);
+    expect(routes.map((r) => r.path)).toContain('/api/settings/mcp/clients-seen');
     for (const r of routes) {
       const res = await t.user.req(r.method, r.path.replace(/:[a-zA-Z]+/g, 'x'), r.method === 'GET' ? undefined : {});
       expect({ route: `${r.method} ${r.path}`, status: res.status }).toEqual({

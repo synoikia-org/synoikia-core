@@ -347,8 +347,8 @@ describe('the Client auth settings', () => {
       'GET /api/overview': overview,
       'GET /api/settings': settings,
       'GET /api/settings/mcp/clients-seen': [
-        { name: 'seen-client', version: '2.1', lastSeen: new Date().toISOString() },
-        { name: 'typed-client', version: '', lastSeen: new Date().toISOString() },
+        { name: 'seen-client', version: '2.1', client: 'token:laptop', lastSeen: new Date().toISOString() },
+        { name: 'typed-client', version: '', client: '', lastSeen: new Date().toISOString() },
       ],
       'PUT /api/settings/mcp': (b: unknown) => b,
     });
@@ -357,7 +357,7 @@ describe('the Client auth settings', () => {
     const card = () => wrapper.get('[data-card="clients"]');
     expect(card().get('[data-warn="client-names"]').text()).toContain('not a security boundary');
     expect(card().find('#m-names').exists()).toBe(false);
-    expect(card().get('ul.seen-list li').text()).toMatch(/^seen-client\s*2\.1 · just now/);
+    expect(card().get('ul.seen-list li').text()).toMatch(/^seen-client\s*2\.1 · from token:laptop · just now/);
     const mode = (label: string) =>
       card()
         .findAll('label')

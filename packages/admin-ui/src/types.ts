@@ -388,6 +388,8 @@ export type ClientPolicyMode = 'off' | 'allow' | 'deny';
 export interface SeenClient {
   name: string;
   version: string;
+  /** Who sent it: the principal label of the caller. */
+  client: string;
   lastSeen: string;
 }
 

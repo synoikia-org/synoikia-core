@@ -191,7 +191,9 @@ const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
         <ul v-else class="small seen-list">
           <li v-for="c in clientsSeen.data.value" :key="c.name">
             <span class="mono">{{ c.name }}</span>
-            <span class="muted">{{ [c.version, ago(c.lastSeen)].filter(Boolean).join(' · ') }}</span>
+            <span class="muted">{{
+              [c.version, c.client && `from ${c.client}`, ago(c.lastSeen)].filter(Boolean).join(' · ')
+            }}</span>
             <button
               v-if="form.clientPolicy.mode !== 'off' && !listed(c.name)"
               class="btn btn-sm"
