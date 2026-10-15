@@ -11,6 +11,7 @@ Core installs each plugin from a plugin repository (§4.2) into `DATA_DIR/plugin
 - validates `manifest.json` against the SDK schema and the `sdk` range;
 - writes or updates a `plugins` row;
 - marks a plugin with a manifest that is not valid as `invalid`, with an error message, and does not load it;
+- reads the instructions file (§3.2) into the `plugins` row. A file that does not pass the checks of §3.2 makes the plugin `invalid`. When the text of an existing plugin changes, core records a `plugin_instructions_changed` audit event with the SHA-256 of the text before and after, not the text. The plugin stays enabled;
 - marks a plugin whose directory is missing as `invalid`, and keeps its instances and history.
 
 **Enabled flag.** Each plugin has an `enabled` flag on the Plugins page. A new plugin starts disabled. The admin creates instances one by one. If the admin disables a plugin, core stops all its instances, and their endpoints return 503. Core keeps their configuration and history.
@@ -48,7 +49,7 @@ The admin adds a repository by URL on the Plugins page. The URL points to an `in
 - **Index refresh.** Core fetches the index when the admin adds the repository, when the admin clicks "Refresh", and each day. After a failed fetch, core tries again each hour. Core keeps the index in `plugin_repos.index_cache`.
 - **No automatic updates.** The Plugins page shows the plugins of all repositories, the installed version, and available updates. Each install or update is an admin action on one pinned version.
 - **Review on enable.** A new install starts disabled. When the admin enables it, they accept its binding, capabilities, sensitive keys and network hosts. If an update changes one of these, core disables the plugin again. Its endpoints stop, and the audit event lists the changes. Other updates keep the enabled state.
-- **Package contents.** A tarball holds a prebuilt, self-contained package: `manifest.json`, the entry, and all that the entry imports, in the package directory. Usually this is one bundle made with esbuild. Core never runs `npm install` or build scripts.
+- **Package contents.** A tarball holds a prebuilt, self-contained package: `manifest.json`, the entry, all that the entry imports, and the instructions file (§3.2) if the manifest names one, in the package directory. Usually this is one bundle made with esbuild. Core never runs `npm install` or build scripts.
   - Under the permission model (§4.4), the child can read only its own directory. An entry that imports from a shared `node_modules` does not load.
   - Discovery refuses an entry whose real path (after symlinks) is outside the directory.
   - An archive can be flat or have one top-level `package/` directory.
@@ -105,7 +106,7 @@ await h.execute(`return await acme.call('scene.delete', { id: 'evening' })`, {
 
 `startPluginHarness`:
 
-- copies the release files of the plugin (`manifest.json`, `package.json`, and the top-level path of the entry) to `plugins/<id>` in a temporary data directory;
+- copies the release files of the plugin (`manifest.json`, `package.json`, the top-level path of the entry, and the instructions file) to `plugins/<id>` in a temporary data directory;
 - starts core on that directory with an in-memory database, enables the plugin, creates an instance and syncs it;
 - runs the bundle as a child under the permission model, as in production;
 - fails with an error if the entry is not built. Plugin `test` scripts build first.

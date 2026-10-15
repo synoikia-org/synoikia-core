@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkManifest } from '@synoikia/plugin-sdk';
@@ -175,6 +175,19 @@ describe('check', () => {
     ]);
     writeFileSync(path.join(dir, 'plugin.yaml'), 'rules: [{ match: x, lockd: true }]\n');
     expect(checkPlugin(dir)[0]).toMatch(/^plugin.yaml: /);
+    rmSync(path.join(dir, 'plugin.yaml'));
+    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, instructions: 'instructions.md' }));
+    expect(checkPlugin(dir)).toEqual(['manifest.json: instructions instructions.md: not found']);
+    writeFileSync(path.join(dir, 'instructions.md'), 'x'.repeat(4097));
+    expect(checkPlugin(dir)).toEqual(['manifest.json: instructions instructions.md: is over 4096 bytes']);
+    writeFileSync(path.join(dir, 'instructions.md'), 'Keys are `GET /path`.\n');
+    expect(checkPlugin(dir)).toEqual([]);
+    writeFileSync(path.join(dir, 'notes.md'), 'Keys are verbs.\n');
+    rmSync(path.join(dir, 'instructions.md'));
+    symlinkSync(path.join(dir, 'notes.md'), path.join(dir, 'instructions.md'));
+    expect(checkPlugin(dir)).toEqual(['manifest.json: instructions instructions.md: is a symbolic link']);
+    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, instructions: '../x.md' }));
+    expect(checkPlugin(dir)[0]).toMatch(/^manifest: instructions: /);
     expect(checkPlugin(path.join(root, 'nope'))[0]).toMatch(/^manifest.json: /);
   });
 });
@@ -252,10 +265,17 @@ describe('repo', () => {
     ]) {
       const dir = path.join(root, 'plugins', id!);
       mkdirSync(path.join(dir, 'dist'), { recursive: true });
-      writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(packManifest(id!, version!)));
+      const instructions = id === 'two' ? { instructions: 'docs/agent.md' } : {};
+      writeFileSync(
+        path.join(dir, 'manifest.json'),
+        JSON.stringify({ ...packManifest(id!, version!), ...instructions }),
+      );
       writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: `@acme/plugin-${id}`, version }));
       writeFileSync(path.join(dir, 'dist/index.js'), `// ${id}\n`);
+      writeFileSync(path.join(dir, 'README.md'), 'not shipped\n');
     }
+    mkdirSync(path.join(root, 'plugins/two/docs'));
+    writeFileSync(path.join(root, 'plugins/two/docs/agent.md'), 'Keys are verbs.\n');
     const built: string[] = [];
     const logs: string[] = [];
     const tool = createRepoTool({ root, buildPlugin: (d) => built.push(path.basename(d)), log: (l) => logs.push(l) });
@@ -263,6 +283,19 @@ describe('repo', () => {
     const first = tool.pack();
     expect(first.map((r) => r.file)).toEqual(['one-1.0.0.tgz', 'two-2.0.0.tgz']);
     expect(built).toEqual(['one', 'two']);
+    const listing = (file: string) =>
+      execFileSync('tar', ['-tzf', path.join(tool.out, file)], { encoding: 'utf8' })
+        .trim()
+        .split('\n')
+        .sort();
+    expect(listing('one-1.0.0.tgz')).toEqual(['dist/', 'dist/index.js', 'manifest.json', 'package.json']);
+    expect(listing('two-2.0.0.tgz')).toEqual([
+      'dist/',
+      'dist/index.js',
+      'docs/agent.md',
+      'manifest.json',
+      'package.json',
+    ]);
     const again = tool.pack();
     expect(again.map((r) => r.sha256)).toEqual(first.map((r) => r.sha256));
 

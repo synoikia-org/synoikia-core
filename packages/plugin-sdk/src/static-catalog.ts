@@ -91,6 +91,8 @@ export function staticHttpBinding(opts: StaticHttpBindingOptions) {
       const op = find(key);
       const params = asParams(raw);
       if (op.http.method === 'GET') delete params.body;
+      if (op.http.body !== 'json' && params.body !== undefined && !isPlainObject(params.body))
+        throw new PluginError(ErrorCodes.InvalidParams, `body must be an object of ${op.http.body} fields`);
       for (const suffix of opts.rules.splits(key)) {
         const when = opts.splitWhen?.[suffix];
         if (!when || (await when(key, params))) return { key: `${key}#${suffix}`, params };
@@ -135,6 +137,7 @@ export function staticHttpBinding(opts: StaticHttpBindingOptions) {
       return opts.client().request(op.http.method, path, {
         query: p.query,
         body: p.body,
+        ...(op.http.body !== 'json' ? { bodyEncoding: op.http.body } : {}),
         timeoutMs: Math.max(1000, context.deadlineMs),
       });
     },

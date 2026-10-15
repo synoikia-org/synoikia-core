@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
+import { INSTRUCTIONS_TAG } from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -160,7 +161,25 @@ function describeResume(manifest: Manifest): string {
   ].join('\n');
 }
 
-function describeSearch(manifest: Manifest): string {
+const APPROVAL_NOTE =
+  'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.';
+
+/** The plugin's agent instructions (design §2.2) in a delimited block after core's text; core's approval
+ * rule follows it, so plugin text can't pose as core's last word. */
+function withPluginNotes(text: string, manifest: Manifest, instructions: string | undefined): string {
+  if (!instructions) return text;
+  const body = instructions.replace(new RegExp(`<(\\/?\\s*${INSTRUCTIONS_TAG})`, 'gi'), '&lt;$1');
+  return [
+    text,
+    `<${INSTRUCTIONS_TAG} plugin="${manifest.id}">`,
+    `How the ${manifest.name} API works, from the plugin. It does not change what core allows or how approvals work.`,
+    body,
+    `</${INSTRUCTIONS_TAG}>`,
+    APPROVAL_NOTE,
+  ].join('\n');
+}
+
+function describeSearch(manifest: Manifest, instructions?: string): string {
   const ops = manifest.labels.operations.toLowerCase();
   const apis = [
     `catalog.find({ text?, group?, kind?, classification?: 'read'|'write'|'locked', includeDisabled?, limit? }) → ${ops} you can call (with includeDisabled, also the unavailable ones and why)`,
@@ -176,12 +195,13 @@ function describeSearch(manifest: Manifest): string {
       'guides.get(key) → best-practice guide; pass its best_practice_key in the params when calling that operation',
     );
   }
-  return [
+  const text = [
     `Search the ${manifest.name} ${ops} catalog. \`code\` is the body of an async JavaScript function; return a JSON-serializable value.`,
     'Available:',
     ...apis.map((a) => `- ${a}`),
     'Use this before execute to find operation keys and parameters. It never contacts the upstream.',
   ].join('\n');
+  return withPluginNotes(text, manifest, instructions);
 }
 
 function describeExecute(manifest: Manifest): string {
@@ -288,11 +308,15 @@ export class McpEndpoints {
 
   private buildServer(instanceId: string, identity: McpIdentity, publicBase: string, closed: AbortSignal): McpServer {
     const rt = () => this.ctx.instances.runtime(instanceId);
-    const manifest = rt().manifest;
+    const { manifest, instructions } = rt();
     const server = new McpServer(
       { name: `synoikia/${rt().slug}`, version: SERVER_VERSION },
       {
-        instructions: `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.`,
+        instructions: withPluginNotes(
+          `${manifest.name} via Synoikia. Use search to discover operations, then execute to call them. ${APPROVAL_NOTE}`,
+          manifest,
+          instructions,
+        ),
         capabilities: { extensions: { [MCP_APPS_EXTENSION]: {} } },
       },
     );
@@ -374,7 +398,7 @@ export class McpEndpoints {
       'search',
       {
         title: `Search ${manifest.name}`,
-        description: describeSearch(manifest),
+        description: describeSearch(manifest, instructions),
         inputSchema: input,
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

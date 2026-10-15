@@ -346,6 +346,127 @@ describe('restBinding against an HTTP upstream', () => {
   });
 });
 
+describe('form request bodies', () => {
+  let server: http.Server;
+  let client: HttpJsonClient;
+  const got: { type?: string; body: string }[] = [];
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c: Buffer) => (body += c.toString()));
+      req.on('end', () => {
+        got.push({ type: req.headers['content-type'], body });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    client = new HttpJsonClient({
+      baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      service: 'Acme',
+    });
+  });
+  afterAll(() => new Promise((r) => server.close(r)));
+  const ctx = { callId: 'c', deadlineMs: 5000 };
+  const fields = { type: 'object', properties: { hashes: { type: 'string' } } };
+
+  it('sends the form type an OpenAPI operation takes, and JSON when the spec offers JSON', async () => {
+    const formRules = compileRules(parsePluginSettings({}));
+    const spec = {
+      openapi: '3.0.3',
+      paths: {
+        '/pause': { post: { requestBody: { content: { 'application/x-www-form-urlencoded': { schema: fields } } } } },
+        '/add': { post: { requestBody: { content: { 'multipart/form-data': { schema: fields } } } } },
+        '/both': {
+          post: {
+            requestBody: {
+              content: { 'application/x-www-form-urlencoded': { schema: fields }, 'application/json': { schema: {} } },
+            },
+          },
+        },
+      },
+    };
+    const formCatalog = buildOpenApiCatalog(spec, { service: 'Acme', rules: formRules });
+    expect(formCatalog.operations.find((o) => o.key === 'POST /pause')?.paramsSchema).toEqual({
+      type: 'object',
+      properties: { body: fields },
+    });
+    expect(formCatalog.byVerb.get('POST')!.map((o) => [o.template, o.body])).toEqual([
+      ['/pause', 'form'],
+      ['/add', 'multipart'],
+      ['/both', undefined],
+    ]);
+    const b = restBinding({
+      namespace: 'acme',
+      service: 'Acme',
+      rules: formRules,
+      catalog: async () => formCatalog,
+      client: () => client,
+    });
+    await expect(
+      b.resolveOperation({ fn: 'request', args: [{ method: 'POST', path: '/pause', body: 'hashes=x' }] }),
+    ).rejects.toMatchObject({ code: ErrorCodes.InvalidParams });
+    for (const path of ['/pause', '/add', '/both']) {
+      const { key, params } = await b.resolveOperation({
+        fn: 'request',
+        args: [{ method: 'POST', path, body: { hashes: 'a|b' } }],
+      });
+      await b.invoke({ key, params, context: ctx });
+    }
+    expect(got.at(-3)).toEqual({ type: 'application/x-www-form-urlencoded', body: 'hashes=a%7Cb' });
+    expect(got.at(-2)!.type).toMatch(/^multipart\/form-data; boundary=/);
+    expect(got.at(-2)!.body).toContain('name="hashes"\r\n\r\na|b\r\n');
+    expect(got.at(-1)).toEqual({ type: 'application/json', body: '{"hashes":"a|b"}' });
+  });
+
+  it('sends the encoding a static operation declares', async () => {
+    const srules = compileRules(
+      parsePluginSettings({
+        operations: [
+          {
+            key: 'torrents.add',
+            group: 'torrents',
+            classification: 'write',
+            summary: 'Add',
+            http: { method: 'POST', path: '/torrents/add', body: 'multipart' },
+          },
+          {
+            key: 'torrents.stop',
+            group: 'torrents',
+            classification: 'write',
+            summary: 'Stop',
+            http: { method: 'POST', path: '/torrents/stop', body: 'form' },
+          },
+        ],
+      }),
+    );
+    expect(srules.settings.operations.map((o) => o.http?.body)).toEqual(['multipart', 'form']);
+    expect(() =>
+      parsePluginSettings({
+        operations: [
+          {
+            key: 'x',
+            group: 'x',
+            classification: 'write',
+            summary: 'X',
+            http: { method: 'POST', path: '/x', body: 'xml' },
+          },
+        ],
+      }),
+    ).toThrow();
+    const b = staticHttpBinding({ namespace: 'acme', service: 'Acme', rules: srules, client: () => client });
+    await expect(b.resolveOperation({ fn: 'call', args: ['torrents.stop', { body: ['a'] }] })).rejects.toThrow(
+      'body must be an object of form fields',
+    );
+    const stop = await b.resolveOperation({ fn: 'call', args: ['torrents.stop', { body: { hashes: 'all' } }] });
+    await b.invoke({ ...stop, context: ctx });
+    expect(got.at(-1)).toEqual({ type: 'application/x-www-form-urlencoded', body: 'hashes=all' });
+    const add = await b.resolveOperation({ fn: 'call', args: ['torrents.add', { body: { urls: 'magnet:?a' } }] });
+    await b.invoke({ ...add, context: ctx });
+    expect(got.at(-1)!.body).toContain('name="urls"\r\n\r\nmagnet:?a\r\n');
+  });
+});
+
 describe('static catalogs', () => {
   const srules = compileRules(
     parsePluginSettings({

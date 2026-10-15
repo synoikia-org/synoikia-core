@@ -36,6 +36,7 @@ Each plugin has a `manifest.json`. The SDK (`@synoikia/plugin-sdk`) validates it
   "sdk": "^0.2.2", // plugin contract range (§3.3)
   "description": "Search/execute over the Acme Hub API.",
   "entry": "dist/index.js",
+  "instructions": "instructions.md", // optional agent instructions (Markdown)
   "binding": {
     "namespace": "acme", // sandbox global: acme.*
     "functions": ["call"], // acme.call(...)
@@ -87,6 +88,12 @@ Each plugin has a `manifest.json`. The SDK (`@synoikia/plugin-sdk`) validates it
   - `scopes` are the dimensions that a rule can select targets by. Each scope has a lowercase `key`, a `label`, and optionally a `registryKind`.
   - Each target that `resolveTargets` returns gives its value for each scope in `scopes[key]`.
   - A `$targets` match field selects the scopes it offers (`options.scopes`) and can narrow suggestions (`options.filter`). The manifest is not valid if either names an undeclared scope.
+- **Agent instructions.** `instructions` (optional) names a Markdown file in the package. The file tells the agent how the upstream API works. Core adds its text to the MCP instructions of each endpoint of the plugin (§2.2).
+  - The path is relative, contains only letters, digits, `_`, `.`, `-` and `/`, and ends in `.md`. A `..` segment or an absolute path is not valid.
+  - The file is UTF-8 text of 4096 bytes (`INSTRUCTIONS_MAX_BYTES`) or less. Core never truncates it.
+  - The text has no control characters other than tab, line feed and carriage return. It has no invisible format characters (Unicode `Cf`, such as bidi and zero-width marks), no U+2028 or U+2029, and no `plugin-notes` tag.
+  - The file is not a symbolic link, and its real path is in the package directory.
+  - The SDK function `readInstructionsFile` does these checks. `synoikia-plugin check` and discovery (§4.1) use it.
 - **Match profiles.** A match profile is a reusable set of fields that pre-approval rules can match (§5.2). An operation refers to one by name.
 
 ## 3.3 RPC contract

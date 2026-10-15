@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { baseKey, splitSuffix } from './catalog-helpers.js';
+import { BODY_ENCODINGS } from './http-client.js';
 import { SensitiveResultSchema } from './operations.js';
 import type { OperationDescriptor, ResolvedTarget, SensitiveResult } from './operations.js';
 import { isPlainObject, stringOr } from './plugin-kit.js';
@@ -86,7 +87,12 @@ export const StaticOperationSchema = z
     paramsSchema: z.record(z.string(), z.unknown()).optional(),
     /** For `staticCatalog`'s HTTP binding: the request this operation makes; `{name}` comes from `params.path`. */
     http: z
-      .object({ method: z.enum(VERBS), path: z.string().startsWith('/') })
+      .object({
+        method: z.enum(VERBS),
+        path: z.string().startsWith('/'),
+        /** How `params.body` is sent: JSON (default), urlencoded form, or multipart text fields. */
+        body: z.enum(BODY_ENCODINGS).default('json'),
+      })
       .strict()
       .optional(),
   })

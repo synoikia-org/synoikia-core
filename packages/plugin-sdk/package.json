@@ -1,6 +1,6 @@
 {
   "name": "@synoikia/plugin-sdk",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Manifest schema, RPC contract and child-side runtime for Synoikia plugins",
   "license": "MIT",
   "repository": {

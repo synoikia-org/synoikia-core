@@ -107,6 +107,8 @@ export const plugins = sqliteTable('plugins', {
   manifest: json('manifest').notNull(),
   status: text('status', { enum: ['ok', 'invalid', 'incompatible'] }).notNull(),
   statusError: text('status_error'),
+  /** Text of the manifest's `instructions` file, read by discovery (design §2.2). */
+  instructions: text('instructions'),
   enabled: flag('enabled').notNull().default(false),
   installedAt: createdAt(),
 });

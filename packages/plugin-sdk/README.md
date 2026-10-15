@@ -5,9 +5,10 @@ The plugin side of [Synoikia](https://github.com/via-justa/synoikia-core): the m
 | Module                                                  | What                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `manifest`, `rpc`, `operations`, `run-plugin`, `errors` | The contract core validates every plugin against                                      |
+| `instructions`                                          | The manifest's agent instructions file: `readInstructionsFile`, the 4 KiB cap         |
 | `plugin-kit`                                            | `definePlugin` lifecycle, `lazy` caches, small guards                                 |
 | `rules`                                                 | `plugin.yaml`: `PluginSettingsSchema`, `parsePluginSettings`, `compileRules`          |
-| `http-client`, `url`, `upstream-errors`                 | `HttpJsonClient`, base URLs, upstream error mapping                                   |
+| `http-client`, `url`, `upstream-errors`                 | `HttpJsonClient` (JSON, form and multipart bodies), base URLs, upstream error mapping |
 | `pending`                                               | `PendingRequests`, `singleFlight` for socket protocols                                |
 | `openapi`, `static-catalog`                             | Catalogs from an OpenAPI spec or from `plugin.yaml` `operations:`, and their bindings |
 | `conformance`                                           | `checkConformance`, `checkManifest`                                                   |

@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 import { baseKey, toGroup } from './catalog-helpers.js';
 import { ErrorCodes, PluginError } from './errors.js';
-import type { HttpJsonClient } from './http-client.js';
+import type { BodyEncoding, HttpJsonClient } from './http-client.js';
 import { queryString } from './http-client.js';
 import type { OperationDescriptor, ResolvedTarget, SummarizeResult } from './operations.js';
 import { isPlainObject, truncate } from './plugin-kit.js';
@@ -40,6 +40,8 @@ export interface RestOperation {
   template: string;
   /** Template segments; `{name}` marks a path parameter. */
   segments: string[];
+  /** Set when the spec takes the body only as a form (`application/x-www-form-urlencoded`, `multipart/form-data`). */
+  body?: Exclude<BodyEncoding, 'json'>;
 }
 
 export interface OpenApiCatalog {
@@ -125,7 +127,22 @@ export function resolveRefs(
   return out;
 }
 
-/** `{ path, query, body }`, the shape the binding produces, as one JSON schema. */
+const FORM_TYPES = { 'application/x-www-form-urlencoded': 'form', 'multipart/form-data': 'multipart' } as const;
+
+/** The body's schema from `application/json`, else from a form type when the spec offers no JSON at all. */
+function bodyMedia(content: Record<string, { schema?: unknown }> | undefined) {
+  if (!content) return undefined;
+  if (content['application/json']) return { schema: content['application/json'].schema };
+  const types = Object.keys(content);
+  if (types.some((t) => /^application\/(.+\+)?json\b/i.test(t))) return undefined;
+  for (const [type, encoding] of Object.entries(FORM_TYPES)) {
+    const t = types.find((k) => k.toLowerCase().split(';')[0]!.trim() === type);
+    if (t) return { schema: content[t]?.schema, encoding };
+  }
+  return undefined;
+}
+
+/** `{ path, query, body }`, the shape the binding produces, as one JSON schema, and the body's encoding. */
 function paramsSchema(spec: Record<string, unknown>, pathParams: unknown[], op: OpenApiOperation, budget: RefBudget) {
   const groups: Record<'path' | 'query', { properties: Record<string, unknown>; required: string[] }> = {
     path: { properties: {}, required: [] },
@@ -158,9 +175,12 @@ function paramsSchema(spec: Record<string, unknown>, pathParams: unknown[], op: 
   }
   const body = resolveRefs(spec, op.requestBody, 0, [], budget) as
     { content?: Record<string, { schema?: unknown }> } | undefined;
-  const bodySchema = body?.content?.['application/json']?.schema;
-  if (bodySchema) properties.body = bodySchema;
-  return Object.keys(properties).length ? { type: 'object', properties } : undefined;
+  const media = bodyMedia(body?.content);
+  if (media?.schema) properties.body = media.schema;
+  return {
+    schema: Object.keys(properties).length ? { type: 'object', properties } : undefined,
+    encoding: media?.encoding,
+  };
 }
 
 /** The text the GET-as-action heuristic reads: summary, description and query parameter descriptions. */
@@ -235,7 +255,7 @@ export function buildOpenApiCatalog(
       const twin = shapes.get(shape);
       if (twin) throw new SpecError(`The ${opts.service} API spec has two operations for ${shape}: ${twin} and ${key}`);
       shapes.set(shape, key);
-      const schema = paramsSchema(spec, pathLevel, op, budget);
+      const { schema, encoding } = paramsSchema(spec, pathLevel, op, budget);
       const summary = op.summary?.trim().slice(0, 500);
       const description = op.description?.trim().slice(0, 2000);
       operations.push(
@@ -253,7 +273,7 @@ export function buildOpenApiCatalog(
             : {}),
         }),
       );
-      byVerb.get(method)!.push({ key, method, template, segments });
+      byVerb.get(method)!.push({ key, method, template, segments, ...(encoding ? { body: encoding } : {}) });
     }
   }
   const min = opts.minOperations ?? 1;
@@ -394,6 +414,8 @@ export function restBinding(opts: RestBindingOptions): RestBinding {
           ErrorCodes.UnknownOperation,
           `${method} ${req.path} is not a ${opts.service} API operation`,
         );
+      if (match.op.body && req.body !== undefined && method !== 'GET' && !isPlainObject(req.body))
+        throw new PluginError(ErrorCodes.InvalidParams, `body must be an object of ${match.op.body} fields`);
       const params: RestParams = {
         ...(Object.keys(match.pathParams).length ? { path: match.pathParams } : {}),
         ...(isPlainObject(req.query) && Object.keys(req.query).length ? { query: req.query } : {}),
@@ -433,8 +455,8 @@ export function restBinding(opts: RestBindingOptions): RestBinding {
     async invoke({ key, params, context }, timeoutMs) {
       const p = (isPlainObject(params) ? params : {}) as RestParams;
       const { method, template } = split(key, '', '');
-      const known = await opts.catalog();
-      if (!known.byVerb.get(method as HttpVerb)?.some((op) => op.template === template))
+      const known = (await opts.catalog()).byVerb.get(method as HttpVerb)?.find((op) => op.template === template);
+      if (!known)
         throw new PluginError(ErrorCodes.UnknownOperation, `${baseKey(key)} is not a ${opts.service} API operation`);
       let path: string;
       try {
@@ -446,6 +468,7 @@ export function restBinding(opts: RestBindingOptions): RestBinding {
       return opts.client().request(method, path, {
         query: p.query,
         body: p.body,
+        ...(known.body ? { bodyEncoding: known.body } : {}),
         timeoutMs: timeoutMs ?? Math.max(1000, context.deadlineMs),
       });
     },

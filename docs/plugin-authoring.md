@@ -24,15 +24,25 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 
 ## Files
 
-| File            | What                                                                                                      |
-| --------------- | --------------------------------------------------------------------------------------------------------- |
-| `manifest.json` | Sandbox binding, connection form, `sensitiveKeys`, `network.hosts`, match profiles (SDK `ManifestSchema`) |
-| `plugin.yaml`   | What the plugin tells core about its operations, as data (below)                                          |
-| `src/plugin.ts` | `definePlugin(…)`: the client, the version, discovery, and decisions that need logic                      |
-| `src/auth.ts`   | How each request authenticates                                                                            |
-| `test/`         | A fake upstream, `checkConformance` unit tests, `checkPluginContract` e2e tests on core's harness         |
+| File              | What                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `manifest.json`   | Sandbox binding, connection form, `sensitiveKeys`, `network.hosts`, match profiles (SDK `ManifestSchema`) |
+| `instructions.md` | Optional: how the upstream API works, for the agent (below)                                               |
+| `plugin.yaml`     | What the plugin tells core about its operations, as data (below)                                          |
+| `src/plugin.ts`   | `definePlugin(…)`: the client, the version, discovery, and decisions that need logic                      |
+| `src/auth.ts`     | How each request authenticates                                                                            |
+| `test/`           | A fake upstream, `checkConformance` unit tests, `checkPluginContract` e2e tests on core's harness         |
 
 `synoikia-plugin build` bundles everything, `plugin.yaml` included (validated and inlined at build time), into one self-contained `dist/index.js`. At runtime the plugin runs as a permission-confined child: it can read nothing outside its package directory, and can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration the admin reviews before enabling the plugin (an update that changes it arrives disabled again), not something core enforces; container egress policy is the mitigation (design §4.4, §14). List exactly the hosts the plugin connects to.
+
+### Agent instructions
+
+`"instructions": "instructions.md"` in the manifest names a Markdown file in the package (letters, digits, `_ . -` and `/`, ending in `.md`, never `..` or absolute, not a symbolic link). Core adds its text to the MCP server `instructions` and to the `search` tool description in a `<plugin-notes plugin="<id>">` block between core's own text and core's approval rule. The agent reads it once per session, so it spends fewer `search` calls on conventions.
+
+- Write what the agent can't guess: the base path and versioning, how keys and IDs are built, pagination and filter parameters, async patterns (start a job, then poll it), and the three to five most common workflows as key sequences. Say in one line what is locked or excluded.
+- Never describe auth, secrets or approvals: core handles them.
+- At most 4 KiB of UTF-8 text, without control characters other than tab and newline, invisible format characters (bidi, zero-width), U+2028/U+2029 or a `plugin-notes` tag. A change to the text is audited by its SHA-256. A larger or binary file, or a missing one, fails `synoikia-plugin check`, and core marks the plugin `invalid`; core never truncates it. Core sends it as plain text, with no templating.
+- `synoikia-plugin repo pack` ships it in the tarball next to `manifest.json`; the harness stages it. Review a change to it like a golden diff: it is text the model reads.
 
 An `optionsSource` of a match field fills a rule picker, which core also serves to users who may write their own rules (design §6.4). `optionsFor` can't tell who asks, so the manifest is refused if a match field and a connection-form field share a source: give each its own.
 
@@ -47,7 +57,7 @@ defaults:
 instanceName: { op: 'GET /status', field: name, fallback: Acme } # what `confirm: instance` types
 exclude: ['POST /auth/*'] # left out of the catalog
 include: [] # re-allows keys inside an excluded glob
-operations: [] # declared operations (static-rest, websocket-rpc, blank)
+operations: [] # declared operations (static-rest, websocket-rpc, blank), below
 rules:
   - match: 'DELETE /items/{itemId}' # a key, a list of keys, or globs: 'api_key.*', '*#garage'
     locked: true
@@ -69,6 +79,29 @@ rules:
     needsReview: false
 plugin: {} # anything specific to this upstream, validated by the plugin's own schema
 ```
+
+### Declared operations
+
+`operations:` declares a catalog for upstreams with nothing to discover. With `http`, `staticHttpBinding` makes the request:
+
+```yaml
+operations:
+  - key: torrents.add
+    group: torrents
+    classification: write
+    summary: Add torrents by URL
+    http: { method: POST, path: /torrents/add, body: multipart } # body: json (default), form or multipart
+```
+
+`http.body` sets how `params.body` is sent:
+
+| `body`      | Content type                        | Encoding                                                                                                                                                      |
+| ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json`      | `application/json`                  | `JSON.stringify(body)`                                                                                                                                        |
+| `form`      | `application/x-www-form-urlencoded` | The body must be an object. As `query`: an array repeats the key, an object is sent as JSON, booleans and numbers as text, `null` and `undefined` are dropped |
+| `multipart` | `multipart/form-data`               | Text fields only, encoded as `form`, under a random boundary. No file uploads                                                                                 |
+
+`HttpJsonClient.request(method, path, { body, bodyEncoding })` takes the same `json`, `form` or `multipart`; `encodeBody` and `formFields` are exported. A body that is not an object for `form` or `multipart` is refused with `INVALID_PARAMS` before the call is gated. `restBinding` sends a form when the OpenAPI operation offers only `application/x-www-form-urlencoded` or `multipart/form-data` and no JSON type, and uses that schema as the body schema. A sign-in that sets a cookie reads `Set-Cookie` from `client.raw(…).headers` in `before` or `onAuthFailure`.
 
 ### Rule fields
 
@@ -107,16 +140,16 @@ A field set by several matching rules takes the **first** rule's value, except `
 
 ## The SDK
 
-| Need                                   | Use                                                                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Lifecycle (init, close, version, test) | `definePlugin({ connect, close, version, probe, handlers(kit) })`, `kit.lazy()` caches                 |
-| HTTP upstream                          | `HttpJsonClient` (TLS verify toggle, no redirects, size cap, re-auth retry), `restLookup`              |
-| Socket protocol                        | `PendingRequests`, `singleFlight`, `joinApiPath(…, { websocket: true })`                               |
-| OpenAPI catalog and binding            | `buildOpenApiCatalog`, `restBinding`, `fetchSpec`                                                      |
-| Declared catalog                       | `staticCatalog`, `staticHttpBinding`                                                                   |
-| Rules                                  | `parsePluginSettings`, `compileRules` (`describe`, `confirmLiteral`, `maskEmbeddedResult`, …)          |
-| Errors                                 | `PluginError`, `upstreamError`, `statusKind`                                                           |
-| Tests                                  | `checkConformance`, `checkManifest`; `startFakeHttp`, `checkPluginContract` (`@synoikia/core/testing`) |
+| Need                                   | Use                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle (init, close, version, test) | `definePlugin({ connect, close, version, probe, handlers(kit) })`, `kit.lazy()` caches                                |
+| HTTP upstream                          | `HttpJsonClient` (TLS verify toggle, no redirects, size cap, re-auth retry, JSON/form/multipart bodies), `restLookup` |
+| Socket protocol                        | `PendingRequests`, `singleFlight`, `joinApiPath(…, { websocket: true })`                                              |
+| OpenAPI catalog and binding            | `buildOpenApiCatalog`, `restBinding`, `fetchSpec`                                                                     |
+| Declared catalog                       | `staticCatalog`, `staticHttpBinding`                                                                                  |
+| Rules                                  | `parsePluginSettings`, `compileRules` (`describe`, `confirmLiteral`, `maskEmbeddedResult`, …)                         |
+| Errors                                 | `PluginError`, `upstreamError`, `statusKind`                                                                          |
+| Tests                                  | `checkConformance`, `checkManifest`; `startFakeHttp`, `checkPluginContract` (`@synoikia/core/testing`)                |
 
 ## Rules every plugin keeps
 

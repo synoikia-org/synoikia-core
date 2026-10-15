@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { isSdkCompatible, parseManifest, SDK_VERSION } from '@synoikia/plugin-sdk';
+import { isSdkCompatible, parseManifest, readInstructionsFile, SDK_VERSION } from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { eq } from 'drizzle-orm';
 import { ZodError } from 'zod';
@@ -12,7 +12,7 @@ import { plugins } from '../db/schema.js';
 /** Plugin discovery (design §4.1): the plugins installed in `DATA_DIR/plugins`. */
 
 export type DiscoveredPlugin =
-  | { status: 'ok'; dir: string; manifest: Manifest }
+  | { status: 'ok'; dir: string; manifest: Manifest; instructions?: string }
   | {
       status: 'invalid' | 'incompatible';
       dir: string;
@@ -55,6 +55,20 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
       error: 'entry resolves outside the plugin directory',
     };
   }
+  let instructions: string | undefined;
+  if (manifest.instructions) {
+    try {
+      instructions = readInstructionsFile(dir, manifest.instructions);
+    } catch (err) {
+      return {
+        status: 'invalid',
+        dir,
+        manifest,
+        pluginId: manifest.id,
+        error: `instructions ${manifest.instructions}: ${explain(err)}`,
+      };
+    }
+  }
   if (!isSdkCompatible(manifest)) {
     return {
       status: 'incompatible',
@@ -64,7 +78,7 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
       error: `requires plugin SDK ${manifest.sdk}; core implements ${SDK_VERSION}`,
     };
   }
-  return { status: 'ok', dir, manifest };
+  return { status: 'ok', dir, manifest, ...(instructions ? { instructions } : {}) };
 }
 
 /** Scans the plugins directory's immediate subdirectories that contain a manifest.json. */
@@ -76,6 +90,8 @@ export function discoverPlugins(root: string): DiscoveredPlugin[] {
     .filter((dir) => statSync(dir).isDirectory() && existsSync(path.join(dir, 'manifest.json')))
     .map((dir) => inspectPluginDir(dir));
 }
+
+const sha256 = (text: string | null | undefined) => (text ? createHash('sha256').update(text).digest('hex') : null);
 
 const pluginIdOf = (p: DiscoveredPlugin) => (p.status === 'ok' ? p.manifest.id : p.pluginId);
 
@@ -111,6 +127,7 @@ export function syncPluginRegistry(
         manifest: p.manifest ?? {},
         status: p.status,
         statusError: p.status === 'ok' ? null : p.error,
+        instructions: p.status === 'ok' ? (p.instructions ?? null) : null,
       };
       const prev = existing.get(pluginId);
       if (!prev) {
@@ -124,13 +141,34 @@ export function syncPluginRegistry(
             kind: 'plugin',
             decision: 'plugin_discovered',
             actorKind: 'system',
-            detail: { pluginId, ...fields, manifest: undefined, enabled: false },
+            detail: {
+              pluginId,
+              ...fields,
+              manifest: undefined,
+              instructions: undefined,
+              instructionsSha256: sha256(fields.instructions),
+              enabled: false,
+            },
           },
           now,
         );
       } else {
         tx.update(plugins).set(fields).where(eq(plugins.id, prev.id)).run();
         out.updated.push(pluginId);
+        // The text reaches the model (§2.2); a change is recorded by hash, not by text.
+        const before = sha256(prev.instructions);
+        const after = sha256(fields.instructions);
+        if (before !== after)
+          writeAudit(
+            tx,
+            {
+              kind: 'plugin',
+              decision: 'plugin_instructions_changed',
+              actorKind: 'system',
+              detail: { pluginId, version: fields.version, before, after },
+            },
+            now,
+          );
       }
     }
     for (const prev of existing.values()) {
