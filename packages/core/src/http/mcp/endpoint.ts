@@ -108,6 +108,7 @@ function toolText(result: ExecuteResult, extras?: ToolExtras) {
       ...(result.approval
         ? {
             approval: {
+              id: result.approval.approvalId,
               url: `${extras?.publicBase ?? ''}${result.approval.path}`,
               operationKey: result.approval.operationKey,
               summary: result.approval.summary,
@@ -456,15 +457,17 @@ export class McpEndpoints {
       {
         title: 'Decide approval',
         description: 'Approves or denies the in-session approval a parked execution waits on, for the approval card.',
-        inputSchema: { executionId, approve: z.boolean() },
+        inputSchema: { executionId, approvalId: z.string().uuid(), approve: z.boolean() },
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
         _meta: appOnly,
       },
-      ({ executionId: id, approve }) => {
+      ({ executionId: id, approvalId, approve }) => {
         // The owner check of approval_status; the approval service decides if the card may answer.
         const approval = this.ctx.executions.currentApproval(id, identity.principal, instanceId);
         let body: { decided: boolean; error?: string } = { decided: false, error: 'not_found' };
-        if (approval) {
+        // A card decides only the approval it shows, never the run's next one (§5.7).
+        if (approval && approval.approvalId !== approvalId) body = { decided: false, error: 'approval_changed' };
+        else if (approval) {
           try {
             this.ctx.approvals.decideInSession(approval.approvalId, { approve, decidedBy: identity.label });
             body = { decided: true };

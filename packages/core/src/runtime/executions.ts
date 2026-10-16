@@ -28,6 +28,8 @@ export type ExecuteResult = SandboxResult | PendingResult;
 
 export interface ExecutionStatus {
   state: 'pending' | 'approved' | 'denied' | 'timed_out' | 'cancelled' | 'running' | 'done';
+  /** The approval a `pending` run waits on, so a card can tell it from the one it shows. */
+  approvalId?: string;
   expiresAt?: string;
   /** The last decision on this run's approvals. */
   decision?: string;
@@ -132,7 +134,8 @@ export class ExecutionRegistry {
   private state(e: Entry): ExecutionStatus {
     // No approver name: it is a sign-in name on the internet-facing MCP port.
     if (e.result) return { state: 'done', decision: e.lastDecision?.outcome };
-    if (e.approval) return { state: 'pending', expiresAt: e.approval.expiresAt.toISOString() };
+    if (e.approval)
+      return { state: 'pending', approvalId: e.approval.approvalId, expiresAt: e.approval.expiresAt.toISOString() };
     if (e.lastDecision && e.lastDecision.outcome !== 'approved')
       return { state: e.lastDecision.outcome as ExecutionStatus['state'] };
     return { state: e.lastDecision ? 'approved' : 'running' };

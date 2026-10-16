@@ -108,7 +108,7 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
     const open = document.getElementById('open');
     if (open) open.onclick = () => request('ui/open-link', { url: state.approval.url }).catch(() => {});
     const decide = (approve) => () =>
-      request('tools/call', { name: 'approval_decide', arguments: { executionId: state.executionId, approve } })
+      request('tools/call', { name: 'approval_decide', arguments: { executionId: state.executionId, approvalId: state.approval.id, approve } })
         .then(check).catch(() => {});
     const yes = document.getElementById('approve');
     if (yes) yes.onclick = decide(true);
@@ -137,6 +137,8 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
     try { s = payloadOf(await request('tools/call', { name: 'approval_status', arguments: { executionId: state.executionId } })); }
     catch { return; }
     if (!s || !s.state) return;
+    // The run waits on a newer approval: this one was given, since a run parks again only after an approval.
+    if (s.state === 'pending' && s.approvalId && s.approvalId !== state.approval.id) s = { state: 'approved', resumeWaiting: s.resumeWaiting };
     if (s.state === 'pending') { const left = document.getElementById('left'); if (left) left.textContent = '● ' + timeLeft(state.approval.expiresAt); return; }
     const stop = () => { clearInterval(poll); poll = null; };
     // Gone: a resume collected the result (the agent already continues), or the run expired. No chat message.

@@ -335,7 +335,7 @@ describe('MCP endpoint with bearer tokens', () => {
     expect((second.approval as Record<string, unknown>).repeat).toBeUndefined();
     const secondId = approvalIdOf(second);
     expect(secondId).not.toBe(firstId);
-    expect(await status()).toEqual({ state: 'pending', expiresAt: expect.any(String) });
+    expect(await status()).toEqual({ state: 'pending', approvalId: secondId, expiresAt: expect.any(String) });
     ctx.approvals.decide(secondId, { approve: true, decidedBy: 'admin' });
     const done = parse(await client.callTool({ name: 'resume', arguments: { executionId } }));
     expect(done).toEqual({ result: ['vol/p', 'vol/q'] });
@@ -382,8 +382,13 @@ describe('MCP endpoint with bearer tokens', () => {
       { userId: adminId },
     );
     const client = await connect('echo-session', token);
-    const decide = async (c: Client, executionId: unknown, approve = true) =>
-      (await c.callTool({ name: 'approval_decide', arguments: { executionId, approve } })).structuredContent;
+    const decide = async (c: Client, res: Record<string, unknown>, approve = true) =>
+      (
+        await c.callTool({
+          name: 'approval_decide',
+          arguments: { executionId: res.executionId, approvalId: (res.approval as { id: string }).id, approve },
+        })
+      ).structuredContent;
 
     const parked = parse(
       await client.callTool({
@@ -398,11 +403,11 @@ describe('MCP endpoint with bearer tokens', () => {
       { userId: adminId },
     );
     const stranger = await connect('echo-session', other);
-    expect(await decide(stranger, parked.executionId)).toEqual({ decided: false, error: 'not_found' });
+    expect(await decide(stranger, parked)).toEqual({ decided: false, error: 'not_found' });
     await stranger.close();
 
-    expect(await decide(client, parked.executionId)).toEqual({ decided: true });
-    expect(await decide(client, parked.executionId)).toEqual({ decided: false, error: 'not_found' });
+    expect(await decide(client, parked)).toEqual({ decided: true });
+    expect(await decide(client, parked)).toEqual({ decided: false, error: 'not_found' });
     const done = await client.callTool({ name: 'resume', arguments: { executionId: parked.executionId } });
     expect(parse(done)).toEqual({ result: 'vol/c' });
     // A card decision never grants the session.
@@ -422,6 +427,35 @@ describe('MCP endpoint with bearer tokens', () => {
       detail: { approvalChannel: 'card' },
     });
 
+    // A stale card decides nothing: the run moved on to its next approval.
+    const two = parse(
+      await client.callTool({
+        name: 'execute',
+        arguments: {
+          code: `await echo.call('echo.set', { name: 'vol/d' }); return (await echo.call('echo.set', { name: 'vol/e' })).params.name;`,
+        },
+      }),
+    );
+    const firstId = (two.approval as { id: string }).id;
+    expect(firstId).toBe(approvalIdOf(two));
+    ctx.approvals.decide(firstId, { approve: true, decidedBy: 'admin' });
+    const status = async () =>
+      (await client.callTool({ name: 'approval_status', arguments: { executionId: two.executionId } }))
+        .structuredContent as { state: string; approvalId?: string };
+    await vi.waitFor(async () => {
+      const now = await status();
+      expect(now.state).toBe('pending');
+      expect(now.approvalId).not.toBe(firstId);
+    });
+    expect(await decide(client, two)).toEqual({ decided: false, error: 'approval_changed' });
+    expect(await status()).toMatchObject({ state: 'pending' });
+    const next = parse(await client.callTool({ name: 'resume', arguments: { executionId: two.executionId } }));
+    expect((next.approval as { id: string }).id).toBe((await status()).approvalId);
+    expect(await decide(client, next)).toEqual({ decided: true });
+    expect(parse(await client.callTool({ name: 'resume', arguments: { executionId: two.executionId } }))).toEqual({
+      result: 'vol/e',
+    });
+
     const locked = parse(
       await client.callTool({
         name: 'execute',
@@ -429,7 +463,7 @@ describe('MCP endpoint with bearer tokens', () => {
       }),
     );
     expect(locked).toMatchObject({ status: 'awaiting_approval', approval: { inSession: false } });
-    expect(await decide(client, locked.executionId)).toEqual({ decided: false, error: 'approval_not_in_session' });
+    expect(await decide(client, locked)).toEqual({ decided: false, error: 'approval_not_in_session' });
     ctx.approvals.decide(approvalIdOf(locked), { approve: false, decidedBy: 'admin' });
     expect(
       parse(await client.callTool({ name: 'resume', arguments: { executionId: locked.executionId } })),
@@ -472,7 +506,7 @@ describe('MCP endpoint with bearer tokens', () => {
     });
     const decided = await client.callTool({
       name: 'approval_decide',
-      arguments: { executionId: parked.executionId, approve: true },
+      arguments: { executionId: parked.executionId, approvalId: (parked.approval as { id: string }).id, approve: true },
     });
     expect(decided.structuredContent).toEqual({ decided: true });
     expect(parse(await client.callTool({ name: 'resume', arguments: { executionId: parked.executionId } }))).toEqual({

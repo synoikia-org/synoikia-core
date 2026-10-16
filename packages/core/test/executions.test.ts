@@ -53,7 +53,7 @@ describe('ExecutionRegistry', () => {
     reg.adopt({ id: 'x', owner: 'alice', instanceId: 'i1', approval: approval('p1'), abort });
     expect(reg.status('x', 'bob', 'i1')).toBeUndefined();
     expect(reg.status('x', 'alice', 'i2')).toBeUndefined();
-    expect(reg.status('x', 'alice', 'i1')).toMatchObject({ state: 'pending' });
+    expect(reg.status('x', 'alice', 'i1')).toMatchObject({ state: 'pending', approvalId: 'p1' });
     expect(reg.currentApproval('x', 'alice', 'i1')?.approvalId).toBe('p1');
     expect(reg.currentApproval('x', 'bob', 'i1')).toBeUndefined();
     expect(reg.currentApproval('x', 'alice', 'i2')).toBeUndefined();
