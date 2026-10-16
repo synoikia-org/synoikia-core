@@ -24,7 +24,7 @@ html, body { margin: 0; background: transparent; color: var(--ink); font: 14px/1
 .ft { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .pill { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
 .pending { background: var(--warn-bg); color: var(--warn); } .ok { background: var(--ok-bg); color: var(--ok); }
-.no { background: var(--no-bg); color: var(--no); }
+.no { background: var(--no-bg); color: var(--no); } .decided { background: var(--line); color: var(--muted); }
 button { font: 600 13px/1.2 var(--sans); padding: 7px 14px; border-radius: 8px; border: 1px solid var(--brand); cursor: pointer;
   background: var(--brand); color: var(--on-brand); }
 button:hover { background: var(--brand-strong); }
@@ -70,6 +70,7 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
   let state = null;
   let poll = null;
   let told = false;
+  let idle = 0;
 
   function render() {
     if (!state || (!state.approval && !state.grant)) { root.hidden = true; resize(); return; }
@@ -83,6 +84,7 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
         : st === 'approved' || (st === 'done' && state.decision === 'approved')
           ? '<span class="pill ok">✓ Approved</span>'
           : st === 'running' ? '<span class="pill ok">Running</span>'
+          : st === 'closed' ? '<span class="pill decided">Closed</span>'
           : '<span class="pill no">✕ ' + esc(st === 'done' ? (state.decision || 'finished').replace('_', ' ') : st.replace('_', ' ')) + '</span>';
       const here = st === 'pending' && a.inSession === true;
       const acts = st !== 'pending' ? ''
@@ -136,17 +138,27 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
     catch { return; }
     if (!s || !s.state) return;
     if (s.state === 'pending') { const left = document.getElementById('left'); if (left) left.textContent = '● ' + timeLeft(state.approval.expiresAt); return; }
-    state.status = s.state; state.decision = s.decision || s.state;
-    clearInterval(poll); poll = null;
-    render();
+    const stop = () => { clearInterval(poll); poll = null; };
+    // Gone: a resume collected the result (the agent already continues), or the run expired. No chat message.
+    if (s.state === 'not_found') { stop(); if (state.status === 'pending') { state.status = 'closed'; render(); } return; }
+    if (state.status !== s.state || state.decision !== (s.decision || s.state)) {
+      state.status = s.state; state.decision = s.decision || s.state;
+      render();
+    }
+    // Ask the chat to continue only when no resume has waited for three polls in a row (§5.7).
+    idle = s.resumeWaiting ? 0 : idle + 1;
+    if (idle < 3) return;
+    stop();
     const approved = s.state === 'approved' || s.state === 'running' || (s.state === 'done' && s.decision === 'approved');
     tell(approved ? 'Approved, continue.' : 'The approval was ' + String(state.decision).replace('_', ' ') + '. Continue.');
   }
 
   function onResult(res) {
     const p = payloadOf(res) || {};
-    state = { executionId: p.executionId, approval: p.status === 'awaiting_approval' ? p.approval : null, grant: p.sessionGrant || null, status: 'pending' };
-    told = false;
+    // A repeat is the approval an earlier card of this run already shows.
+    const shown = p.status === 'awaiting_approval' && p.approval && !p.approval.repeat;
+    state = { executionId: p.executionId, approval: shown ? p.approval : null, grant: p.sessionGrant || null, status: 'pending' };
+    told = false; idle = 0;
     render();
     if (poll) clearInterval(poll);
     if (state.approval) poll = setInterval(check, 2000);

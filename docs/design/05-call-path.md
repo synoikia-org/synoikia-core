@@ -294,9 +294,9 @@ A client without a usable prompt, for example a chat client without elicitation,
 3. The `execute` call returns `status: awaiting_approval`, the `executionId` and `approval` (`url`, `operationKey`, `summary`, `expiresAt`, `inSession`). This is not an error result. `inSession` is true when in-session approval applies to the call.
 4. The human decides on the approval page, or on the approval card when `inSession` is true (§5.7).
 5. The script continues at the decision. It does not wait for `resume`. The sandbox time limit starts again.
-6. The agent calls `resume(executionId)`. `resume` waits up to 45 s for a change. It returns one of these:
+6. The agent shows the link and calls `resume(executionId)` at once. It calls `resume` again while the result has the same link, for up to about 3 minutes. Then it asks the user to tell it when they decide. `resume` waits up to 45 s for a change. It returns one of these:
    - the result of the script, after which core forgets the execution;
-   - `awaiting_approval` with the same link, if the human did not decide yet;
+   - `awaiting_approval` with the same link and `approval.repeat: true`, if the human did not decide yet;
    - `awaiting_approval` with a new link, if the script reached another approval;
    - `running` with `STILL_RUNNING`, if the script still runs after the decision;
    - `EXECUTION_NOT_FOUND`, for an unknown or collected id, an id of another principal or endpoint, or an id from before a restart.
@@ -332,12 +332,13 @@ The approval card is an MCP Apps view (extension `io.modelcontextprotocol/ui`). 
 
 - **Resource.** `ui://synoikia/approval`, MIME type `text/html;profile=mcp-app`. Core serves static HTML and script. It loads nothing from other origins and declares no CSP domains.
 - **Tools.** `execute` and `resume` set `_meta.ui.resourceUri` to the card. Three tools have `_meta.ui.visibility: ["app"]`, so the model does not see them:
-  - `approval_status(executionId)` returns the state of a parked execution: `pending`, `approved`, `denied`, `timed_out`, `cancelled`, `running` or `done`, with `expiresAt` and the last decision. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
+  - `approval_status(executionId)` returns the state of a parked execution: `pending`, `approved`, `denied`, `timed_out`, `cancelled`, `running` or `done`, with `expiresAt` and the last decision. `resumeWaiting: true` tells that a `resume` waits on the execution now. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
   - `approval_decide(executionId, approve)` approves or denies the approval that the parked execution waits on. It has the owner check of `resume`. It returns only `decided`, or `decided: false` with an error code.
   - `session_grant_revoke(grantId)` ends a session grant of the same principal and endpoint.
 - **Decisions.** The card decides only when `approval.inSession` is true. It then shows **Approve**, **Deny** and **Review on the page**. Core refuses a decision when the approval is closed, when in-session approval does not apply to the call, or when the endpoint does not allow it now. The audit records `decided_via: elicitation`, the client as `decided_by`, and `detail.approvalChannel: card`. A card decision never gives a session grant.
 - **Page.** For each other approval, the card has no approve control. It never has a confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
-- **Continue.** When the state is final, the card sends one `ui/message` to the chat ("Approved, continue."). The agent then calls `resume`. If the host refuses the message, the card asks the user to say "continue".
+- **Repeat.** A result with `approval.repeat: true` shows no approval on its card. An earlier card shows that approval.
+- **Continue.** A waiting `resume` gets the result at the decision, so the agent continues in the same turn. The card then sends no message. When the state is final and no `resume` waits for 3 polls (about 6 s), the card sends one `ui/message` to the chat ("Approved, continue."). The agent then calls `resume`. If the host refuses the message, the card asks the user to say "continue".
 - **Session grant.** When a session grant is active, the result has `sessionGrant` (`id`, `expiresAt`). The card shows it with a **Revoke** control.
 - A host without MCP Apps ignores the card. The agent shows the link from the text result.
 

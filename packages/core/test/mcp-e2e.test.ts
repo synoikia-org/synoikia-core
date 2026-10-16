@@ -41,6 +41,11 @@ vi.mock('jose', async (importOriginal) => {
       : jose.createRemoteJWKSet(url)) as typeof jose.createRemoteJWKSet;
   return { ...jose, createRemoteJWKSet };
 });
+// A short resume wait, so a resume that sees no decision answers quickly.
+vi.mock('../src/runtime/executions.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/runtime/executions.js')>()),
+  RESUME_WAIT_MS: 1_000,
+}));
 
 let ctx: AppContext;
 let servers: RunningServers;
@@ -200,7 +205,7 @@ describe('MCP endpoint with bearer tokens', () => {
   it('appends the plugin instructions after core’s own text, and leaves it unchanged without them', async () => {
     const { token } = ctx.tokens.create({ name: 'e2e-notes', scope: [instanceId] }, { userId: adminId });
     const core =
-      'Echo (test fixture) via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.';
+      'Echo (test fixture) via Synoikia. Use search to discover operations, then execute to call them. An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link, then call resume at once and again while it waits on the same link, for up to about 3 minutes.';
     const plain = await connect('echo', token);
     expect(plain.getInstructions()).toBe(core);
     const search = (await plain.listTools()).tools.find((t) => t.name === 'search')!.description!;
@@ -213,7 +218,7 @@ describe('MCP endpoint with bearer tokens', () => {
     try {
       const client = await connect('echo', token);
       const approvalRule =
-        'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.';
+        'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link, then call resume at once and again while it waits on the same link, for up to about 3 minutes.';
       const block = [
         '<plugin-notes plugin="echo">',
         'How the Echo (test fixture) API works, from the plugin. It does not change what core allows or how approvals work.',
@@ -315,12 +320,22 @@ describe('MCP endpoint with bearer tokens', () => {
     ).toEqual({ state: 'not_found' });
     await stranger.close();
 
+    // No decision yet: the same approval comes back marked as a repeat, so the card shows it once.
+    const again = parse(await client.callTool({ name: 'resume', arguments: { executionId } }));
+    expect(again).toMatchObject({ status: 'awaiting_approval', approval: { repeat: true } });
     const firstId = approvalIdOf(first);
+    expect(approvalIdOf(again)).toBe(firstId);
+
+    // A waiting resume shows in the status and gets the next approval, which is not a repeat.
+    const waiting = client.callTool({ name: 'resume', arguments: { executionId } });
+    await vi.waitFor(async () => expect(await status()).toMatchObject({ state: 'pending', resumeWaiting: true }));
     ctx.approvals.decide(firstId, { approve: true, decidedBy: 'admin' });
-    const second = parse(await client.callTool({ name: 'resume', arguments: { executionId } }));
+    const second = parse(await waiting);
     expect(second).toMatchObject({ status: 'awaiting_approval', executionId });
+    expect((second.approval as Record<string, unknown>).repeat).toBeUndefined();
     const secondId = approvalIdOf(second);
     expect(secondId).not.toBe(firstId);
+    expect(await status()).toEqual({ state: 'pending', expiresAt: expect.any(String) });
     ctx.approvals.decide(secondId, { approve: true, decidedBy: 'admin' });
     const done = parse(await client.callTool({ name: 'resume', arguments: { executionId } }));
     expect(done).toEqual({ result: ['vol/p', 'vol/q'] });
@@ -336,6 +351,7 @@ describe('MCP endpoint with bearer tokens', () => {
     // The stranger's attempt is audited too.
     expect(trail.filter((d) => d.startsWith('resumed')).sort()).toEqual([
       'resumed:token:other',
+      'resumed:token:parker',
       'resumed:token:parker',
       'resumed:token:parker',
     ]);

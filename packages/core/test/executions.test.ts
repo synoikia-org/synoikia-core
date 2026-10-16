@@ -61,18 +61,21 @@ describe('ExecutionRegistry', () => {
 
     // Nothing changes: the wait ends with the same approval.
     const still = (await reg.wait('x', 'alice', 'i1', 20)) as PendingResult;
-    expect(still).toMatchObject({ status: 'awaiting_approval', approval: { approvalId: 'p1' } });
+    expect(still).toMatchObject({ status: 'awaiting_approval', approval: { approvalId: 'p1' }, repeat: true });
 
     const first = reg.wait('x', 'alice', 'i1', 5_000);
     expect(await reg.wait('x', 'alice', 'i1', 10)).toBe('busy');
     reg.settled('x', 'p1', { outcome: 'approved', decidedBy: 'admin' });
-    expect(reg.status('x', 'alice', 'i1')).toEqual({ state: 'approved' }); // no approver name to the client
+    // No approver name to the client; a waiting resume shows, so the card does not ask the chat to continue.
+    expect(reg.status('x', 'alice', 'i1')).toEqual({ state: 'approved', resumeWaiting: true });
     expect(reg.currentApproval('x', 'alice', 'i1')).toBeUndefined();
     reg.awaiting('x', approval('p2'));
-    expect(await first).toMatchObject({ status: 'awaiting_approval', approval: { approvalId: 'p2' } });
+    const next = (await first) as PendingResult;
+    expect(next).toMatchObject({ status: 'awaiting_approval', approval: { approvalId: 'p2' } });
+    expect(next.repeat).toBeUndefined();
 
     reg.settled('x', 'p2', { outcome: 'denied', decidedBy: 'admin' });
-    expect(reg.status('x', 'alice', 'i1')).toMatchObject({ state: 'denied' });
+    expect(reg.status('x', 'alice', 'i1')).toEqual({ state: 'denied' });
     const running = (await reg.wait('x', 'alice', 'i1', 10)) as PendingResult;
     expect(running).toMatchObject({ status: 'running', error: { code: 'STILL_RUNNING' } });
 
@@ -85,6 +88,18 @@ describe('ExecutionRegistry', () => {
 
     now += RESULT_TTL_MS + 1;
     expect(await reg.wait('x', 'alice', 'i1', 10)).toBe('not_found');
+  });
+
+  it('marks an approval as a repeat only after the owner was given it', async () => {
+    const reg = new ExecutionRegistry();
+    reg.adopt({ id: 'z', owner: 'alice', instanceId: 'i1', approval: approval('p1'), abort: () => {} });
+    // The next approval arrives while no resume waits: the first resume to return it is not a repeat.
+    reg.settled('z', 'p1', { outcome: 'approved' });
+    reg.awaiting('z', approval('p2'));
+    const fresh = (await reg.wait('z', 'alice', 'i1', 10)) as PendingResult;
+    expect(fresh).toMatchObject({ approval: { approvalId: 'p2' } });
+    expect(fresh.repeat).toBeUndefined();
+    expect(await reg.wait('z', 'alice', 'i1', 10)).toMatchObject({ approval: { approvalId: 'p2' }, repeat: true });
   });
 
   it('returns a finished result once, then forgets it; a waiter wakes on abort of its request', async () => {
