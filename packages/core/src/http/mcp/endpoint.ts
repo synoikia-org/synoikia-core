@@ -113,12 +113,13 @@ function toolText(result: ExecuteResult, extras?: ToolExtras) {
               summary: result.approval.summary,
               expiresAt: result.approval.expiresAt.toISOString(),
               inSession: result.approval.inSession,
+              ...(result.repeat ? { repeat: true } : {}),
             },
           }
         : {}),
       next:
         result.status === 'awaiting_approval'
-          ? 'Show approval.url to the user. After they approve or deny it, call resume with this executionId.'
+          ? 'Show approval.url to the user, then call resume with this executionId at once: it waits for their decision.'
           : 'Call resume with this executionId.',
       ...(sessionGrant ? { sessionGrant } : {}),
     };
@@ -158,11 +159,12 @@ function describeResume(manifest: Manifest): string {
   return [
     `Continue an execute call on ${manifest.name} that is waiting for approval, and get its result.`,
     'Pass the `executionId` from the `awaiting_approval` result. It waits up to 45 seconds; if the human has not decided yet, it returns `awaiting_approval` again with the same link. If the script reaches another approval, it returns the new link.',
+    'Call it right after you show the link, and call it again while it returns the same link, for up to about 3 minutes. Then stop and ask the user to tell you when they have decided.',
   ].join('\n');
 }
 
 const APPROVAL_NOTE =
-  'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link and call resume after the user decides.';
+  'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link, then call resume at once and again while it waits on the same link, for up to about 3 minutes.';
 
 /** The plugin's agent instructions (design §2.2) in a delimited block after core's text; core's approval
  * rule follows it, so plugin text can't pose as core's last word. */
@@ -210,7 +212,7 @@ function describeExecute(manifest: Manifest): string {
   return [
     `Run code against ${manifest.name}. \`code\` is the body of an async JavaScript function; \`await\` ${fns} and return a JSON-serializable result.`,
     'Reads run immediately. Writes either run straight away or wait until a human approves them on an approval page (see `approval` in catalog entries); denials and other refusals throw an Error with `err.code` (e.g. OPERATION_DISABLED, PERMISSION_DENIED, UPSTREAM_ERROR) that your code can catch.',
-    'If the result has `status: "awaiting_approval"`, the run is paused on the server: show `approval.url` to the user, and after they decide, call `resume` with its `executionId` (do not run the code again). Each write runs once.',
+    'If the result has `status: "awaiting_approval"`, the run is paused on the server: show `approval.url` to the user, then call `resume` with its `executionId` at once; it waits for the decision (do not run the code again). Each write runs once.',
     'Calls run one at a time. There is no network, filesystem or timer access. Secrets in results are redacted.',
   ].join('\n');
 }

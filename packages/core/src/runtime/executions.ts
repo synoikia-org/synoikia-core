@@ -18,6 +18,8 @@ export interface PendingResult {
   status: 'awaiting_approval' | 'running';
   executionId: string;
   approval?: ParkedApproval;
+  /** The owner was already given this approval, so the approval card shows it once (§5.7). */
+  repeat?: true;
   error: { code: 'AWAITING_APPROVAL' | 'STILL_RUNNING'; message: string };
   logs: string[];
 }
@@ -29,6 +31,8 @@ export interface ExecutionStatus {
   expiresAt?: string;
   /** The last decision on this run's approvals. */
   decision?: string;
+  /** A `resume` waits on the run now, so the approval card need not ask the chat to continue (§5.7). */
+  resumeWaiting?: true;
 }
 
 interface Entry {
@@ -38,6 +42,8 @@ interface Entry {
   /** The approval the run waits on now, if any. */
   approval?: ParkedApproval;
   lastDecision?: { outcome: string; decidedBy?: string };
+  /** The approval last returned to the owner. */
+  shownApprovalId?: string;
   approvals: number;
   result?: SandboxResult;
   finishedAt?: number;
@@ -68,7 +74,8 @@ export class ExecutionRegistry {
   }
 
   adopt(input: { id: string; owner: string; instanceId: string; approval: ParkedApproval; abort: () => void }) {
-    this.entries.set(input.id, { ...input, approvals: 1, attached: false, waiters: new Set() });
+    const shownApprovalId = input.approval.approvalId;
+    this.entries.set(input.id, { ...input, shownApprovalId, approvals: 1, attached: false, waiters: new Set() });
   }
 
   /** Whether an adopted run may park again: a loop of denied or timed-out approvals ends here. */
@@ -118,6 +125,11 @@ export class ExecutionRegistry {
   status(id: string, owner: string, instanceId: string): ExecutionStatus | undefined {
     const e = this.find(id, owner, instanceId);
     if (!e) return undefined;
+    const s = this.state(e);
+    return e.attached ? { ...s, resumeWaiting: true } : s;
+  }
+
+  private state(e: Entry): ExecutionStatus {
     // No approver name: it is a sign-in name on the internet-facing MCP port.
     if (e.result) return { state: 'done', decision: e.lastDecision?.outcome };
     if (e.approval) return { state: 'pending', expiresAt: e.approval.expiresAt.toISOString() };
@@ -161,7 +173,12 @@ export class ExecutionRegistry {
         this.entries.delete(id);
         return e.result;
       }
-      return pending(e);
+      const result = pending(e);
+      if (e.approval) {
+        if (e.approval.approvalId === e.shownApprovalId) result.repeat = true;
+        e.shownApprovalId = e.approval.approvalId;
+      }
+      return result;
     } finally {
       e.attached = false;
     }
@@ -192,7 +209,7 @@ export function pendingResult(executionId: string, approval?: ParkedApproval): P
         approval,
         error: {
           code: 'AWAITING_APPROVAL',
-          message: `${approval.operationKey} waits for a human to approve it ${approval.inSession ? 'on the approval card in the chat or on the approval page' : 'on the approval page'}. Show the link to the user; after they decide, call resume with this executionId.`,
+          message: `${approval.operationKey} waits for a human to approve it ${approval.inSession ? 'on the approval card in the chat or on the approval page' : 'on the approval page'}. Show the link to the user, then call resume with this executionId: it waits for the decision.`,
         },
         logs: [],
       }
