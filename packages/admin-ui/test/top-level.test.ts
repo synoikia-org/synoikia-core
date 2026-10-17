@@ -235,11 +235,12 @@ describe('Plugins', () => {
     ).toBeDefined();
   });
 
+  const manual = { fileName: '<b>acme</b>.tgz', uploadedAt: '2026-01-01T00:00:00Z', releasedVersion: '1.0.0' };
   const manualPlugin = plugin({
     repoId: 'r1',
     sha256: 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12',
     signatureVerified: false,
-    manual: { fileName: '<b>acme</b>.tgz', uploadedAt: '2026-01-01T00:00:00Z', releasedVersion: '1.0.0' },
+    manual,
   });
   const repo = (signingMode: 'signed' | 'unsigned') => ({
     id: 'r1',
@@ -297,7 +298,7 @@ describe('Plugins', () => {
 
   it('offers a manual plugin no revert without a released version, and reads repository installs as revert/update', async () => {
     pluginsApi({
-      'GET /api/plugins': [{ ...manualPlugin, manual: { ...manualPlugin.manual, releasedVersion: null } }],
+      'GET /api/plugins': [{ ...manualPlugin, manual: { ...manual, releasedVersion: null } }],
       'GET /api/plugin-repos': [repo('signed')],
       'GET /api/plugin-repos/available': [
         {
