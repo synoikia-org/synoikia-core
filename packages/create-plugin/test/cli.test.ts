@@ -480,6 +480,28 @@ Feature: Deny writes
     expect(readFileSync(outside, 'utf8')).toBe('keep\n');
   });
 
+  it('reads branch names past pipes and redirects', () => {
+    const hook = path.join(PACKAGE_DIR, 'templates/workflow/claude/_claude/hooks/guard-branch.mjs');
+    const root = work();
+    const decide = (command: string) =>
+      execFileSync(process.execPath, [hook], {
+        input: JSON.stringify({ tool_input: { command }, cwd: root }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+        encoding: 'utf8',
+      });
+    for (const command of ['git push origin a$b 2>&1 | tail -1', 'git checkout -b x$y > /dev/null'])
+      expect(JSON.parse(decide(command)), command).toMatchObject({
+        hookSpecificOutput: { permissionDecision: 'deny' },
+      });
+    for (const command of [
+      'git push origin HEAD 2>&1 | tail -1',
+      'git push origin HEAD > /dev/null',
+      'git diff | grep x',
+      'git commit -m "fix: a\nA git push piped into tail, or redirected"',
+    ])
+      expect(decide(command), command).toBe('');
+  });
+
   it('denies a branch name with shell characters before it runs a check', () => {
     const hook = path.join(PACKAGE_DIR, 'templates/workflow/claude/_claude/hooks/guard-branch.mjs');
     const root = work();
