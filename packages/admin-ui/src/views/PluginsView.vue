@@ -4,6 +4,7 @@ import { rovingKeydown } from '../a11y';
 import { ApiError, errorText } from '../api';
 import ModalDialog from '../components/ModalDialog.vue';
 import PageHeader from '../components/PageHeader.vue';
+import TypedConfirm from '../components/TypedConfirm.vue';
 import { latestError } from '../composables/useApiMutation';
 import { useConfirm } from '../composables/useConfirm';
 import {
@@ -11,16 +12,19 @@ import {
   useAvailablePluginsQuery,
   useConfirmRepoKey,
   useInstallPlugin,
+  useInstallUpload,
   usePluginsQuery,
   useRefreshRepo,
   useRemoveRepo,
   useReposQuery,
   useRescanPlugins,
+  useRevertPlugin,
   useTogglePlugin,
   useUninstallPlugin,
+  useUploadPlugin,
 } from '../composables/usePlugins';
-import { ago, describeHosts } from '../format';
-import type { AvailablePlugin, PluginRow, Repo } from '../types';
+import { ago, describeHosts, formatDate } from '../format';
+import type { AvailablePlugin, PluginRow, Repo, StagedUpload } from '../types';
 
 const pluginsQuery = usePluginsQuery();
 const availableQuery = useAvailablePluginsQuery();
@@ -33,6 +37,9 @@ const removeRepo = useRemoveRepo();
 const installPlugin = useInstallPlugin();
 const addRepoMutation = useAddRepo();
 const confirmRepoKey = useConfirmRepoKey();
+const uploadPlugin = useUploadPlugin();
+const installUpload = useInstallUpload();
+const revertPlugin = useRevertPlugin();
 const { confirm } = useConfirm();
 const installBusy = installPlugin.isPending;
 const installError = installPlugin.errorText;
@@ -97,6 +104,7 @@ function openInstall(item: AvailablePlugin) {
   installing.value = { item, version: item.latest ?? item.versions[0]?.version ?? '', confirm: '' };
 }
 const installRepo = computed(() => repos.value.find((r) => r.id === installing.value?.item.repoId));
+const installedRow = (pluginId: string) => plugins.value.find((p) => p.pluginId === pluginId);
 function install() {
   const i = installing.value;
   if (!i) return;
@@ -105,10 +113,85 @@ function install() {
     {
       onSuccess: (row) => {
         installing.value = undefined;
-        // New installs, and updates that change what the plugin may do, wait for the admin to enable them.
-        notice.value = row.enabled
-          ? `${i.item.pluginId} ${i.version} installed.`
-          : `${i.item.pluginId} ${i.version} installed, disabled. Review its capabilities and network hosts, then Enable it on the Installed tab.`;
+        notice.value = installedNotice(i.item.pluginId, i.version, row.enabled);
+      },
+    },
+  );
+}
+
+// New installs, and updates that change what the plugin may do, wait for the admin to enable them.
+const installedNotice = (pluginId: string, version: string, enabled: boolean) =>
+  enabled
+    ? `${pluginId} ${version} installed.`
+    : `${pluginId} ${version} installed, disabled. Review its capabilities and network hosts, then Enable it on the Installed tab.`;
+
+const shortSha = (sha: string | null) => sha?.slice(0, 12) ?? '';
+
+// ── install from file (design §4.6) ──
+
+const fromFile = ref<{ file?: File; staged?: StagedUpload; confirm: string }>();
+function openFromFile() {
+  uploadPlugin.reset();
+  installUpload.reset();
+  fromFile.value = { confirm: '' };
+}
+function pickFile(e: Event) {
+  const f = fromFile.value;
+  if (!f) return;
+  uploadPlugin.reset();
+  installUpload.reset();
+  fromFile.value = { file: (e.target as HTMLInputElement).files?.[0], confirm: '' };
+}
+function upload() {
+  const file = fromFile.value?.file;
+  if (!file) return;
+  uploadPlugin.mutate(file, {
+    onSuccess: (staged) => {
+      if (fromFile.value?.file === file) fromFile.value = { file, staged, confirm: '' };
+    },
+  });
+}
+const fromFileCurrent = computed(() => {
+  const staged = fromFile.value?.staged;
+  return staged ? installedRow(staged.pluginId) : undefined;
+});
+function installFromFile() {
+  const f = fromFile.value;
+  const staged = f?.staged;
+  if (!f || !staged) return;
+  installUpload.mutate(
+    { uploadId: staged.uploadId, confirm: f.confirm },
+    {
+      onSuccess: (row) => {
+        fromFile.value = undefined;
+        notice.value = installedNotice(staged.pluginId, staged.version, row.enabled);
+      },
+      onError: (err) => {
+        // The staged file is gone: the admin uploads it again.
+        if (err instanceof ApiError && (err.code === 'upload_expired' || err.code === 'upload_not_found'))
+          fromFile.value = { file: f.file, confirm: '' };
+      },
+    },
+  );
+}
+
+// ── revert to the released version ──
+
+const reverting = ref<{ plugin: PluginRow; repo?: Repo; confirm: string }>();
+function openRevert(plugin: PluginRow) {
+  revertPlugin.reset();
+  reverting.value = { plugin, repo: repos.value.find((r) => r.id === plugin.repoId), confirm: '' };
+}
+function revert() {
+  const r = reverting.value;
+  const version = r?.plugin.manual?.releasedVersion;
+  if (!r || !version) return;
+  revertPlugin.mutate(
+    { id: r.plugin.id, confirm: r.confirm || undefined },
+    {
+      onSuccess: (row) => {
+        reverting.value = undefined;
+        notice.value = installedNotice(r.plugin.pluginId, version, row.enabled);
       },
     },
   );
@@ -170,8 +253,9 @@ const BLOCKED: Record<string, string> = {
 
 <template>
   <div class="page">
-    <PageHeader title="Plugins" subtitle="Plugins are installed from signed or unsigned repositories">
+    <PageHeader title="Plugins" subtitle="Plugins are installed from signed or unsigned repositories, or from a file">
       <button class="btn" type="button" @click="rescan">Rescan</button>
+      <button class="btn btn-primary" type="button" @click="openFromFile">Install from file</button>
     </PageHeader>
 
     <nav class="tabs" role="tablist" aria-label="Plugin lists" @keydown="rovingKeydown">
@@ -255,7 +339,20 @@ const BLOCKED: Record<string, string> = {
             </td>
             <td class="mono">{{ p.version }}</td>
             <td>
-              <span v-if="p.signatureVerified" class="pill ok">signed</span>
+              <template v-if="p.manual">
+                <span
+                  class="pill warn"
+                  :title="`Uploaded ${formatDate(p.manual.uploadedAt)} · sha256 ${p.sha256 ?? ''}`"
+                  >manual</span
+                >
+                <div class="small muted">
+                  <span class="mono">{{ p.manual.fileName }}</span>
+                  <div>
+                    uploaded {{ ago(p.manual.uploadedAt) }} · <span class="mono">{{ shortSha(p.sha256) }}</span>
+                  </div>
+                </div>
+              </template>
+              <span v-else-if="p.signatureVerified" class="pill ok">signed</span>
               <span v-else class="pill warn">unsigned</span>
             </td>
             <td>
@@ -264,6 +361,15 @@ const BLOCKED: Record<string, string> = {
             </td>
             <td>{{ p.instances }}</td>
             <td class="right">
+              <button
+                v-if="p.manual?.releasedVersion"
+                class="btn btn-sm"
+                type="button"
+                :aria-describedby="`${uid}-p-${p.id}`"
+                @click="openRevert(p)"
+              >
+                Revert to released {{ p.manual.releasedVersion }}…
+              </button>
               <button
                 class="btn btn-sm"
                 type="button"
@@ -319,7 +425,8 @@ const BLOCKED: Record<string, string> = {
             <td class="mono">{{ a.latest ?? 'none compatible' }}</td>
             <td class="mono">
               {{ a.installed?.version ?? '—' }}
-              <span v-if="a.updateAvailable" class="pill info">update</span>
+              <span v-if="a.installed?.manual" class="pill warn">manual</span>
+              <span v-else-if="a.updateAvailable" class="pill info">update</span>
             </td>
             <td class="right">
               <span v-if="a.blocked" class="pill warn">{{ BLOCKED[a.blocked] ?? a.blocked }}</span>
@@ -334,11 +441,13 @@ const BLOCKED: Record<string, string> = {
                 {{
                   !a.installed
                     ? 'Install…'
-                    : !a.installed.managed
-                      ? 'Replace…'
-                      : a.updateAvailable
-                        ? 'Update…'
-                        : 'Reinstall…'
+                    : a.installed.manual
+                      ? `Revert / update to ${a.latest}…`
+                      : !a.installed.managed
+                        ? 'Replace…'
+                        : a.updateAvailable
+                          ? 'Update…'
+                          : 'Reinstall…'
                 }}
               </button>
             </td>
@@ -433,17 +542,16 @@ const BLOCKED: Record<string, string> = {
         {{ installing.item.pluginId }} {{ installing.item.installed.version }} wasn't installed from a repository. This
         replaces its files and keeps its endpoints, but leaves the plugin disabled until you review and enable it.
       </p>
+      <p v-if="installing.item.installed?.manual" class="alert warn">
+        {{ installing.item.pluginId }} {{ installing.item.installed.version }} is an uploaded file. This installs the
+        repository version in its place and keeps its endpoints.
+      </p>
       <template v-if="installRepo?.signingMode === 'unsigned'">
         <p class="alert warn">
           This repository is unsigned: only the checksum in its index is verified, so whoever controls the index
           controls the code.
         </p>
-        <div class="field">
-          <label for="i-confirm"
-            >Type <code>{{ installing.item.pluginId }}</code> to install anyway</label
-          >
-          <input id="i-confirm" v-model="installing.confirm" autocomplete="off" />
-        </div>
+        <TypedConfirm v-model="installing.confirm" :expected="installing.item.pluginId" action="install anyway" />
       </template>
       <p v-else class="small">
         The download is checked against the index checksum and the repository's pinned signing key.
@@ -460,6 +568,120 @@ const BLOCKED: Record<string, string> = {
           @click="install"
         >
           {{ installBusy ? 'Installing…' : 'Install' }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog v-if="fromFile" title="Install plugin from file" @close="fromFile = undefined">
+      <div class="field">
+        <label for="f-file">Plugin file (.tgz)</label>
+        <input id="f-file" type="file" accept=".tgz,.tar.gz,application/gzip" @change="pickFile" />
+        <p class="help">A tarball as <code>synoikia-plugin repo pack</code> makes it, up to 50 MB.</p>
+      </div>
+      <p v-if="uploadPlugin.errorText.value" class="alert error" role="alert">{{ uploadPlugin.errorText.value }}</p>
+      <template v-if="fromFile.staged">
+        <dl class="summary">
+          <dt>Plugin</dt>
+          <dd class="mono">{{ fromFile.staged.pluginId }}</dd>
+          <dt>Version</dt>
+          <dd class="mono">{{ fromFile.staged.version }}</dd>
+          <dt>sha256</dt>
+          <dd class="mono" :title="fromFile.staged.sha256">{{ shortSha(fromFile.staged.sha256) }}</dd>
+          <dt>Replaces</dt>
+          <dd v-if="fromFile.staged.replaces">
+            <span class="mono">{{ fromFile.staged.replaces.version }}</span>
+            {{
+              fromFile.staged.replaces.manual
+                ? '(an uploaded file)'
+                : fromFile.staged.replaces.repoName
+                  ? `from ${fromFile.staged.replaces.repoName}`
+                  : '(not from a repository)'
+            }}. Its endpoints, connections and access levels stay.
+          </dd>
+          <dd v-else>Nothing: this is a new plugin. It starts disabled.</dd>
+        </dl>
+        <p v-if="!fromFile.staged.sdkCompatible" class="alert error" role="alert">
+          This file needs plugin SDK <span class="mono">{{ fromFile.staged.sdk }}</span
+          >, which this Synoikia doesn't support.
+        </p>
+        <div v-if="fromFile.staged.permissionChanges.length" class="alert warn">
+          This file changes what the plugin may do:
+          <ul>
+            <li v-for="c in fromFile.staged.permissionChanges" :key="c" class="mono">{{ c }}</li>
+          </ul>
+          The plugin is disabled after the install. Review it, then Enable it on the Installed tab.
+        </div>
+        <p class="alert warn">
+          This file is unsigned. Only your review vouches for its code.
+          <template v-if="fromFileCurrent?.enabled && !fromFile.staged.permissionChanges.length">
+            {{ fromFile.staged.pluginId }} stays enabled, and its live endpoints serve this code at once.
+          </template>
+        </p>
+        <TypedConfirm v-model="fromFile.confirm" :expected="fromFile.staged.pluginId" action="install it" />
+      </template>
+      <p v-if="installUpload.errorText.value" class="alert error" role="alert">{{ installUpload.errorText.value }}</p>
+      <template #footer>
+        <button class="btn" type="button" @click="fromFile = undefined">Cancel</button>
+        <button
+          v-if="!fromFile.staged"
+          class="btn btn-primary"
+          type="button"
+          :disabled="!fromFile.file || uploadPlugin.isPending.value"
+          @click="upload"
+        >
+          {{ uploadPlugin.isPending.value ? 'Uploading…' : 'Upload' }}
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          type="button"
+          :disabled="
+            installUpload.isPending.value ||
+            !fromFile.staged.sdkCompatible ||
+            fromFile.confirm !== fromFile.staged.pluginId
+          "
+          @click="installFromFile"
+        >
+          {{ installUpload.isPending.value ? 'Installing…' : 'Install' }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog
+      v-if="reverting?.plugin.manual?.releasedVersion"
+      :title="`Revert ${reverting.plugin.pluginId} to ${reverting.plugin.manual.releasedVersion}`"
+      @close="reverting = undefined"
+    >
+      <p>
+        This installs {{ reverting.plugin.pluginId }}
+        <span class="mono">{{ reverting.plugin.manual.releasedVersion }}</span> from
+        {{ reverting.repo?.name ?? reverting.repo?.url ?? 'its repository' }} in place of the uploaded file
+        <span class="mono">{{ reverting.plugin.manual.fileName }}</span
+        >. Its endpoints, connections and access levels stay.
+      </p>
+      <p class="small muted">
+        If the released version changes what the plugin may do, it stays disabled until you enable it.
+      </p>
+      <template v-if="reverting.repo?.signingMode === 'unsigned'">
+        <p class="alert warn">
+          This repository is unsigned: only the checksum in its index is verified, so whoever controls the index
+          controls the code.
+        </p>
+        <TypedConfirm v-model="reverting.confirm" :expected="reverting.plugin.pluginId" action="revert anyway" />
+      </template>
+      <p v-if="revertPlugin.errorText.value" class="alert error" role="alert">{{ revertPlugin.errorText.value }}</p>
+      <template #footer>
+        <button class="btn" type="button" @click="reverting = undefined">Cancel</button>
+        <button
+          class="btn btn-primary"
+          type="button"
+          :disabled="
+            revertPlugin.isPending.value ||
+            (reverting.repo?.signingMode === 'unsigned' && reverting.confirm !== reverting.plugin.pluginId)
+          "
+          @click="revert"
+        >
+          {{ revertPlugin.isPending.value ? 'Reverting…' : 'Revert' }}
         </button>
       </template>
     </ModalDialog>
@@ -542,6 +764,23 @@ const BLOCKED: Record<string, string> = {
 </template>
 
 <style scoped>
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 16px 0;
+}
+.summary dt {
+  color: var(--ink-muted);
+}
+.summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.alert ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
 strong + .mono {
   margin-left: 6px;
 }

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/vue-query';
 import { toValue } from 'vue';
 import type { MaybeRefOrGetter } from 'vue';
 import { http } from '../api';
-import type { AvailablePlugin, PluginRow, Repo } from '../types';
+import type { AvailablePlugin, PluginRow, Repo, StagedUpload } from '../types';
 import { useApiMutation } from './useApiMutation';
 import { overviewKeys } from './useOverview';
 
@@ -39,6 +39,18 @@ export const useRescanPlugins = () => write(() => http.post('/api/plugins/rescan
 export const useInstallPlugin = () =>
   write((body: { repoId: string; pluginId: string; version: string; confirm?: string }) =>
     http.post<{ enabled: boolean }>('/api/plugins/install', body),
+  );
+
+// Staging changes nothing installed, so it refreshes no list.
+export const useUploadPlugin = () =>
+  useApiMutation((file: File) => http.upload<StagedUpload>('/api/plugins/uploads', file));
+export const useInstallUpload = () =>
+  write(({ uploadId, confirm }: { uploadId: string; confirm: string }) =>
+    http.post<PluginRow>(`/api/plugins/uploads/${uploadId}/install`, { confirm }),
+  );
+export const useRevertPlugin = () =>
+  write(({ id, confirm }: { id: string; confirm?: string }) =>
+    http.post<PluginRow>(`/api/plugins/${id}/revert`, { confirm }),
   );
 
 export const useAddRepo = () =>

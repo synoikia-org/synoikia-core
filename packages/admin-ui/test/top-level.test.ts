@@ -105,6 +105,221 @@ describe('Plugins', () => {
     await click(wrapper, 'Rescan');
     expect(wrapper.get('[role="alert"]').text()).toBe('Disk full');
   });
+
+  const staged = (extra: Record<string, unknown> = {}) => ({
+    uploadId: 'up1',
+    pluginId: 'acme',
+    version: '1.1.0-dev',
+    sdk: '^0.9.0',
+    sha256: 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12',
+    fileName: 'acme-1.1.0-dev.tgz',
+    sdkCompatible: true,
+    expiresAt: '2026-01-01T00:15:00Z',
+    replaces: { version: '1.0.0', repoName: 'Main', manual: false },
+    permissionChanges: [],
+    ...extra,
+  });
+
+  async function pickAndUpload(wrapper: Awaited<ReturnType<typeof mountAt>>['wrapper'], body: DOMWrapper<Element>) {
+    await click(wrapper, 'Install from file');
+    const input = dialog(body).get<HTMLInputElement>('input[type="file"]');
+    const file = new File([new Uint8Array([31, 139, 8])], 'acme 1.1.0.tgz');
+    Object.defineProperty(input.element, 'files', { value: [file] });
+    await input.trigger('change');
+    await click(dialog(body), 'Upload');
+  }
+
+  it('uploads a file, shows what it replaces, and installs it after the typed id', async () => {
+    const { calls, fetchMock } = pluginsApi({
+      'POST /api/plugins/uploads': staged(),
+      'POST /api/plugins/uploads/up1/install': plugin({ enabled: true }),
+    });
+    const { wrapper, body } = await mountAt('/plugins');
+    await pickAndUpload(wrapper, body);
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/plugins/uploads')!;
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['content-type']).toBe('application/octet-stream');
+    expect(headers['x-file-name']).toBe('acme%201.1.0.tgz');
+    expect(init!.body).toBeInstanceOf(File);
+
+    const text = dialog(body).text();
+    expect(text).toContain('1.1.0-dev');
+    expect(text).toContain('ab12cd34ef56');
+    expect(text).toContain('1.0.0 from Main');
+    expect(text).toContain('Only your review vouches for its code.');
+    expect(text).toContain('acme stays enabled, and its live endpoints serve this code at once.');
+    expect(text).not.toContain('changes what the plugin may do');
+
+    const install = () =>
+      dialog(body)
+        .findAll('button')
+        .find((b) => b.text() === 'Install')!;
+    expect(install().attributes('disabled')).toBeDefined();
+    await dialog(body).get('input:not([type="file"])').setValue('acme');
+    await install().trigger('click');
+    await flushPromises();
+    expect(writes(calls).at(-1)).toEqual({
+      method: 'POST',
+      path: '/api/plugins/uploads/up1/install',
+      body: { confirm: 'acme' },
+    });
+    expect(body.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.get('[role="status"]').text()).toBe('acme 1.1.0-dev installed.');
+    expect(calls.filter((c) => c.path === '/api/plugins' && c.method === 'GET')).toHaveLength(2);
+  });
+
+  it('warns that a permission change disables the plugin, and a new plugin starts disabled', async () => {
+    let next: Record<string, unknown> = { permissionChanges: ['binding', 'network.hosts'] };
+    pluginsApi({ 'POST /api/plugins/uploads': () => staged(next) });
+    const { wrapper, body } = await mountAt('/plugins');
+    await pickAndUpload(wrapper, body);
+    let text = dialog(body).text();
+    expect(text).toContain('This file changes what the plugin may do');
+    expect(
+      dialog(body)
+        .findAll('li')
+        .map((li) => li.text()),
+    ).toEqual(['binding', 'network.hosts']);
+    expect(text).toContain('The plugin is disabled after the install.');
+    expect(text).not.toContain('stays enabled');
+
+    next = { pluginId: 'fresh', replaces: null };
+    await click(dialog(body), 'Cancel');
+    await pickAndUpload(wrapper, body);
+    text = dialog(body).text();
+    expect(text).toContain('this is a new plugin. It starts disabled.');
+    expect(text).not.toContain('stays enabled');
+  });
+
+  it('shows upload and install failures in the dialog', async () => {
+    let installs = 0;
+    const { calls } = pluginsApi({
+      'POST /api/plugins/uploads': () =>
+        calls.filter((c) => c.path === '/api/plugins/uploads').length === 1
+          ? json(400, { error: 'too_large', message: 'The file is too large' })
+          : staged(),
+      'POST /api/plugins/uploads/up1/install': () => {
+        installs++;
+        return json(409, { error: 'upload_expired', message: 'This upload expired; upload the file again' });
+      },
+    });
+    const { wrapper, body } = await mountAt('/plugins');
+    await pickAndUpload(wrapper, body);
+    expect(dialog(body).get('[role="alert"]').text()).toBe('The file is too large');
+
+    await click(dialog(body), 'Upload');
+    expect(dialog(body).find('[role="alert"]').exists()).toBe(false);
+    await dialog(body).get('input:not([type="file"])').setValue('acme');
+    await click(dialog(body), 'Install');
+    expect(installs).toBe(1);
+    expect(dialog(body).get('[role="alert"]').text()).toBe('This upload expired; upload the file again');
+    // The staged file is gone, so the dialog asks for the upload again.
+    expect(
+      dialog(body)
+        .findAll('button')
+        .some((b) => b.text() === 'Upload'),
+    ).toBe(true);
+  });
+
+  it('blocks an install the plugin SDK does not support', async () => {
+    pluginsApi({ 'POST /api/plugins/uploads': staged({ sdkCompatible: false }) });
+    const { wrapper, body } = await mountAt('/plugins');
+    await pickAndUpload(wrapper, body);
+    expect(dialog(body).get('[role="alert"]').text()).toContain('needs plugin SDK ^0.9.0');
+    await dialog(body).get('input:not([type="file"])').setValue('acme');
+    expect(
+      dialog(body)
+        .findAll('button')
+        .find((b) => b.text() === 'Install')!
+        .attributes('disabled'),
+    ).toBeDefined();
+  });
+
+  const manualPlugin = plugin({
+    repoId: 'r1',
+    sha256: 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12',
+    signatureVerified: false,
+    manual: { fileName: '<b>acme</b>.tgz', uploadedAt: '2026-01-01T00:00:00Z', releasedVersion: '1.0.0' },
+  });
+  const repo = (signingMode: 'signed' | 'unsigned') => ({
+    id: 'r1',
+    url: 'https://example.com/index.json',
+    name: 'Main',
+    signingMode,
+    keyStatus: 'ok',
+    pluginCount: 1,
+  });
+
+  it('shows a manual plugin with its file, and reverts it to the released version', async () => {
+    const { calls } = pluginsApi({
+      'GET /api/plugins': [manualPlugin],
+      'GET /api/plugin-repos': [repo('signed')],
+      'POST /api/plugins/p1/revert': plugin({ enabled: true }),
+    });
+    const { wrapper, body } = await mountAt('/plugins');
+    const pill = wrapper.findAll('.pill').find((p) => p.text() === 'manual')!;
+    expect(pill.attributes('title')).toContain('sha256 ab12cd34ef56');
+    expect(wrapper.findAll('.pill').map((p) => p.text())).not.toContain('unsigned');
+    expect(wrapper.text()).toContain('<b>acme</b>.tgz');
+    expect(wrapper.find('b').exists()).toBe(false);
+    expect(wrapper.text()).toContain('ab12cd34ef56');
+
+    await click(wrapper, 'Revert to released 1.0.0…');
+    expect(dialog(body).text()).toContain('from Main in place of the uploaded file');
+    expect(dialog(body).find('input').exists()).toBe(false);
+    await click(dialog(body), 'Revert');
+    expect(writes(calls)).toEqual([{ method: 'POST', path: '/api/plugins/p1/revert', body: {} }]);
+    expect(wrapper.get('[role="status"]').text()).toBe('acme 1.0.0 installed.');
+  });
+
+  it('asks for the typed id to revert from an unsigned repository, and shows a refusal', async () => {
+    const { calls } = pluginsApi({
+      'GET /api/plugins': [manualPlugin],
+      'GET /api/plugin-repos': [repo('unsigned')],
+      'POST /api/plugins/p1/revert': json(409, {
+        error: 'released_version_gone',
+        message: 'acme@1.0.0 is no longer in Main',
+      }),
+    });
+    const { wrapper, body } = await mountAt('/plugins');
+    await click(wrapper, 'Revert to released 1.0.0…');
+    const revert = () =>
+      dialog(body)
+        .findAll('button')
+        .find((b) => b.text() === 'Revert')!;
+    expect(revert().attributes('disabled')).toBeDefined();
+    await dialog(body).get('input').setValue('acme');
+    await revert().trigger('click');
+    await flushPromises();
+    expect(writes(calls)).toEqual([{ method: 'POST', path: '/api/plugins/p1/revert', body: { confirm: 'acme' } }]);
+    expect(dialog(body).get('[role="alert"]').text()).toBe('acme@1.0.0 is no longer in Main');
+  });
+
+  it('offers a manual plugin no revert without a released version, and reads repository installs as revert/update', async () => {
+    pluginsApi({
+      'GET /api/plugins': [{ ...manualPlugin, manual: { ...manualPlugin.manual, releasedVersion: null } }],
+      'GET /api/plugin-repos': [repo('signed')],
+      'GET /api/plugin-repos/available': [
+        {
+          repoId: 'r1',
+          repoName: 'Main',
+          signingMode: 'signed',
+          pluginId: 'acme',
+          name: 'Acme',
+          description: null,
+          versions: [{ version: '1.0.0', compatible: true }],
+          latest: '1.0.0',
+          installed: { version: '1.1.0-dev', fromThisRepo: true, managed: true, manual: true },
+          updateAvailable: false,
+          blocked: null,
+        },
+      ],
+    });
+    const { wrapper } = await mountAt('/plugins');
+    expect(wrapper.findAll('button').some((b) => b.text().startsWith('Revert'))).toBe(false);
+    await click(wrapper, 'Available (1)');
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Revert / update to 1.0.0…')).toBe(true);
+  });
 });
 
 describe('Clients & Tokens', () => {
