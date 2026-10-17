@@ -1,0 +1,105 @@
+specification {
+  element actor {
+    style {
+      shape person
+    }
+  }
+  element system
+  element container
+  element component
+  element store {
+    style {
+      shape storage
+    }
+  }
+  element external {
+    style {
+      color muted
+    }
+  }
+  deploymentNode zone
+  deploymentNode host
+  deploymentNode runtime
+}
+
+model {
+  admin = actor 'Admin' {
+    description 'A user with the Admin role who configures Synoikia in the admin portal.'
+  }
+  user = actor 'User' {
+    description 'A person whose MCP client calls an endpoint and who decides the approvals of those calls.'
+  }
+
+  mcpClient = external 'MCP client' {
+    description 'An AI agent or automation that calls an endpoint over MCP Streamable HTTP.'
+  }
+  upstream = external 'Upstream' {
+    description 'A self-hosted service that a plugin connects to.'
+  }
+  pluginRepository = external 'Plugin repository' {
+    description 'A published index of plugin bundles, signed with minisign when the publisher signs it.'
+  }
+  identityProvider = external 'Identity provider' {
+    description 'An OIDC provider that signs users in to the portal and the approval page.'
+  }
+  externalProvider = external 'External provider' {
+    description 'A service in front of the MCP listener that identifies the user of a request, for example Cloudflare Access.'
+  }
+  notificationReceiver = external 'Notification receiver' {
+    description 'An ntfy topic or a webhook that receives informational events.'
+  }
+
+  synoikia = system 'Synoikia' {
+    description 'One MCP server for many self-hosted services, with one sandbox, permission gate, approval flow and audit log.'
+
+    core = container 'Core' {
+      technology 'Node.js, Hono'
+      description 'The server process. It owns all security decisions.'
+    }
+    sandbox = container 'Sandbox' {
+      technology 'isolated-vm'
+      description 'A fresh isolate for each search or execute that runs model code.'
+    }
+    instance = container 'Instance' {
+      technology 'Node.js child process, permission model'
+      description 'One configured connection of a plugin to one upstream, as one child process.'
+    }
+    adminPortal = container 'Admin portal' {
+      technology 'Vue 3, Pinia, Vite'
+      description 'The single-page application in which admins and users manage Synoikia.'
+    }
+    database = store 'Database' {
+      technology 'SQLite, Drizzle'
+      description 'Configuration, catalogs, approvals, sessions, encrypted secrets and the audit log.'
+    }
+    bundles = store 'Plugin bundles' {
+      technology 'Files in DATA_DIR/plugins'
+      description 'The installed plugin bundles, one directory for each plugin.'
+    }
+  }
+
+  admin -> synoikia.adminPortal 'configures instances, roles, plugins and settings'
+  user -> synoikia.adminPortal 'sets personal levels and grants'
+  user -> mcpClient 'asks for work'
+  user -> synoikia.core 'decides approvals on the approval page'
+  mcpClient -> synoikia.core 'calls search, execute and resume' {
+    technology 'MCP Streamable HTTP'
+  }
+  externalProvider -> synoikia.core 'identifies the user of a request'
+  synoikia.adminPortal -> synoikia.core 'reads and changes configuration' {
+    technology 'Admin API, HTTPS'
+  }
+  synoikia.core -> synoikia.sandbox 'runs model code in'
+  synoikia.core -> synoikia.instance 'sends operation calls to' {
+    technology 'JSON-RPC 2.0 over IPC'
+  }
+  synoikia.core -> synoikia.database 'reads and writes'
+  synoikia.core -> synoikia.bundles 'installs bundles into'
+  synoikia.core -> pluginRepository 'downloads indexes and bundles from'
+  synoikia.core -> identityProvider 'signs users in with' {
+    technology 'OIDC code flow with PKCE'
+  }
+  synoikia.core -> notificationReceiver 'sends events to'
+  synoikia.instance -> synoikia.bundles 'loads its own bundle, read only'
+  synoikia.instance -> upstream 'calls the upstream API'
+}
