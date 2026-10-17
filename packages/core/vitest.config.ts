@@ -1,3 +1,4 @@
+import { quickpickle } from 'quickpickle';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import shared from '../../vitest.shared.ts';
 
@@ -13,7 +14,21 @@ const floor = (lines: number, functions: number, branches: number, statements: n
 export default mergeConfig(
   shared,
   defineConfig({
+    plugins: [quickpickle()],
     test: {
+      // Feature files run as tests (docs/workflow.md). Only they load the World, so test files keep their vi.mock calls.
+      projects: [
+        { extends: true, test: { name: 'unit', include: ['test/**/*.test.ts'] } },
+        {
+          extends: true,
+          test: {
+            name: 'features',
+            include: ['features/**/*.feature'],
+            exclude: ['test/**'],
+            setupFiles: ['features/support/index.ts'],
+          },
+        },
+      ],
       coverage: {
         provider: 'v8',
         include: ['src/**/*.ts'],
