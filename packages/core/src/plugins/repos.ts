@@ -78,6 +78,9 @@ const FileNameSchema = z
   .max(255)
   .regex(/^[^/\\\0]+$/, 'must be a file name');
 
+// Control characters and bidi overrides would make the name display as another name in the portal and audit.
+const UNSAFE_NAME_CHARS = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
+
 const UPLOAD_PREFIX = 'upload-';
 const UPLOAD_TTL_MS = 15 * 60_000;
 
@@ -759,6 +762,9 @@ export class PluginRepoService {
   /** Extracts and inspects an uploaded tarball, and describes what installing it would change. */
   async stageUpload(bytes: Buffer, rawFileName: unknown) {
     const fileName = FileNameSchema.parse(rawFileName);
+    if (UNSAFE_NAME_CHARS.test(fileName)) {
+      throw new ValidationError('invalid_file_name', 'The file name contains control or bidi characters');
+    }
     if (bytes.length > LIMITS.tarballBytes) throw new ValidationError('too_large', 'The file is too large');
     // One extraction at a time, so overlapping uploads cannot fill the disk.
     if (this.staging) throw new ConflictError('upload_in_progress', 'Another upload is being processed');
@@ -805,6 +811,7 @@ export class PluginRepoService {
             version: current.version,
             repoName: current.repoId ? this.repoRow(current.repoId).name : null,
             manual: !!current.manual,
+            enabled: current.enabled,
           }
         : null,
       permissionChanges: current ? permissionChanges(current.manifest, manifest) : [],

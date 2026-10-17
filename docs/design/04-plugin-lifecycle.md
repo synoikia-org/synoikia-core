@@ -139,7 +139,8 @@ An admin can install a plugin from a tarball file, for example an unreleased bui
 
 - The body limit is 50 MB. The extraction limits of §4.2 apply.
 - Core computes the sha256 and extracts the file into `DATA_DIR/plugins-staging/upload-<id>`. Then core inspects the directory as discovery does (§4.1).
-- The answer gives the upload id, the plugin id and version, the sha256, the SDK compatibility, the plugin that it replaces, and the permission changes (§4.2).
+- Core refuses a file name with control characters or bidi overrides (`invalid_file_name`).
+- The answer gives the upload id, the plugin id and version, the sha256, the SDK compatibility, the plugin that it replaces with its enabled state, and the permission changes (§4.2).
 - Core keeps one staged upload at a time. A new upload removes the previous one. While core extracts an upload, it refuses another upload (`upload_in_progress`).
 - A staged upload expires after 15 minutes (`upload_expired`). Core removes all staged uploads at start.
 

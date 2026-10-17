@@ -115,7 +115,7 @@ describe('Plugins', () => {
     fileName: 'acme-1.1.0-dev.tgz',
     sdkCompatible: true,
     expiresAt: '2026-01-01T00:15:00Z',
-    replaces: { version: '1.0.0', repoName: 'Main', manual: false },
+    replaces: { version: '1.0.0', repoName: 'Main', manual: false, enabled: true },
     permissionChanges: [],
     ...extra,
   });
@@ -182,6 +182,12 @@ describe('Plugins', () => {
     ).toEqual(['binding', 'network.hosts']);
     expect(text).toContain('The plugin is disabled after the install.');
     expect(text).not.toContain('stays enabled');
+
+    // Core reports the plugin disabled now, whatever the cached list says.
+    next = { replaces: { version: '1.0.0', repoName: 'Main', manual: false, enabled: false } };
+    await click(dialog(body), 'Cancel');
+    await pickAndUpload(wrapper, body);
+    expect(dialog(body).text()).not.toContain('stays enabled');
 
     next = { pluginId: 'fresh', replaces: null };
     await click(dialog(body), 'Cancel');

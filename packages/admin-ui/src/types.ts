@@ -361,7 +361,8 @@ export interface StagedUpload {
   fileName: string;
   sdkCompatible: boolean;
   expiresAt: string;
-  replaces: { version: string; repoName: string | null; manual: boolean } | null;
+  /** The installed plugin with this id, as it is when the file is staged. */
+  replaces: { version: string; repoName: string | null; manual: boolean; enabled: boolean } | null;
   permissionChanges: string[];
 }
 

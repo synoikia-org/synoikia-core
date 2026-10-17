@@ -617,7 +617,7 @@ describe('manual plugins', () => {
         sha256: sha(dev),
         fileName: 'echo-1.1.0-dev.1.tgz',
         sdkCompatible: true,
-        replaces: { version: '1.0.0', repoName: 'Test repo', manual: false },
+        replaces: { version: '1.0.0', repoName: 'Test repo', manual: false, enabled: true },
         permissionChanges: [],
       },
     });
@@ -815,6 +815,10 @@ describe('manual plugins', () => {
     );
     expect(await queried.json()).toMatchObject({ fileName: 'é.tgz' });
     expect((await t.upload(echoTarball('1.1.0'), '%E0')).body).toMatchObject({ error: 'invalid_file_name' });
+    for (const name of ['acme-1.2.0\u202Ezgt.lave', 'a\u2066b.tgz', 'a\u0085b.tgz', 'a\tb.tgz']) {
+      const res = await t.upload(echoTarball('1.1.0'), encodeURIComponent(name));
+      expect(res.body).toMatchObject({ error: 'invalid_file_name' });
+    }
 
     const future = await t.upload(echoTarball('1.1.0', withManifest({ sdk: '^9.0.0' })));
     expect(future.body).toMatchObject({ sdkCompatible: false, sdk: '^9.0.0' });

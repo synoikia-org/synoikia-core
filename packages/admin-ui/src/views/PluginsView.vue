@@ -104,7 +104,6 @@ function openInstall(item: AvailablePlugin) {
   installing.value = { item, version: item.latest ?? item.versions[0]?.version ?? '', confirm: '' };
 }
 const installRepo = computed(() => repos.value.find((r) => r.id === installing.value?.item.repoId));
-const installedRow = (pluginId: string) => plugins.value.find((p) => p.pluginId === pluginId);
 function install() {
   const i = installing.value;
   if (!i) return;
@@ -151,10 +150,6 @@ function upload() {
     },
   });
 }
-const fromFileCurrent = computed(() => {
-  const staged = fromFile.value?.staged;
-  return staged ? installedRow(staged.pluginId) : undefined;
-});
 function installFromFile() {
   const f = fromFile.value;
   const staged = f?.staged;
@@ -613,7 +608,7 @@ const BLOCKED: Record<string, string> = {
         </div>
         <p class="alert warn">
           This file is unsigned. Only your review vouches for its code.
-          <template v-if="fromFileCurrent?.enabled && !fromFile.staged.permissionChanges.length">
+          <template v-if="fromFile.staged.replaces?.enabled && !fromFile.staged.permissionChanges.length">
             {{ fromFile.staged.pluginId }} stays enabled, and its live endpoints serve this code at once.
           </template>
         </p>
@@ -660,7 +655,7 @@ const BLOCKED: Record<string, string> = {
         >. Its endpoints, connections and access levels stay.
       </p>
       <p class="small muted">
-        If the released version changes what the plugin may do, it stays disabled until you enable it.
+        If the released version changes what the plugin may do, the plugin is disabled until you enable it again.
       </p>
       <template v-if="reverting.repo?.signingMode === 'unsigned'">
         <p class="alert warn">
