@@ -8,7 +8,7 @@ import { buildPlugin } from '../src/build.js';
 import { checkPlugin } from '../src/check.js';
 import { loadYamlModule, moduleSource } from '../src/files.js';
 import { createRepoTool, repositoryFromRemote } from '../src/repo.js';
-import { dependencyRange, findRepoRoot } from '../src/repo-root.js';
+import { dependencyRange, findRepoRoot, PACKAGE_DIR } from '../src/repo-root.js';
 import { createRepo, fill, manifestFor, newPlugin, validateId, validateNamespace } from '../src/scaffold.js';
 import { pluginFiles } from '../src/vitest.js';
 import { runWorkflow } from '../src/workflow/index.js';
@@ -465,6 +465,29 @@ Feature: Deny writes
     expect(await quiet(['sync', '--check'], root)).toEqual({ code: 0, errors: [] });
     expect((await quiet(['hooks', 'install'], root)).code).toBe(0);
     expect(execFileSync('git', ['config', 'core.hooksPath'], { cwd: root, encoding: 'utf8' }).trim()).toBe('.githooks');
+  });
+
+  it('refuses to sync through a symlink', async () => {
+    const root = repo();
+    const outside = path.join(work(), 'outside.md');
+    writeFileSync(outside, 'keep\n');
+    mkdirSync(path.join(root, 'docs'), { recursive: true });
+    symlinkSync(outside, path.join(root, 'docs/workflow.md'));
+    await expect(runWorkflow(['sync'], root)).rejects.toThrow(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('keep\n');
+  });
+
+  it('denies a branch name with shell characters before it runs a check', () => {
+    const hook = path.join(PACKAGE_DIR, 'templates/workflow/claude/_claude/hooks/guard-branch.mjs');
+    const root = work();
+    for (const name of ['a"&calc&"b', 'a$(id)b', 'a`id`b']) {
+      const out = execFileSync(process.execPath, [hook], {
+        input: JSON.stringify({ tool_input: { command: `git checkout -b ${name}` }, cwd: root }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+        encoding: 'utf8',
+      });
+      expect(JSON.parse(out), name).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    }
   });
 
   it('refuses credential files at commit time', async () => {

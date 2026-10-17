@@ -43,6 +43,10 @@ for (const name of [...names]
   .filter(Boolean)
   .map(clean)
   .filter((n) => n && n !== 'HEAD')) {
+  if (!/^[A-Za-z0-9._/-]+$/.test(name)) {
+    denied.push(`${name}: use letters, digits, ".", "_", "-" and "/" only`);
+    continue;
+  }
   const r = spawnSync('pnpm', ['run', '--silent', 'workflow', 'check-branch', name], {
     cwd: process.env.CLAUDE_PROJECT_DIR ?? cwd,
     encoding: 'utf8',

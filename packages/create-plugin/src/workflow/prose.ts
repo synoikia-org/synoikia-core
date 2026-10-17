@@ -11,7 +11,7 @@ interface Block {
 /** Inline code and link targets are not prose. */
 const stripInline = (text: string) =>
   text
-    .replace(/`[^`]*`/g, 'code')
+    .replace(/`[^`]*`/g, 'Code')
     .replace(/\]\([^)]*\)/g, ']')
     .replace(/<!--.*?-->/g, '')
     .replace(/https?:\/\/\S+/g, 'link');

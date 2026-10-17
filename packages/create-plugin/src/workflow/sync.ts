@@ -1,4 +1,14 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { TEMPLATES_DIR } from '../repo-root.js';
 
@@ -26,11 +36,16 @@ export function syncWorkflow(root: string, check = false): string[] {
   const changed: string[] = [];
   for (const [rel, src] of workflowFiles(root)) {
     const dest = path.join(root, rel);
+    if (lstatSync(dest, { throwIfNoEntry: false })?.isSymbolicLink())
+      throw new Error(`${rel} is a symlink. Remove it before the sync`);
     const text = readFileSync(src, 'utf8');
     if (existsSync(dest) && readFileSync(dest, 'utf8') === text) continue;
     changed.push(rel);
     if (check) continue;
     mkdirSync(path.dirname(dest), { recursive: true });
+    const real = realpathSync(path.dirname(dest));
+    if (path.relative(realpathSync(root), real).startsWith('..'))
+      throw new Error(`${rel} resolves outside the repository`);
     writeFileSync(dest, text);
     if (rel.startsWith('.githooks/')) chmodSync(dest, 0o755);
   }

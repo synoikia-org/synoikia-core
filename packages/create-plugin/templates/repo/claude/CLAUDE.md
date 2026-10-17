@@ -41,4 +41,4 @@ pnpm workflow pre-push                     # the workflow checks CI runs
 
 ## Security review
 
-Before opening a PR that touches a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, or `.github/workflows/`, run the `security-reviewer` subagent on the diff and address its findings. Put its `Security audit:` line in the PR description.
+Run the `security-reviewer` subagent on the diff before a PR that touches these paths: a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, and `.github/workflows/`. Address its findings. Put its `Security audit:` line in the PR description.

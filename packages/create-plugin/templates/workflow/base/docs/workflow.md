@@ -87,6 +87,8 @@ Install the git hooks once per clone:
 pnpm hooks:install
 ```
 
+The hooks run the `workflow` script of the branch that you have checked out. Before you check out a pull request from someone you do not trust, read its changes to `.githooks/` and `package.json`.
+
 | Command                                    | Checks                                                       |
 | ------------------------------------------ | ------------------------------------------------------------ |
 | `pnpm workflow check-branch`               | The branch name                                              |
