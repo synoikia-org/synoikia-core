@@ -17,7 +17,10 @@
     "format:check": "prettier --check .",
     "start": "node --no-node-snapshot packages/core/dist/main.js",
     "workflow": "tsx --conditions=synoikia-source packages/create-plugin/src/cli.ts workflow",
-    "hooks:install": "pnpm workflow hooks install"
+    "hooks:install": "pnpm workflow hooks install",
+    "arch:check": "likec4 validate docs/architecture",
+    "arch:export": "likec4 export markdown docs/architecture",
+    "arch:serve": "likec4 start docs/architecture"
   },
   "synoikia": {
     "workflow": {
@@ -49,6 +52,7 @@
     "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^10.11.0",
     "eslint-plugin-vue": "^10.5.0",
+    "likec4": "~1.59.4",
     "prettier": "^3.6.2",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",

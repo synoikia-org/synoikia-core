@@ -6,3 +6,5 @@ docs/mockups/**/*.json
 packages/core/drizzle
 packages/create-plugin/templates
 packages/create-plugin/.smoke
+# likec4 export markdown writes it
+docs/architecture/README.md

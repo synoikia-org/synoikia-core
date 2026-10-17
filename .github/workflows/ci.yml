@@ -25,6 +25,9 @@ jobs:
       # Build first: core's type declarations.
       - run: pnpm build
       - run: pnpm test
+      - run: pnpm arch:check
+      # The committed architecture views must match the model.
+      - run: pnpm arch:export && git diff --exit-code docs/architecture/README.md
 
   docker:
     runs-on: ubuntu-latest
