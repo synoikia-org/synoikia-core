@@ -1,5 +1,7 @@
 # §5 Call path and gate
 
+Views: [execute through the gate](../architecture/README.md#execute-through-the-gate) and [human approval](../architecture/README.md#human-approval).
+
 ## 5.1 `search(code)`
 
 1. Core runs the code in a new `isolated-vm` isolate (§5.4).

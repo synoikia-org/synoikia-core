@@ -51,6 +51,18 @@ pnpm --filter @synoikia/core exec vitest run test/gate.test.ts   # one test file
 pnpm --filter @synoikia/core test:coverage                        # enforces the coverage floors
 ```
 
+## Architecture model
+
+The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. The `architect` skill and `docs/workflow.md` say when a change updates it. An `arch:` commit changes only the model.
+
+```sh
+pnpm arch:serve    # preview the views locally
+pnpm arch:check    # validate the model
+pnpm arch:export   # write docs/architecture/README.md after you change the model
+```
+
+CI fails when the committed `README.md` does not match the model.
+
 ## Database schema changes
 
 Edit `packages/core/src/db/schema.ts`, then run `pnpm --filter @synoikia/core db:generate` ([Drizzle Kit][drizzle-kit]). Migrations in `packages/core/drizzle/` apply on startup. Never edit `drizzle/meta/` by hand, and never change a migration that has shipped.

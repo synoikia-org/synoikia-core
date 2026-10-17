@@ -29,7 +29,7 @@ This document set is the software design description (SDD) of Synoikia core. It 
 | §13     | [13-verification.md](13-verification.md)         | Test areas and coverage                                                     |
 | §14     | [14-open-items.md](14-open-items.md)             | Items that are not in the design yet                                        |
 
-Diagrams of the system are in [`../architecture.md`](../architecture.md). The plugin author guide is [`../plugin-authoring.md`](../plugin-authoring.md).
+The architecture model is in [`../architecture/`](../architecture/README.md). Its views show the structure of the system. The plugin author guide is [`../plugin-authoring.md`](../plugin-authoring.md).
 
 ## Glossary
 
