@@ -1,0 +1,23 @@
+deployment {
+  zone internet 'Internet' {
+    host proxy 'Reverse proxy' {
+      description 'Terminates TLS and forwards the MCP listener, for example Caddy, Traefik or Cloudflare Tunnel.'
+    }
+  }
+  zone lan 'LAN or VPN' {
+    host docker 'Docker host' {
+      runtime container 'Synoikia container' {
+        technology 'ghcr.io/via-justa/synoikia, non-root'
+        coreProcess = instanceOf synoikia.core
+        isolates = instanceOf synoikia.sandbox
+        children = instanceOf synoikia.instance
+        portal = instanceOf synoikia.adminPortal
+      }
+      runtime volume 'Data volume' {
+        technology 'DATA_DIR'
+        db = instanceOf synoikia.database
+        installed = instanceOf synoikia.bundles
+      }
+    }
+  }
+}

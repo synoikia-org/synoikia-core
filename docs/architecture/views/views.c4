@@ -1,0 +1,72 @@
+views {
+  view index {
+    title 'System context'
+    description 'Who and what talks to Synoikia.'
+    include *
+  }
+
+  view containers of synoikia {
+    title 'Containers'
+    description 'The parts of Synoikia and what each one talks to.'
+    include *
+  }
+
+  view coreComponents of synoikia.core {
+    title 'Core components'
+    description 'The modules of the core process.'
+    include *
+  }
+
+  dynamic view execute {
+    title 'execute through the gate'
+    variant sequence
+    description 'One binding call from model code to the upstream and back.'
+    mcpClient -> synoikia.core.mcpEndpoints '1. calls execute with code'
+    synoikia.core.mcpEndpoints -> synoikia.core.auth '2. authenticates the client'
+    synoikia.core.mcpEndpoints -> synoikia.core.runtime '3. starts the execution'
+    synoikia.core.runtime -> synoikia.sandbox '4. runs the code in a fresh isolate'
+    synoikia.sandbox -> synoikia.core.gate '5. calls a binding'
+    synoikia.core.gate -> synoikia.core.pluginHost '6. resolves the operation and its targets'
+    synoikia.core.gate -> synoikia.core.approvals '7. asks for a human approval when the access level is ask'
+    synoikia.core.gate -> synoikia.core.pluginHost '8. invokes the operation'
+    synoikia.core.pluginHost -> synoikia.instance '9. sends invoke'
+    synoikia.instance -> upstream '10. calls the upstream API'
+    synoikia.core.gate -> synoikia.core.audit '11. records the decision and the redacted result'
+    synoikia.core.gate -> synoikia.sandbox '12. returns the redacted result'
+    synoikia.core.mcpEndpoints -> mcpClient '13. returns the tool result'
+  }
+
+  dynamic view approval {
+    title 'Human approval'
+    variant sequence
+    description 'A call with access level ask waits until its user decides on the approval page.'
+    synoikia.core.gate -> synoikia.core.approvals '1. requests an approval'
+    synoikia.core.approvals -> synoikia.database '2. stores the pending approval with redacted parameters'
+    synoikia.core.approvals -> mcpClient '3. sends the approval page link'
+    mcpClient -> user '4. shows the link'
+    user -> synoikia.core.mcpEndpoints '5. opens the approval page'
+    synoikia.core.mcpEndpoints -> synoikia.core.auth '6. signs the user in'
+    user -> synoikia.core.mcpEndpoints '7. approves or denies'
+    synoikia.core.mcpEndpoints -> synoikia.core.approvals '8. records the decision'
+    synoikia.core.approvals -> synoikia.core.gate '9. continues or denies the call'
+  }
+
+  dynamic view oauth {
+    title 'OAuth sign-in of an MCP client'
+    variant sequence
+    description 'The built-in authorization server gives an MCP client a token for chosen endpoints.'
+    mcpClient -> synoikia.core.mcpEndpoints '1. calls an endpoint without a token'
+    synoikia.core.mcpEndpoints -> mcpClient '2. answers with the resource metadata link'
+    mcpClient -> user '3. opens the authorization page'
+    user -> synoikia.core.mcpEndpoints '4. signs in and consents to endpoints and a ceiling'
+    synoikia.core.mcpEndpoints -> synoikia.core.auth '5. stores the grant and a single-use code'
+    mcpClient -> synoikia.core.mcpEndpoints '6. exchanges the code and the PKCE verifier for tokens'
+    mcpClient -> synoikia.core.mcpEndpoints '7. calls the endpoint with the access token'
+  }
+
+  deployment view deployment {
+    title 'Deployment'
+    description 'One container, two listeners and one data volume.'
+    include *
+  }
+}

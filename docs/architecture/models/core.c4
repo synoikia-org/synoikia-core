@@ -1,0 +1,77 @@
+model {
+  extend synoikia.core {
+    mcpEndpoints = component 'MCP endpoints' {
+      technology 'http/mcp'
+      description 'The MCP listener: one endpoint for each instance, the OAuth authorization server and the approval page.'
+    }
+    adminApi = component 'Admin API' {
+      technology 'http/admin'
+      description 'The admin listener: the Admin API and the static portal, with session cookies and CSRF checks.'
+    }
+    auth = component 'Auth' {
+      technology 'auth/'
+      description 'Users, sessions, TOTP, OIDC, MCP tokens, OAuth grants and external providers.'
+    }
+    runtime = component 'Runtime' {
+      technology 'runtime/'
+      description 'Runs search and execute, limits concurrent runs, and parks an execution that waits on an approval.'
+    }
+    gate = component 'Gate' {
+      technology 'gate/'
+      description 'The permission pipeline between a binding call and the plugin.'
+    }
+    approvals = component 'Approvals' {
+      technology 'approvals/'
+      description 'Requests, links and decisions of human approvals.'
+    }
+    instances = component 'Instance manager' {
+      technology 'instances/'
+      description 'Instance configuration, encrypted connection secrets and settings.'
+    }
+    pluginHost = component 'Plugin host' {
+      technology 'plugins/'
+      description 'Starts, supervises and restarts instance processes, and installs verified bundles.'
+    }
+    catalogSync = component 'Catalog sync' {
+      technology 'catalog/'
+      description 'Syncs the catalog, groups and registry of each instance from its plugin.'
+    }
+    notify = component 'Notifications' {
+      technology 'events.ts, notify/'
+      description 'The event bus and the notification channels.'
+    }
+    audit = component 'Audit log' {
+      technology 'audit.ts'
+      description 'Appends every call, search, configuration change, sign-in and plugin event.'
+    }
+    crypto = component 'Secret box' {
+      technology 'crypto/'
+      description 'Encrypts and decrypts secrets with AES-256-GCM and keys derived from the master key.'
+    }
+  }
+
+  synoikia.core.mcpEndpoints -> synoikia.core.auth 'authenticates the client and the approver with'
+  synoikia.core.mcpEndpoints -> synoikia.core.runtime 'starts search, execute and resume in'
+  synoikia.core.mcpEndpoints -> synoikia.core.approvals 'records decisions from the approval page in'
+  synoikia.core.adminApi -> synoikia.core.auth 'signs admins in with'
+  synoikia.core.adminApi -> synoikia.core.instances 'configures instances in'
+  synoikia.core.adminApi -> synoikia.core.pluginHost 'installs plugins with'
+  synoikia.core.runtime -> synoikia.sandbox 'runs model code in'
+  synoikia.sandbox -> synoikia.core.gate 'sends binding calls to'
+  synoikia.core.gate -> synoikia.core.approvals 'asks for human approval in'
+  synoikia.core.gate -> synoikia.core.pluginHost 'resolves and invokes operations through'
+  synoikia.core.gate -> synoikia.core.audit 'records each decision in'
+  synoikia.core.pluginHost -> synoikia.instance 'sends operation calls to'
+  synoikia.core.pluginHost -> pluginRepository 'downloads indexes and bundles from'
+  synoikia.core.pluginHost -> synoikia.bundles 'installs bundles into'
+  synoikia.core.instances -> synoikia.core.crypto 'encrypts connection secrets with'
+  synoikia.core.instances -> synoikia.core.pluginHost 'starts and stops instances with'
+  synoikia.core.catalogSync -> synoikia.core.pluginHost 'reads catalogs and registries through'
+  synoikia.core.notify -> notificationReceiver 'sends events to'
+  synoikia.core.auth -> identityProvider 'signs users in with'
+  synoikia.core.auth -> synoikia.database 'stores users, sessions and tokens in'
+  synoikia.core.approvals -> synoikia.database 'stores pending approvals in'
+  synoikia.core.audit -> synoikia.database 'appends to'
+  synoikia.core.catalogSync -> synoikia.database 'stores catalogs in'
+  synoikia.core.instances -> synoikia.database 'stores instances in'
+}
