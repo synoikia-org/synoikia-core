@@ -781,7 +781,7 @@ flowchart TD
   sha -- no --> fail["install fails"]
   sha -- yes --> sig{"signed repo:<br/>minisign ED/Ed signature<br/>+ trusted comment valid?"}
   sig -- no --> fail
-  sig -- "yes / unsigned + typed id" --> ext["safe extraction<br/>regular files only, no escapes<br/>≤50 MB / 200 MB / 5,000 entries"]
+  sig -- "yes / unsigned (warning shown)" --> ext["safe extraction<br/>regular files only, no escapes<br/>≤50 MB / 200 MB / 5,000 entries"]
   ext --> mf{"manifest id + version match,<br/>schema + sdk range valid,<br/>entry inside dir?"}
   mf -- no --> fail
   mf -- yes --> swap["atomic swap into /data/plugins/&lt;id&gt;"]

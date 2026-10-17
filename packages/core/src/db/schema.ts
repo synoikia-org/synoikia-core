@@ -110,8 +110,12 @@ export const plugins = sqliteTable('plugins', {
   /** Text of the manifest's `instructions` file, read by discovery (design §2.2). */
   instructions: text('instructions'),
   enabled: flag('enabled').notNull().default(false),
+  /** Set while an uploaded tarball replaces the repository version (design §4.6). */
+  manual: json('manual').$type<ManualInstall>(),
   installedAt: createdAt(),
 });
+
+export type ManualInstall = { fileName: string; uploadedAt: string; releasedVersion: string | null };
 
 export const pluginInstances = sqliteTable('plugin_instances', {
   id: id(),

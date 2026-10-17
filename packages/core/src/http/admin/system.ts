@@ -1,4 +1,5 @@
 import type { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import type { AppContext } from '../../app.js';
@@ -6,6 +7,7 @@ import { auditCsvChunks, queryAudit } from '../../audit-query.js';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors.js';
 import { CORE_EVENT_NAMES } from '../../events.js';
 import { effectiveAuthMethods } from '../../instances/manager.js';
+import { LIMITS } from '../../plugins/repos.js';
 import { getSettings, isSettingsSection, updateSettings } from '../../settings.js';
 import { CORE_VERSION } from '../../version.js';
 import { readJson } from '../common.js';
@@ -48,6 +50,26 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/plugins/install', async (c) =>
     c.json(await ctx.repos.install(await readJson(c, z.unknown()), actor(c)), 201),
   );
+  // Manual plugins (design §4.6): the raw tarball is the body, its name a header or query param.
+  app.post(
+    '/api/plugins/uploads',
+    bodyLimit({
+      maxSize: LIMITS.tarballBytes,
+      onError: () => {
+        throw new ValidationError('too_large', 'The file is too large');
+      },
+    }),
+    async (c) => {
+      const header = c.req.header('x-file-name');
+      const fileName = header === undefined ? c.req.query('fileName') : decodeHeader(header);
+      const bytes = Buffer.from(await c.req.arrayBuffer());
+      return c.json(await ctx.repos.stageUpload(bytes, fileName), 201);
+    },
+  );
+  app.post('/api/plugins/uploads/:uploadId/install', async (c) =>
+    c.json(await ctx.repos.installUpload(c.req.param('uploadId'), actor(c))),
+  );
+  app.post('/api/plugins/:id/revert', async (c) => c.json(await ctx.repos.revert(c.req.param('id'), actor(c))));
   app.delete('/api/plugins/:id', (c) => {
     ctx.repos.uninstall(c.req.param('id'), actor(c));
     return c.body(null, 204);
@@ -268,4 +290,12 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       for (const [name, handler] of handlers) ctx.events.off(name, handler as never);
     }),
   );
+}
+
+function decodeHeader(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new ValidationError('invalid_file_name', 'x-file-name is not URI-encoded');
+  }
 }
