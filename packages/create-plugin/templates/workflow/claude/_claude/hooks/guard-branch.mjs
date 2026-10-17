@@ -12,10 +12,13 @@ const currentBranch = () =>
     encoding: 'utf8',
   }).stdout.trim();
 const names = new Set();
-for (const part of command.split(/&&|\|\||;|\n/)) {
-  const words = part.trim().split(/\s+/);
-  const at = words.indexOf('git');
-  if (at < 0) continue;
+for (const part of command.split(/&&|\|\|?|;|\n/)) {
+  const words = part
+    .trim()
+    .split(/\s+/)
+    .filter((w, i, all) => !/^\d*[<>]/.test(w) && !/^\d*[<>]+&?$/.test(all[i - 1] ?? ''));
+  const at = words.findIndex((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+  if (words[at] !== 'git') continue;
   const [sub, ...args] = words.slice(at + 1).filter((w, i, all) => !(i > 0 && all[i - 1] === '-C') && w !== '-C');
   const plain = args.filter((a) => !a.startsWith('-'));
   if ((sub === 'checkout' || sub === 'switch') && args.some((a) => /^-[bcBC]$/.test(a)))
