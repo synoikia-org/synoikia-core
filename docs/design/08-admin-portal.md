@@ -76,7 +76,7 @@ The sidebar above is the one of an admin. A user with another role (§6.4) sees 
 - **Confirmation.** The admin types the plugin id. Then "Install" is available.
 - **Errors.** The dialog shows the error of core, for example `too_large`, `invalid_plugin` or `upload_expired`. After `upload_expired`, the dialog asks for the upload again.
 - **Plugin row.** A manual plugin shows a "manual" pill in place of signed or unsigned. Below it are the file name as plain text, the upload time and the short sha256. The pill tooltip shows the upload date and the full sha256.
-- **Revert.** "Revert to released x.y.z" shows when `releasedVersion` is set. A dialog names the version and the repository. For an unsigned repository, the admin types the plugin id.
+- **Revert.** "Revert to released x.y.z" shows below the pill when `releasedVersion` is set. A dialog names the version and the repository. For an unsigned repository, the admin types the plugin id.
 - **Available tab.** A manual plugin has a "manual" pill. Its action is "Revert / update to x.y.z", which opens the install dialog.
 
 ## 8.3 Plugin UI from data

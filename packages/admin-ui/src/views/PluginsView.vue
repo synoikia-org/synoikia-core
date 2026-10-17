@@ -351,6 +351,15 @@ const BLOCKED: Record<string, string> = {
                     uploaded {{ ago(p.manual.uploadedAt) }} · <span class="mono">{{ shortSha(p.sha256) }}</span>
                   </div>
                 </div>
+                <button
+                  v-if="p.manual?.releasedVersion"
+                  class="btn btn-sm revert"
+                  type="button"
+                  :aria-describedby="`${uid}-p-${p.id}`"
+                  @click="openRevert(p)"
+                >
+                  Revert to released {{ p.manual.releasedVersion }}…
+                </button>
               </template>
               <span v-else-if="p.signatureVerified" class="pill ok">signed</span>
               <span v-else class="pill warn">unsigned</span>
@@ -361,15 +370,6 @@ const BLOCKED: Record<string, string> = {
             </td>
             <td>{{ p.instances }}</td>
             <td class="right">
-              <button
-                v-if="p.manual?.releasedVersion"
-                class="btn btn-sm"
-                type="button"
-                :aria-describedby="`${uid}-p-${p.id}`"
-                @click="openRevert(p)"
-              >
-                Revert to released {{ p.manual.releasedVersion }}…
-              </button>
               <button
                 class="btn btn-sm"
                 type="button"
@@ -776,6 +776,10 @@ const BLOCKED: Record<string, string> = {
 .summary dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+.revert {
+  margin-top: 8px;
+  white-space: nowrap;
 }
 .alert ul {
   margin: 6px 0;
