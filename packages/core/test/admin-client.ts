@@ -9,11 +9,12 @@ export function browser(app: Pick<Hono, 'request'>, opts: { csrf?: boolean } = {
     const h: Record<string, string> = { ...headers };
     if (jar.size) h.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (withCsrf && jar.has('syn_csrf') && !('x-csrf-token' in h)) h['x-csrf-token'] = jar.get('syn_csrf')!;
-    if (body !== undefined) h['content-type'] = 'application/json';
+    const raw = body instanceof Uint8Array;
+    if (body !== undefined) h['content-type'] ??= raw ? 'application/octet-stream' : 'application/json';
     const res = await app.request(path, {
       method,
       headers: h,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : raw ? new Uint8Array(body) : JSON.stringify(body),
     });
     for (const sc of res.headers.getSetCookie()) {
       const [pair, ...attrs] = sc.split(';');
