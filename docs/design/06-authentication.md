@@ -1,5 +1,7 @@
 # §6 Authentication
 
+View: [OAuth sign-in of an MCP client](../architecture/README.md#oauth-sign-in-of-an-mcp-client).
+
 ## 6.1 Admin portal sign-in
 
 The Admin listener (port 8081) has its own sign-in.

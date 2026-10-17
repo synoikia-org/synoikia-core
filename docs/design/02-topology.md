@@ -1,5 +1,7 @@
 # §2 Topology
 
+Views: [containers](../architecture/README.md#containers) and [deployment](../architecture/README.md#deployment).
+
 ```
                 Internet / LAN                                LAN only
           mcp.example.com (TLS at proxy)              admin.lan (TLS at proxy, optional)
