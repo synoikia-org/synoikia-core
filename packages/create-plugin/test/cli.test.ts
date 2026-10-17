@@ -8,9 +8,11 @@ import { buildPlugin } from '../src/build.js';
 import { checkPlugin } from '../src/check.js';
 import { loadYamlModule, moduleSource } from '../src/files.js';
 import { createRepoTool, repositoryFromRemote } from '../src/repo.js';
-import { dependencyRange, findRepoRoot } from '../src/repo-root.js';
+import { dependencyRange, findRepoRoot, PACKAGE_DIR } from '../src/repo-root.js';
 import { createRepo, fill, manifestFor, newPlugin, validateId, validateNamespace } from '../src/scaffold.js';
 import { pluginFiles } from '../src/vitest.js';
+import { runWorkflow } from '../src/workflow/index.js';
+import { syncWorkflow } from '../src/workflow/sync.js';
 
 const RANGES = { sdk: '^0.3.0', core: '^0.5.0', cli: '^0.1.0' };
 const tmp: string[] = [];
@@ -85,13 +87,25 @@ describe('templates', () => {
   it('writes a repository with dotfiles, optional parts, and refuses a non-empty directory', () => {
     const dir = path.join(work(), 'my-plugins');
     createRepo({ dir, repository: 'me/my-plugins', claude: true, ranges: RANGES });
-    for (const f of ['.gitignore', '.github/workflows/ci.yml', '.claude/settings.json', 'CLAUDE.md', 'plugins'])
+    for (const f of [
+      '.gitignore',
+      '.github/workflows/ci.yml',
+      '.github/workflows/workflow.yml',
+      '.githooks/pre-push',
+      'docs/workflow.md',
+      '.claude/settings.json',
+      '.claude/skills/change-workflow/SKILL.md',
+      '.claude/hooks/guard-branch.mjs',
+      'CLAUDE.md',
+      'plugins',
+    ])
       expect(existsSync(path.join(dir, f)), f).toBe(true);
+    expect(syncWorkflow(dir, true)).toEqual([]);
     expect(existsSync(path.join(dir, '.github/workflows/release.yml'))).toBe(false);
     const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as Record<string, unknown>;
     expect(pkg).toMatchObject({
       name: 'my-plugins',
-      scripts: { new: 'synoikia-plugin new' },
+      scripts: { new: 'synoikia-plugin new', workflow: 'synoikia-plugin workflow' },
       synoikia: { repository: 'me/my-plugins' },
       devDependencies: { '@synoikia/core': '^0.5.0', '@synoikia/create-plugin': '^0.1.0' },
     });
@@ -342,5 +356,147 @@ describe('repo', () => {
     const root = work();
     writeFileSync(path.join(root, 'package.json'), '{}');
     expect(() => createRepoTool({ root, repository: 'not a repo' })).toThrow(/Invalid repository/);
+  });
+});
+
+describe('workflow', () => {
+  const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+  const put = (root: string, file: string, text: string) => {
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), text);
+  };
+  const commit = (root: string, subject: string, files: Record<string, string>) => {
+    for (const [f, t] of Object.entries(files)) put(root, f, t);
+    sh(root, 'add', '-A');
+    sh(root, 'commit', '-q', '-m', subject);
+  };
+  const FEATURE = `@id:deny-writes
+Feature: Deny writes
+  Rule: A read-only role cannot write
+    Scenario: An agent with a read-only role tries to delete a pool
+      Given agent 7 has the role "viewer" on instance "nas-01"
+      When agent 7 deletes the pool "tank"
+      Then agent 7 is told the role "viewer" cannot delete pools
+`;
+  const repo = () => {
+    const root = work();
+    sh(root, 'init', '-q', '-b', 'main');
+    sh(root, 'config', 'user.email', 'a@b.c');
+    sh(root, 'config', 'user.name', 'a');
+    commit(root, 'chore: start', {
+      'package.json': JSON.stringify({ name: 'r', synoikia: { workflow: { securityPaths: ['packages/*/src/**'] } } }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+      'packages/core/src/index.ts': 'export {};\n',
+      'docs/a.md': 'Old text; untouched.\n',
+    });
+    sh(root, 'checkout', '-q', '-b', 'core/deny-writes');
+    return root;
+  };
+  const quiet = async (argv: string[], root: string) => {
+    const errors: string[] = [];
+    const error = console.error;
+    const log = console.log;
+    const headRef = process.env.GITHUB_HEAD_REF;
+    console.error = (m: string) => errors.push(m);
+    console.log = () => undefined;
+    delete process.env.GITHUB_HEAD_REF;
+    try {
+      return { code: await runWorkflow(argv, root), errors };
+    } finally {
+      console.error = error;
+      console.log = log;
+      if (headRef !== undefined) process.env.GITHUB_HEAD_REF = headRef;
+    }
+  };
+
+  it('accepts a slice built spec, test, code', async () => {
+    const root = repo();
+    commit(root, 'spec: deny writes for viewers', { 'packages/core/features/gate/deny.feature': FEATURE });
+    commit(root, 'test: steps for deny writes', { 'packages/core/features/gate/steps/deny.ts': 'export {};\n' });
+    commit(root, 'feat: deny writes for viewers', { 'packages/core/src/index.ts': 'export const deny = true;\n' });
+    for (const cmd of ['check-branch', 'check-features', 'check-prose', 'check-phases'])
+      expect(await quiet([cmd, '--base', 'main'], root), cmd).toEqual({ code: 0, errors: [] });
+    expect(await quiet(['pre-push', '--base', 'main'], root)).toEqual({ code: 0, errors: [] });
+  });
+
+  it('refuses a bad branch, mixed phases, new behavior tests and prose on added lines', async () => {
+    const root = repo();
+    sh(root, 'checkout', '-q', '-b', 'claude/serene-dijkstra-abei82');
+    commit(root, 'feat: deny writes', {
+      'packages/core/features/gate/deny.feature': FEATURE,
+      'packages/core/src/index.ts': 'export const deny = true;\n',
+      'packages/core/test/gate.test.ts': 'export {};\n',
+      'docs/a.md': 'Old text; untouched.\n\nNew text; added.\n',
+    });
+    const branch = await quiet(['check-branch'], root);
+    expect(branch.code).toBe(1);
+    expect(branch.errors.join()).toMatch(/"claude" is not a component/);
+    expect((await quiet(['check-phases', '--base', 'main'], root)).errors.join()).toMatch(
+      /deny\.feature is outside the feat phase/,
+    );
+    expect((await quiet(['check-features', '--base', 'main'], root)).errors.join()).toMatch(
+      /gate\.test\.ts: a new test file must be a pure-function unit test/,
+    );
+    expect((await quiet(['check-prose', '--base', 'main'], root)).errors).toEqual([
+      'check-prose: docs/a.md:3: no semicolons. Write two sentences',
+    ]);
+  });
+
+  it('checks the security line from the pull request event', async () => {
+    const root = repo();
+    commit(root, 'fix: tighten', { 'packages/core/src/index.ts': 'export const x = 1;\n' });
+    const event = path.join(work(), 'event.json');
+    const run = async (body: string) => {
+      writeFileSync(event, JSON.stringify({ pull_request: { draft: false, body } }));
+      process.env.GITHUB_EVENT_PATH = event;
+      try {
+        return (await quiet(['check-security-line', '--base', 'main'], root)).code;
+      } finally {
+        delete process.env.GITHUB_EVENT_PATH;
+      }
+    };
+    expect(await run('Tightens it.')).toBe(1);
+    expect(await run('Tightens it.\nSecurity audit: gate. No finding.')).toBe(0);
+  });
+
+  it('syncs the shared files and installs the hooks', async () => {
+    const root = repo();
+    expect((await quiet(['sync', '--check'], root)).code).toBe(1);
+    expect((await quiet(['sync'], root)).code).toBe(0);
+    expect(existsSync(path.join(root, 'docs/workflow.md'))).toBe(true);
+    expect(existsSync(path.join(root, '.claude'))).toBe(false);
+    expect(await quiet(['sync', '--check'], root)).toEqual({ code: 0, errors: [] });
+    expect((await quiet(['hooks', 'install'], root)).code).toBe(0);
+    expect(execFileSync('git', ['config', 'core.hooksPath'], { cwd: root, encoding: 'utf8' }).trim()).toBe('.githooks');
+  });
+
+  it('refuses to sync through a symlink', async () => {
+    const root = repo();
+    const outside = path.join(work(), 'outside.md');
+    writeFileSync(outside, 'keep\n');
+    mkdirSync(path.join(root, 'docs'), { recursive: true });
+    symlinkSync(outside, path.join(root, 'docs/workflow.md'));
+    await expect(runWorkflow(['sync'], root)).rejects.toThrow(/symlink/);
+    expect(readFileSync(outside, 'utf8')).toBe('keep\n');
+  });
+
+  it('denies a branch name with shell characters before it runs a check', () => {
+    const hook = path.join(PACKAGE_DIR, 'templates/workflow/claude/_claude/hooks/guard-branch.mjs');
+    const root = work();
+    for (const name of ['a"&calc&"b', 'a$(id)b', 'a`id`b']) {
+      const out = execFileSync(process.execPath, [hook], {
+        input: JSON.stringify({ tool_input: { command: `git checkout -b ${name}` }, cwd: root }),
+        env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+        encoding: 'utf8',
+      });
+      expect(JSON.parse(out), name).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    }
+  });
+
+  it('refuses credential files at commit time', async () => {
+    const root = repo();
+    put(root, '.env', 'TOKEN=x\n');
+    sh(root, 'add', '.env');
+    expect((await quiet(['pre-commit'], root)).errors.join()).toMatch(/\.env looks like a credential file/);
   });
 });

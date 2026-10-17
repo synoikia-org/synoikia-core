@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the workflow checks that CI runs, except the red check. ALLOW_WORKFLOW=1 skips them once.
+[ "${ALLOW_WORKFLOW:-}" = "1" ] && exit 0
+exec pnpm run --silent workflow pre-push
