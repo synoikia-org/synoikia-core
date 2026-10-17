@@ -15,6 +15,10 @@ Plugins for [Synoikia](https://github.com/via-justa/synoikia-core). Authoring gu
 
 Policy data (locks, splits, sensitive params and results, confirm literals, guidance) goes in `plugin.yaml`; only decisions that need logic go in `src/`. `plugin.yaml` is validated and inlined at build time, so rebuild before e2e tests.
 
+## Workflow
+
+Every change is built spec first and test first, one slice at a time. The rules are in `docs/workflow.md`. Start every task that changes the repo with the `change-workflow` skill. Write prose by the `technical-writing` skill.
+
 ## Commands
 
 Node 22.12+, pnpm 10.
@@ -24,6 +28,8 @@ pnpm new                                   # add a plugin (see the add-plugin sk
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test   # what CI runs
 pnpm --filter ./plugins/<id> test          # one plugin: check, build, unit + e2e
 pnpm check                                 # manifests, plugin.yaml and versions
+pnpm hooks:install                         # once per clone: the workflow's git hooks
+pnpm workflow pre-push                     # the workflow checks CI runs
 ```
 
 ## Rules that break releases or installs
@@ -35,4 +41,4 @@ pnpm check                                 # manifests, plugin.yaml and versions
 
 ## Security review
 
-Before opening a PR that touches a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, or `.github/workflows/`, run the `security-reviewer` subagent on the diff and address its findings.
+Before opening a PR that touches a plugin's `manifest.json`, `plugin.yaml`, `src/` or dependencies, or `.github/workflows/`, run the `security-reviewer` subagent on the diff and address its findings. Put its `Security audit:` line in the PR description.

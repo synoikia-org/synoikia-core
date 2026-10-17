@@ -14,11 +14,22 @@
     "test": "pnpm -r --filter './plugins/*' test",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "workflow": "synoikia-plugin workflow",
+    "hooks:install": "synoikia-plugin workflow hooks install"
   },
   "synoikia": {
     "repository": "{{repository}}",
-    "name": "{{repoName}}"
+    "name": "{{repoName}}",
+    "workflow": {
+      "securityPaths": [
+        "plugins/*/manifest.json",
+        "plugins/*/plugin.yaml",
+        "plugins/*/src/**",
+        "**/package.json",
+        ".github/workflows/**"
+      ]
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
