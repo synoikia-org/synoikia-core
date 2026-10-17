@@ -32,9 +32,12 @@
         "packages/core/src/runtime/**",
         "packages/core/src/instances/**",
         "packages/core/src/db/schema.ts",
+        "packages/core/drizzle/**",
         "packages/plugin-sdk/src/**",
         "packages/create-plugin/**",
         "**/package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
         "Dockerfile",
         ".github/workflows/**"
       ]
