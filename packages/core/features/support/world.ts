@@ -18,7 +18,7 @@ import { browser } from '../../test/admin-client.js';
 const PLUGINS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../test/fixtures/world');
 const ADMIN = { username: 'admin', password: 'world admin passphrase' };
 /** The upstream's API token, stored as the instance's secret. */
-export const API_TOKEN = 'acme-tok-9f8e7d6c';
+export const API_TOKEN = 'acme-tok-9f8e7d6c'; // gitleaks:allow (the fake upstream's test token)
 
 /** The World's operations by the names the feature files use. */
 export const OPERATIONS: Record<string, string> = {
