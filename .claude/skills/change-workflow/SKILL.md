@@ -1,82 +1,70 @@
 ---
 name: change-workflow
 description: >-
-  How to carry a code change from request to merged PR in Synoikia core: size the task, go through plan mode
-  for anything logical or big, propose a work pattern (one PR, or a chain of child PRs into an integration
-  branch run unattended) for the user to approve, and suggest Auto mode for long runs. Use it at the start of
-  every task that will change code, config, CI or docs in this repo, even when the request is phrased as a
-  question, a bug report or "just do X", and before writing a plan. Examples: add a feature or endpoint;
-  refactor a module or the admin UI; fix a bug; migrate a library; change the schema, auth or the gate;
-  bump versions; "can you clean up X". Use it alongside vue-development or core-development, which say how
-  to write the code. Not for questions that change nothing (explain, review, estimate), or for PR babysitting
-  on a PR that already exists.
+  How to carry a change from request to merged PR: size it, plan it, then run one slice at a time through
+  requirements, architecture and build, spec first and test first. Use it at the start of every task that will
+  change code, config, CI, tests or docs in this repo, even when the request is a question, a bug report or
+  "just do X", and before writing a plan. Examples: add a feature, an operation or an endpoint; fix a bug;
+  refactor a module; migrate a library; change the schema, auth or the gate; bump versions; "can you clean up
+  X". Not for questions that change nothing (explain, review, estimate), or for PR babysitting on a PR that
+  already exists.
 ---
 
 # Change workflow
 
-This skill decides **how** a change gets done: which mode, which work pattern, and when to stop for the user. The `vue-development` and `core-development` skills say how the code itself looks.
+**The user decides. You build what the user decided.** The rules for specs, commits, branches, tests and prose are in `docs/workflow.md`. Read it before the first step. This skill says how you run them.
 
-## 1. Size the task before touching anything
+## 1. Size the task
 
-| Small                                                                         | Big or logical                                                                             |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| One concern, a few files in one package                                       | Several concerns, modules or packages                                                      |
-| No change to behavior a user or plugin sees, or one small, local behavior fix | New behavior, a refactor, a library migration, a schema change                             |
-| Nothing in a security path, or a one-line fix with its test                   | Changes to the gate, sandbox, approvals, auth, crypto, plugins, an API contract or the SDK |
-| Reviewable as one PR in one sitting                                           | More than one PR's worth of review, or the work splits into steps                          |
+| Small                                              | Big                                                     |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| One concern in one package or plugin               | Several concerns, packages or plugins                   |
+| One rule, three scenarios at most                  | More than one slice                                     |
+| No security path in `CLAUDE.md`, or a one-line fix | A security path, an API contract, the SDK or the schema |
 
-Check the request against the repo while you size it (read-only): if the work is already done or the premise doesn't hold, say so with the evidence and ask what the user meant instead of planning it. If you're unsure of the size, treat it as big. Underestimating costs a rewrite; overestimating costs one short plan.
+Check the request against the repo before you plan. If the work is done already or the premise is wrong, show the evidence and ask what the user meant. If you are not sure of the size, treat the task as big.
 
-## 2. Big or logical: plan mode first
+Do not use plan mode. The requirements and architecture steps are the plan:
 
-Enter plan mode (`EnterPlanMode`) before any edit, branch or commit, and stay there until the user approves the plan. A big change built without an agreed plan is the most expensive kind of rework, and plan mode is where the user can still redirect it cheaply. Read-only exploration is fine before and during planning.
+- `requirements-engineer` specifies the whole task wide. Every scenario outside the first slice gets `@backlog`.
+- `architect` places the task in the model and writes the build plan: the slices in order, with what each one needs first.
+- The user agrees the spec and the plan before any code. Each slice is then one pull request into `main`.
 
-## 3. Propose a work pattern; the user approves it
+## 2. Run one slice
 
-Recommend one pattern, say why in a sentence, and get approval: in the plan for a big change, or with a short question (AskUserQuestion) for a small one. Don't start until the user picks.
+1. **Branch.** Create a branch from `main` with a name that passes `pnpm workflow check-branch`. Do not use a session's generated branch name.
+2. **Requirements.** Use `requirements-engineer`. Its output is the feature file and a `spec:` commit.
+3. **Architecture.** Use `architect`. Its output is the build plan and, when the slice adds or moves a part, an `arch:` commit.
+4. **Build.** Use `developer`. Its output is the `test:`, `feat:` or `fix:` and `refactor:` commits and a ready pull request.
 
-**Single PR** (small changes):
+Move to the next step only when the user agrees that the current step is done. Skipping a step is the user's decision. Propose it and wait for a clear yes.
 
-- Work on one branch from `main` named as in **Branch names** below, make the change, run the repo's checks (`CLAUDE.md` › Commands), run the `security-reviewer` subagent when `CLAUDE.md` › Security review lists a path you touched, then push and open one draft PR into `main`.
+## 3. Ask in rounds
 
-**PR chain, unattended** (big changes):
+**Facts are yours. Decisions are the user's.** Find what the code, the specs and the model can tell you. Ask about everything that someone could decide in a different way.
 
-- An integration branch from `main` with a draft PR into `main`; that PR's body holds the progress table and the decisions log.
-- One child branch and PR per step into the integration branch, merged (squash) after green CI, one at a time.
-- One implementation subagent per step, so the main session only orchestrates and its context stays small.
-- Stop only on blocking decisions; record everything else in the decisions log for the user to settle before the final merge.
-- Never merge to `main`. The user merges the integration PR.
+- Ask with `AskUserQuestion`, four questions at most for each call. Put your recommendation first and mark it "(Recommended)".
+- Write each answer into the file before you ask the next round.
+- Names come from the field's standard. Offer two or three terms with their source and ask. Do not pick a name silently.
 
-**In both patterns, the PR into `main`** is opened as a draft and watched (`subscribe_pr_activity`) from the moment it opens until it merges or closes, so CI results, reviews and conflicts wake the session. Mark it ready for review (`update_pull_request` with `draft: false`) only when the work is done and CI is green on its current head: the PR going ready is the signal to the user that it needs their review. If a push after that turns CI red, fix it; don't leave a red PR marked ready.
+## 4. Subagents
 
-**UI changes need renders before the PR goes ready.** When the change touches the admin UI or a page core renders, deliver renders in the session first:
+Subagents keep your context small. They do not change the structure of the work.
 
-- Run the app and take screenshots with Playwright (Chromium is pre-installed) of each changed page, dialog and state (loading, empty, error, success where they changed).
-- Cover light and dark mode, and desktop and mobile width when the layout changed.
-- When the change should look the same, show the `main` render next to the branch render.
-- Send them with `SendUserFile` (`display: "render"`), each with a one-line caption saying what it shows.
-- Re-send them after a later push changes the UI. Tests and CI passing are not a substitute for renders.
+- You own the slice, the branch, the commits and the pull request. Phases run in order, never in parallel.
+- You run the interviews and write the feature file yourself.
+- Give a subagent one bounded task with fixed inputs. Example: "Write the steps for `features/gate/deny.feature`. They must fail on a missing behavior, not on missing glue."
+- The subagent returns a short summary and its diff. You run the scenarios, check red or green, and make the commit.
+- The history must look the same as a run without subagents. CI checks the phases.
 
-### Branch names
+## 5. The pull request
 
-Every branch name says what changes, as `<component>/<task-summary>` in lowercase kebab-case.
+- Open the pull request as a draft after the `spec:` commit. Watch it with `subscribe_pr_activity` until it merges or closes.
+- Run the repo's checks (`CLAUDE.md` › Commands) and `pnpm workflow pre-push` before each push.
+- Run the `security-reviewer` subagent when the diff touches a security path. Put its `Security audit:` line in the pull request description.
+- Mark the pull request ready only when every scenario of the slice is green and CI is green on its head.
+- When the change touches a user interface, send screenshots of each changed page and state before the pull request goes ready. Cover light and dark mode, and desktop and mobile width when the layout changed.
 
-- `<component>` is where the most important changes land: `core`, `plugin-sdk`, `create-plugin`, `admin-ui`, `docs`, `ci`, `skills`.
-- `<task-summary>` is two to four words about the whole task: `core/auth-refactoring`, `admin-ui/add-backups`.
-- No `claude/` prefix, no random strings or words, no session IDs or dates.
-- A session's designated branch with a generated name (`claude/…`, random words) is not used. Create a branch with a meaningful name instead, and push and open the PR from it.
-- In a PR chain, the integration branch takes this name. Each child branch adds its step to it with a hyphen: `core/auth-refactoring-session-store`. Git can't hold a branch `a/b` and a branch `a/b/c` at the same time, so don't use a slash.
-- If the PR for a branch already merged, follow-up work gets a new branch with its own name.
+## 6. Long tasks
 
-Read `references/pr-chain.md` before starting a chain: it has the per-step loop, the PR body template, the blocking list and how to resume after an interruption.
-
-## 4. Long task and not in Auto mode: suggest switching
-
-A PR chain, or any task that will run for more than about an hour or across many tool calls, needs tool calls to run without a person approving each one. If the session isn't in Auto mode, say so before starting and suggest picking **Auto** in the mode menu next to the prompt box. Say what it avoids: the chain stalling on a permission prompt while the user is away. Don't switch it yourself; it is the user's setting.
-
-## 5. Running unattended
-
-- After every step, update the plan file's status section and the integration PR's progress table. They are the resume point after a usage limit or a restart.
-- Subagents commit early, in coherent chunks, so an interruption loses little.
-- PR events wake the session; don't poll. A one-time `send_later` check-in covers a lost event. Let a stale check-in fire and do nothing rather than deleting it.
-- Subscribe to each child PR when it opens and unsubscribe when it merges. The PR into `main` stays watched until the user merges or closes it.
+A task that runs for more than about an hour needs tool calls that run without approval. If the session is not in Auto mode, say so and suggest **Auto** in the mode menu next to the prompt box. Do not change the mode yourself.

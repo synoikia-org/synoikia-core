@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses credential files by name, then scans the staged changes with gitleaks when it is installed.
+exec pnpm run --silent workflow pre-commit
