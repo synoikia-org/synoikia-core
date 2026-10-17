@@ -10,7 +10,7 @@ import { effectiveAuthMethods } from '../../instances/manager.js';
 import { LIMITS } from '../../plugins/repos.js';
 import { getSettings, isSettingsSection, updateSettings } from '../../settings.js';
 import { CORE_VERSION } from '../../version.js';
-import { readJson, readOptionalJson } from '../common.js';
+import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
 /** Global Admin API routes (design §8.4): overview, plugins, audit, tokens, users, settings, events. */
@@ -67,11 +67,9 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     },
   );
   app.post('/api/plugins/uploads/:uploadId/install', async (c) =>
-    c.json(await ctx.repos.installUpload(c.req.param('uploadId'), await readJson(c, z.unknown()), actor(c))),
+    c.json(await ctx.repos.installUpload(c.req.param('uploadId'), actor(c))),
   );
-  app.post('/api/plugins/:id/revert', async (c) =>
-    c.json(await ctx.repos.revert(c.req.param('id'), await readOptionalJson(c, z.unknown()), actor(c))),
-  );
+  app.post('/api/plugins/:id/revert', async (c) => c.json(await ctx.repos.revert(c.req.param('id'), actor(c))));
   app.delete('/api/plugins/:id', (c) => {
     ctx.repos.uninstall(c.req.param('id'), actor(c));
     return c.body(null, 204);

@@ -129,7 +129,7 @@ describe('Plugins', () => {
     await click(dialog(body), 'Upload');
   }
 
-  it('uploads a file, shows what it replaces, and installs it after the typed id', async () => {
+  it('uploads a file, shows what it replaces, and installs it with one click', async () => {
     const { calls, fetchMock } = pluginsApi({
       'POST /api/plugins/uploads': staged(),
       'POST /api/plugins/uploads/up1/install': plugin({ enabled: true }),
@@ -154,14 +154,13 @@ describe('Plugins', () => {
       dialog(body)
         .findAll('button')
         .find((b) => b.text() === 'Install')!;
-    expect(install().attributes('disabled')).toBeDefined();
-    await dialog(body).get('input:not([type="file"])').setValue('acme');
+    expect(dialog(body).find('input:not([type="file"])').exists()).toBe(false);
     await install().trigger('click');
     await flushPromises();
     expect(writes(calls).at(-1)).toEqual({
       method: 'POST',
       path: '/api/plugins/uploads/up1/install',
-      body: { confirm: 'acme' },
+      body: {},
     });
     expect(body.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.get('[role="status"]').text()).toBe('acme 1.1.0-dev installed.');
@@ -215,7 +214,6 @@ describe('Plugins', () => {
 
     await click(dialog(body), 'Upload');
     expect(dialog(body).find('[role="alert"]').exists()).toBe(false);
-    await dialog(body).get('input:not([type="file"])').setValue('acme');
     await click(dialog(body), 'Install');
     expect(installs).toBe(1);
     expect(dialog(body).get('[role="alert"]').text()).toBe('This upload expired; upload the file again');
@@ -232,7 +230,6 @@ describe('Plugins', () => {
     const { wrapper, body } = await mountAt('/plugins');
     await pickAndUpload(wrapper, body);
     expect(dialog(body).get('[role="alert"]').text()).toContain('needs plugin SDK ^0.9.0');
-    await dialog(body).get('input:not([type="file"])').setValue('acme');
     expect(
       dialog(body)
         .findAll('button')
@@ -279,7 +276,7 @@ describe('Plugins', () => {
     expect(wrapper.get('[role="status"]').text()).toBe('acme 1.0.0 installed.');
   });
 
-  it('asks for the typed id to revert from an unsigned repository, and shows a refusal', async () => {
+  it('warns about an unsigned repository on revert, without a typed id, and shows a refusal', async () => {
     const { calls } = pluginsApi({
       'GET /api/plugins': [manualPlugin],
       'GET /api/plugin-repos': [repo('unsigned')],
@@ -294,12 +291,44 @@ describe('Plugins', () => {
       dialog(body)
         .findAll('button')
         .find((b) => b.text() === 'Revert')!;
-    expect(revert().attributes('disabled')).toBeDefined();
-    await dialog(body).get('input').setValue('acme');
+    expect(dialog(body).text()).toContain('This repository is unsigned');
+    expect(dialog(body).find('input').exists()).toBe(false);
     await revert().trigger('click');
     await flushPromises();
-    expect(writes(calls)).toEqual([{ method: 'POST', path: '/api/plugins/p1/revert', body: { confirm: 'acme' } }]);
+    expect(writes(calls)).toEqual([{ method: 'POST', path: '/api/plugins/p1/revert', body: {} }]);
     expect(dialog(body).get('[role="alert"]').text()).toBe('acme@1.0.0 is no longer in Main');
+  });
+
+  it('installs from an unsigned repository after its warning, without a typed id', async () => {
+    const { calls } = pluginsApi({
+      'GET /api/plugins': [],
+      'GET /api/plugin-repos': [repo('unsigned')],
+      'GET /api/plugin-repos/available': [
+        {
+          repoId: 'r1',
+          repoName: 'Main',
+          signingMode: 'unsigned',
+          pluginId: 'acme',
+          name: 'Acme',
+          description: null,
+          versions: [{ version: '1.0.0', compatible: true }],
+          latest: '1.0.0',
+          installed: null,
+          updateAvailable: false,
+          blocked: null,
+        },
+      ],
+      'POST /api/plugins/install': plugin({ enabled: false }),
+    });
+    const { wrapper, body } = await mountAt('/plugins');
+    await click(wrapper, 'Available (1)');
+    await click(wrapper, 'Install…');
+    expect(dialog(body).text()).toContain('This repository is unsigned');
+    expect(dialog(body).find('input').exists()).toBe(false);
+    await click(dialog(body), 'Install');
+    expect(writes(calls)).toEqual([
+      { method: 'POST', path: '/api/plugins/install', body: { repoId: 'r1', pluginId: 'acme', version: '1.0.0' } },
+    ]);
   });
 
   it('offers a manual plugin no revert without a released version, and reads repository installs as revert/update', async () => {

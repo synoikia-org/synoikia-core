@@ -4,7 +4,6 @@ import { rovingKeydown } from '../a11y';
 import { ApiError, errorText } from '../api';
 import ModalDialog from '../components/ModalDialog.vue';
 import PageHeader from '../components/PageHeader.vue';
-import TypedConfirm from '../components/TypedConfirm.vue';
 import { latestError } from '../composables/useApiMutation';
 import { useConfirm } from '../composables/useConfirm';
 import {
@@ -98,17 +97,17 @@ const rescan = () => act(rescanPlugins, undefined, 'Plugin directories rescanned
 
 // ── install ──
 
-const installing = ref<{ item: AvailablePlugin; version: string; confirm: string }>();
+const installing = ref<{ item: AvailablePlugin; version: string }>();
 function openInstall(item: AvailablePlugin) {
   installPlugin.reset();
-  installing.value = { item, version: item.latest ?? item.versions[0]?.version ?? '', confirm: '' };
+  installing.value = { item, version: item.latest ?? item.versions[0]?.version ?? '' };
 }
 const installRepo = computed(() => repos.value.find((r) => r.id === installing.value?.item.repoId));
 function install() {
   const i = installing.value;
   if (!i) return;
   installPlugin.mutate(
-    { repoId: i.item.repoId, pluginId: i.item.pluginId, version: i.version, confirm: i.confirm || undefined },
+    { repoId: i.item.repoId, pluginId: i.item.pluginId, version: i.version },
     {
       onSuccess: (row) => {
         installing.value = undefined;
@@ -128,25 +127,25 @@ const shortSha = (sha: string | null) => sha?.slice(0, 12) ?? '';
 
 // ── install from file (design §4.6) ──
 
-const fromFile = ref<{ file?: File; staged?: StagedUpload; confirm: string }>();
+const fromFile = ref<{ file?: File; staged?: StagedUpload }>();
 function openFromFile() {
   uploadPlugin.reset();
   installUpload.reset();
-  fromFile.value = { confirm: '' };
+  fromFile.value = {};
 }
 function pickFile(e: Event) {
   const f = fromFile.value;
   if (!f) return;
   uploadPlugin.reset();
   installUpload.reset();
-  fromFile.value = { file: (e.target as HTMLInputElement).files?.[0], confirm: '' };
+  fromFile.value = { file: (e.target as HTMLInputElement).files?.[0] };
 }
 function upload() {
   const file = fromFile.value?.file;
   if (!file) return;
   uploadPlugin.mutate(file, {
     onSuccess: (staged) => {
-      if (fromFile.value?.file === file) fromFile.value = { file, staged, confirm: '' };
+      if (fromFile.value?.file === file) fromFile.value = { file, staged };
     },
   });
 }
@@ -154,42 +153,36 @@ function installFromFile() {
   const f = fromFile.value;
   const staged = f?.staged;
   if (!f || !staged) return;
-  installUpload.mutate(
-    { uploadId: staged.uploadId, confirm: f.confirm },
-    {
-      onSuccess: (row) => {
-        fromFile.value = undefined;
-        notice.value = installedNotice(staged.pluginId, staged.version, row.enabled);
-      },
-      onError: (err) => {
-        // The staged file is gone: the admin uploads it again.
-        if (err instanceof ApiError && (err.code === 'upload_expired' || err.code === 'upload_not_found'))
-          fromFile.value = { file: f.file, confirm: '' };
-      },
+  installUpload.mutate(staged.uploadId, {
+    onSuccess: (row) => {
+      fromFile.value = undefined;
+      notice.value = installedNotice(staged.pluginId, staged.version, row.enabled);
     },
-  );
+    onError: (err) => {
+      // The staged file is gone: the admin uploads it again.
+      if (err instanceof ApiError && (err.code === 'upload_expired' || err.code === 'upload_not_found'))
+        fromFile.value = { file: f.file };
+    },
+  });
 }
 
 // ── revert to the released version ──
 
-const reverting = ref<{ plugin: PluginRow; repo?: Repo; confirm: string }>();
+const reverting = ref<{ plugin: PluginRow; repo?: Repo }>();
 function openRevert(plugin: PluginRow) {
   revertPlugin.reset();
-  reverting.value = { plugin, repo: repos.value.find((r) => r.id === plugin.repoId), confirm: '' };
+  reverting.value = { plugin, repo: repos.value.find((r) => r.id === plugin.repoId) };
 }
 function revert() {
   const r = reverting.value;
   const version = r?.plugin.manual?.releasedVersion;
   if (!r || !version) return;
-  revertPlugin.mutate(
-    { id: r.plugin.id, confirm: r.confirm || undefined },
-    {
-      onSuccess: (row) => {
-        reverting.value = undefined;
-        notice.value = installedNotice(r.plugin.pluginId, version, row.enabled);
-      },
+  revertPlugin.mutate(r.plugin.id, {
+    onSuccess: (row) => {
+      reverting.value = undefined;
+      notice.value = installedNotice(r.plugin.pluginId, version, row.enabled);
     },
-  );
+  });
 }
 
 // ── repositories ──
@@ -541,27 +534,17 @@ const BLOCKED: Record<string, string> = {
         {{ installing.item.pluginId }} {{ installing.item.installed.version }} is an uploaded file. This installs the
         repository version in its place and keeps its endpoints.
       </p>
-      <template v-if="installRepo?.signingMode === 'unsigned'">
-        <p class="alert warn">
-          This repository is unsigned: only the checksum in its index is verified, so whoever controls the index
-          controls the code.
-        </p>
-        <TypedConfirm v-model="installing.confirm" :expected="installing.item.pluginId" action="install anyway" />
-      </template>
+      <p v-if="installRepo?.signingMode === 'unsigned'" class="alert warn">
+        This repository is unsigned: only the checksum in its index is verified, so whoever controls the index controls
+        the code.
+      </p>
       <p v-else class="small">
         The download is checked against the index checksum and the repository's pinned signing key.
       </p>
       <p v-if="installError" class="alert error" role="alert">{{ installError }}</p>
       <template #footer>
         <button class="btn" type="button" @click="installing = undefined">Cancel</button>
-        <button
-          class="btn btn-primary"
-          type="button"
-          :disabled="
-            installBusy || (installRepo?.signingMode === 'unsigned' && installing.confirm !== installing.item.pluginId)
-          "
-          @click="install"
-        >
+        <button class="btn btn-primary" type="button" :disabled="installBusy" @click="install">
           {{ installBusy ? 'Installing…' : 'Install' }}
         </button>
       </template>
@@ -612,7 +595,6 @@ const BLOCKED: Record<string, string> = {
             {{ fromFile.staged.pluginId }} stays enabled, and its live endpoints serve this code at once.
           </template>
         </p>
-        <TypedConfirm v-model="fromFile.confirm" :expected="fromFile.staged.pluginId" action="install it" />
       </template>
       <p v-if="installUpload.errorText.value" class="alert error" role="alert">{{ installUpload.errorText.value }}</p>
       <template #footer>
@@ -630,11 +612,7 @@ const BLOCKED: Record<string, string> = {
           v-else
           class="btn btn-primary"
           type="button"
-          :disabled="
-            installUpload.isPending.value ||
-            !fromFile.staged.sdkCompatible ||
-            fromFile.confirm !== fromFile.staged.pluginId
-          "
+          :disabled="installUpload.isPending.value || !fromFile.staged.sdkCompatible"
           @click="installFromFile"
         >
           {{ installUpload.isPending.value ? 'Installing…' : 'Install' }}
@@ -657,25 +635,14 @@ const BLOCKED: Record<string, string> = {
       <p class="small muted">
         If the released version changes what the plugin may do, the plugin is disabled until you enable it again.
       </p>
-      <template v-if="reverting.repo?.signingMode === 'unsigned'">
-        <p class="alert warn">
-          This repository is unsigned: only the checksum in its index is verified, so whoever controls the index
-          controls the code.
-        </p>
-        <TypedConfirm v-model="reverting.confirm" :expected="reverting.plugin.pluginId" action="revert anyway" />
-      </template>
+      <p v-if="reverting.repo?.signingMode === 'unsigned'" class="alert warn">
+        This repository is unsigned: only the checksum in its index is verified, so whoever controls the index controls
+        the code.
+      </p>
       <p v-if="revertPlugin.errorText.value" class="alert error" role="alert">{{ revertPlugin.errorText.value }}</p>
       <template #footer>
         <button class="btn" type="button" @click="reverting = undefined">Cancel</button>
-        <button
-          class="btn btn-primary"
-          type="button"
-          :disabled="
-            revertPlugin.isPending.value ||
-            (reverting.repo?.signingMode === 'unsigned' && reverting.confirm !== reverting.plugin.pluginId)
-          "
-          @click="revert"
-        >
+        <button class="btn btn-primary" type="button" :disabled="revertPlugin.isPending.value" @click="revert">
           {{ revertPlugin.isPending.value ? 'Reverting…' : 'Revert' }}
         </button>
       </template>
@@ -695,7 +662,7 @@ const BLOCKED: Record<string, string> = {
         <label for="r-mode">Signing</label>
         <select id="r-mode" v-model="adding.signingMode" :disabled="!!adding.offered">
           <option value="signed">Signed — verify every download against a pinned minisign key</option>
-          <option value="unsigned">Unsigned — checksum only, typed confirmation on every install</option>
+          <option value="unsigned">Unsigned — checksum only, a warning on every install</option>
         </select>
       </div>
       <template v-if="adding.offered">

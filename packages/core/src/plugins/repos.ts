@@ -65,11 +65,7 @@ export const InstallSchema = z.object({
   repoId: z.string(),
   pluginId: z.string(),
   version: z.string(),
-  /** Unsigned repos: must equal the plugin id. */
-  confirm: z.string().optional(),
 });
-
-const ConfirmSchema = z.object({ confirm: z.string().optional() });
 
 const FileNameSchema = z
   .string()
@@ -636,12 +632,6 @@ export class PluginRepoService {
     // A plugin no repository manages (a built-in plugin from before 0.3.0, or one copied in by hand) is
     // adopted: this install replaces its files and keeps its row, so its endpoints carry over.
     const adopting = !!current && !current.repoId;
-    if (repo.signingMode === 'unsigned' && input.confirm !== input.pluginId) {
-      throw new ConflictError(
-        'confirm_required',
-        `This repository is unsigned. Type "${input.pluginId}" to install anyway`,
-      );
-    }
 
     const tarballUrl = this.checkUrl(version.url, repo.url);
     const tarball = await this.download(tarballUrl, LIMITS.tarballBytes);
@@ -819,8 +809,7 @@ export class PluginRepoService {
   }
 
   /** Installs the staged upload over the plugin with its id, keeping the row, its repository and endpoints. */
-  async installUpload(uploadId: string, raw: unknown, actor: Actor = {}) {
-    const { confirm } = ConfirmSchema.parse(raw);
+  async installUpload(uploadId: string, actor: Actor = {}) {
     const upload = this.upload;
     if (!upload || upload.id !== uploadId) throw new NotFoundError('upload_not_found', 'No such upload');
     if (this.now() >= upload.expiresAt) {
@@ -828,9 +817,6 @@ export class PluginRepoService {
       throw new ConflictError('upload_expired', 'This upload expired; upload the file again');
     }
     const { id: pluginId, version, sdk } = upload.manifest;
-    if (confirm !== pluginId) {
-      throw new ConflictError('confirm_required', `This file is unsigned. Type "${pluginId}" to install it`);
-    }
     if (!upload.sdkCompatible)
       throw new ConflictError('incompatible', `${pluginId}@${version} needs plugin SDK ${sdk}`);
     return this.locked(pluginId, async () => {
@@ -847,7 +833,7 @@ export class PluginRepoService {
           root: upload.root,
           manifest: upload.manifest,
           current,
-          // The typed confirmation is the admin's review of the code; permission changes still disable it.
+          // Installing after the unsigned warning is the admin's review of the code; permission changes still disable it.
           keepEnabled: true,
           set: { sha256: upload.sha256, signatureVerified: false, manual },
           decision: 'plugin_manual_installed',
@@ -868,8 +854,7 @@ export class PluginRepoService {
   }
 
   /** Reinstalls the repository version a manual install replaced, through the normal install. */
-  async revert(rowOrPluginId: string, raw: unknown = {}, actor: Actor = {}) {
-    const { confirm } = ConfirmSchema.parse(raw);
+  async revert(rowOrPluginId: string, actor: Actor = {}) {
     const row = this.pluginRow(rowOrPluginId);
     const released = row.manual?.releasedVersion;
     if (!released || !row.repoId) {
@@ -881,7 +866,7 @@ export class PluginRepoService {
     if (!entry?.versions.some((v) => v.version === released)) {
       throw new ConflictError('released_version_gone', `${row.pluginId}@${released} is no longer in ${repo.name}`);
     }
-    const input = { repoId: repo.id, pluginId: row.pluginId, version: released, confirm };
+    const input = { repoId: repo.id, pluginId: row.pluginId, version: released };
     return this.locked(row.pluginId, () => this.installLocked(input, actor, true));
   }
 

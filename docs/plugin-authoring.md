@@ -164,7 +164,7 @@ To try an unreleased build on a live Synoikia, with its endpoints, connections a
 
 1. In the plugin repository, run `pnpm exec synoikia-plugin repo pack --out .repo-test`. It packs each plugin version that `.repo-current/index.json` does not list into `.repo-test/<id>-<version>.tgz`; without that file it packs every plugin. Give the build a new version, such as `1.3.0-dev.1`, so it differs from the released one.
 2. On **Plugins**, select **Install from file**, pick the `.tgz` and check the summary: what it replaces and the permission changes.
-3. Type the plugin id and install it. The build replaces the installed plugin and keeps its endpoints.
+3. Select **Install**. The build replaces the installed plugin and keeps its endpoints.
 
 If the build changes the binding, capabilities, `sensitiveKeys` or `network.hosts`, the plugin is disabled until you enable it again. Otherwise it stays enabled, and its endpoints serve the build at once. A new plugin id starts disabled.
 

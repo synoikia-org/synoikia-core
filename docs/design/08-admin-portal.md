@@ -73,10 +73,10 @@ The sidebar above is the one of an admin. A user with another role (§6.4) sees 
   - the permission changes (§4.2), with a warning that the plugin is disabled after the install;
   - a warning that the file is unsigned. If the plugin is enabled and has no permission change, the warning also says that its live endpoints serve the file at once;
   - an error when the plugin SDK of the file is not compatible. Then "Install" is not available.
-- **Confirmation.** The admin types the plugin id. Then "Install" is available.
+- **Install.** "Install" installs the file. The summary and its warnings are the review step.
 - **Errors.** The dialog shows the error of core, for example `too_large`, `invalid_plugin` or `upload_expired`. After `upload_expired`, the dialog asks for the upload again.
 - **Plugin row.** A manual plugin shows a "manual" pill in place of signed or unsigned. Below it are the file name as plain text, the upload time and the short sha256. The pill tooltip shows the upload date and the full sha256.
-- **Revert.** "Revert to released x.y.z" shows below the pill when `releasedVersion` is set. A dialog names the version and the repository. For an unsigned repository, the admin types the plugin id.
+- **Revert.** "Revert to released x.y.z" shows below the pill when `releasedVersion` is set. A dialog names the version and the repository. For an unsigned repository, it shows the unsigned warning.
 - **Available tab.** A manual plugin has a "manual" pill. Its action is "Revert / update to x.y.z", which opens the install dialog.
 
 ## 8.3 Plugin UI from data
@@ -115,9 +115,9 @@ GET/POST /api/users              PATCH /api/users/:id         POST /api/users/:i
 GET    /api/settings             PUT  /api/settings/:section   PUT /api/settings/oidc
 GET    /api/settings/mcp/clients-seen (client names seen at initialize, §6.6)
 GET    /api/plugins              PATCH /api/plugins/:id {enabled}   DELETE /api/plugins/:id
-POST   /api/plugins/install {repoId, pluginId, version, confirm}    POST /api/plugins/rescan
-POST   /api/plugins/uploads (raw tarball, §4.6)   POST /api/plugins/uploads/:uploadId/install {confirm}
-POST   /api/plugins/:id/revert {confirm}
+POST   /api/plugins/install {repoId, pluginId, version}    POST /api/plugins/rescan
+POST   /api/plugins/uploads (raw tarball, §4.6)   POST /api/plugins/uploads/:uploadId/install
+POST   /api/plugins/:id/revert
 GET/POST /api/plugin-repos       DELETE /api/plugin-repos/:id
 POST   /api/plugin-repos/:id/refresh | /confirm-key {publicKey}     GET /api/plugin-repos/available
 GET/POST /api/instances          GET/PATCH/DELETE /api/instances/:id
