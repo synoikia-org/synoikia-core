@@ -6,13 +6,28 @@
   "entry": "index.mjs",
   "binding": {
     "namespace": "tasks",
-    "functions": ["call"]
+    "functions": ["call"],
+    "searchApis": ["guides"]
+  },
+  "capabilities": {
+    "targets": true,
+    "attestation": true,
+    "configTransform": true
+  },
+  "targets": { "label": "List", "scopes": [] },
+  "matchProfiles": {
+    "list": [{ "field": "/list", "label": "List", "op": "eq", "widget": "text" }],
+    "task": [
+      { "field": "/list", "label": "List", "op": "eq", "widget": "text" },
+      { "field": "/title", "label": "Task", "op": "eq", "widget": "text" }
+    ]
   },
   "connection": {
     "schema": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "format": "uri" }
+        "url": { "type": "string", "format": "uri" },
+        "token": { "type": "string", "writeOnly": true }
       },
       "required": ["url"]
     },
