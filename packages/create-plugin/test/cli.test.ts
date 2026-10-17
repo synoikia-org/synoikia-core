@@ -396,13 +396,16 @@ Feature: Deny writes
     const errors: string[] = [];
     const error = console.error;
     const log = console.log;
+    const headRef = process.env.GITHUB_HEAD_REF;
     console.error = (m: string) => errors.push(m);
     console.log = () => undefined;
+    delete process.env.GITHUB_HEAD_REF;
     try {
       return { code: await runWorkflow(argv, root), errors };
     } finally {
       console.error = error;
       console.log = log;
+      if (headRef !== undefined) process.env.GITHUB_HEAD_REF = headRef;
     }
   };
 
