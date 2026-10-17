@@ -102,6 +102,8 @@ GET    /api/settings             PUT  /api/settings/:section   PUT /api/settings
 GET    /api/settings/mcp/clients-seen (client names seen at initialize, §6.6)
 GET    /api/plugins              PATCH /api/plugins/:id {enabled}   DELETE /api/plugins/:id
 POST   /api/plugins/install {repoId, pluginId, version, confirm}    POST /api/plugins/rescan
+POST   /api/plugins/uploads (raw tarball, §4.6)   POST /api/plugins/uploads/:uploadId/install {confirm}
+POST   /api/plugins/:id/revert {confirm}
 GET/POST /api/plugin-repos       DELETE /api/plugin-repos/:id
 POST   /api/plugin-repos/:id/refresh | /confirm-key {publicKey}     GET /api/plugin-repos/available
 GET/POST /api/instances          GET/PATCH/DELETE /api/instances/:id

@@ -32,8 +32,9 @@ We're especially interested in reports touching:
 - Authentication (admin login, TOTP, OIDC, MCP OAuth/bearer tokens,
   Cloudflare Access)
 - Secret redaction in logs, the audit trail, and approval pages
-- Plugin isolation (child processes under the Node permission model) and
-  plugin repository signature verification
+- Plugin isolation (child processes under the Node permission model),
+  plugin repository signature verification, and manual plugin uploads
+  (archive extraction and the admin-only install path)
 
 Out of scope: a client that gets past the MCP client allow or deny list
 (design §6.6) by sending another client name. A client declares its own

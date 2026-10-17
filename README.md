@@ -65,7 +65,7 @@ Synoikia implements the security-critical parts **once, in core**, and applies t
 
 ## Core features
 
-**🔌 One server, many MCP servers.** Each MCP server is a plugin, installed from a plugin repository and verified with [minisign][minisign] signatures. The [Synoikia plugins repository][core-plugins] comes pre-configured with a set of plugins, and you can add your own. Run several instances of the same plugin (e.g., nas-prod, nas-staging), each on its own endpoint.
+**🔌 One server, many MCP servers.** Each MCP server is a plugin, installed from a plugin repository and verified with [minisign][minisign] signatures. The [Synoikia plugins repository][core-plugins] comes pre-configured with a set of plugins, and you can add your own. To try an unreleased build on a live server, an admin can upload its tarball over the installed plugin and revert to the released version later. Run several instances of the same plugin (e.g., nas-prod, nas-staging), each on its own endpoint.
 
 **🧰 Three tools per endpoint.** Every endpoint exposes just `search(code)`, `execute(code)` and `resume`. The model discovers operations and calls them with code that runs inside an [`isolated-vm`][isolated-vm] sandbox with no Node APIs, network or timers.
 
