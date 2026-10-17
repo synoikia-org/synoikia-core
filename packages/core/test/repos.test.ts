@@ -401,8 +401,8 @@ describe('plugin repositories', () => {
       { blocked: null, installed: { version: '1.0.0', fromThisRepo: false, managed: false } },
     ]);
     const body = { repoId: repo.id, pluginId: 'echo', version: '2.0.0' };
-    expect(await (await t.b.post('/api/plugins/install', body)).json()).toMatchObject({ error: 'confirm_required' });
-    expect(await (await t.b.post('/api/plugins/install', { ...body, confirm: 'echo' })).json()).toMatchObject({
+    // An unsigned repository shows a warning in the portal, but the install needs no typed confirmation.
+    expect(await (await t.b.post('/api/plugins/install', body)).json()).toMatchObject({
       id: before.id,
       version: '2.0.0',
       repoId: repo.id,
@@ -414,6 +414,10 @@ describe('plugin repositories', () => {
     expect(await (await t.b.get('/api/plugin-repos/available')).json()).toMatchObject([
       { blocked: null, installed: { version: '2.0.0', fromThisRepo: true, managed: true } },
     ]);
+    // A client that still sends the typed id is not refused: the key is ignored.
+    const old = await t.b.post('/api/plugins/install', { ...body, confirm: 'wrong' });
+    expect(old.status).toBe(201);
+    expect(await old.json()).toMatchObject({ id: before.id, version: '2.0.0' });
   });
 
   it('never replaces a plugin another repository installed', async () => {
@@ -422,7 +426,7 @@ describe('plugin repositories', () => {
     t.files.set('https://plugins.example.com/echo-2.0.0.tgz', tarball);
     t.publish(indexFor(null, [{ version: '2.0.0', tarball }]));
     const first = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'unsigned' });
-    await t.ctx.repos.install({ repoId: first.id, pluginId: 'echo', version: '2.0.0', confirm: 'echo' });
+    await t.ctx.repos.install({ repoId: first.id, pluginId: 'echo', version: '2.0.0' });
 
     const OTHER = 'https://other.example.com/index.json';
     t.files.set('https://other.example.com/echo-2.0.0.tgz', tarball);
@@ -442,7 +446,6 @@ describe('plugin repositories', () => {
           repoId: other.id,
           pluginId: 'echo',
           version: '2.0.0',
-          confirm: 'echo',
         })
       ).json(),
     ).toMatchObject({ error: 'installed_from_elsewhere' });
@@ -521,7 +524,6 @@ describe('plugin repositories', () => {
         repoId: repo.id,
         pluginId: 'echo',
         version,
-        confirm: 'echo',
       });
       expect({ version, body: await res.json() }).toMatchObject({ version, body: { error } });
     }
@@ -581,7 +583,7 @@ async function withReleased(opts: Parameters<typeof setup>[0] = {}) {
   t.files.set('https://plugins.example.com/echo-1.0.0.tgz', v1);
   t.publish(indexFor(null, [{ version: '1.0.0', tarball: v1 }]));
   const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'unsigned' });
-  const row = await t.ctx.repos.install({ repoId: repo.id, pluginId: 'echo', version: '1.0.0', confirm: 'echo' });
+  const row = await t.ctx.repos.install({ repoId: repo.id, pluginId: 'echo', version: '1.0.0' });
   await t.ctx.instances.setPluginEnabled(row.id, true);
   const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: { token: 's3cret' } });
   await t.ctx.instances.syncNow(inst.id);
@@ -589,8 +591,8 @@ async function withReleased(opts: Parameters<typeof setup>[0] = {}) {
     const res = await t.b.post('/api/plugins/uploads', new Uint8Array(tarball), { 'x-file-name': fileName });
     return { status: res.status, body: (await res.json()) as Uploaded & Record<string, unknown> };
   };
-  const installUpload = async (uploadId: string, confirm?: string) => {
-    const res = await t.b.post(`/api/plugins/uploads/${uploadId}/install`, confirm === undefined ? {} : { confirm });
+  const installUpload = async (uploadId: string, body: unknown = {}) => {
+    const res = await t.b.post(`/api/plugins/uploads/${uploadId}/install`, body);
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
   const audit = (decision: string) =>
@@ -617,16 +619,11 @@ describe('manual plugins', () => {
         sha256: sha(dev),
         fileName: 'echo-1.1.0-dev.1.tgz',
         sdkCompatible: true,
-        replaces: { version: '1.0.0', repoName: 'Test repo', manual: false },
+        replaces: { version: '1.0.0', repoName: 'Test repo', manual: false, enabled: true },
         permissionChanges: [],
       },
     });
-    expect(await t.installUpload(staged.body.uploadId)).toMatchObject({
-      status: 409,
-      body: { error: 'confirm_required' },
-    });
-    expect(await t.installUpload(staged.body.uploadId, 'acme')).toMatchObject({ body: { error: 'confirm_required' } });
-    const installed = await t.installUpload(staged.body.uploadId, 'echo');
+    const installed = await t.installUpload(staged.body.uploadId);
     expect(installed).toMatchObject({
       status: 200,
       body: {
@@ -657,7 +654,7 @@ describe('manual plugins', () => {
       enabled: true,
     });
     // The upload is used up.
-    expect(await t.installUpload(staged.body.uploadId, 'echo')).toMatchObject({
+    expect(await t.installUpload(staged.body.uploadId)).toMatchObject({
       status: 404,
       body: { error: 'upload_not_found' },
     });
@@ -666,16 +663,13 @@ describe('manual plugins', () => {
     const dev2 = echoTarball('1.1.0-dev.2');
     const again = await t.upload(dev2);
     expect(again.body).toMatchObject({ replaces: { version: '1.1.0-dev.1', manual: true } });
-    expect((await t.installUpload(again.body.uploadId, 'echo')).body).toMatchObject({
+    // A client that still sends the typed id is not refused.
+    expect((await t.installUpload(again.body.uploadId, { confirm: 'wrong' })).body).toMatchObject({
       version: '1.1.0-dev.2',
       manual: { releasedVersion: '1.0.0' },
     });
 
-    // Revert goes through the normal unsigned install, so it asks for the typed id too.
-    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`)).json()).toMatchObject({
-      error: 'confirm_required',
-    });
-    const reverted = await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' });
+    const reverted = await t.b.post(`/api/plugins/${t.row.id}/revert`);
     expect(reverted.status).toBe(200);
     expect(await reverted.json()).toMatchObject({
       id: t.row.id,
@@ -691,7 +685,7 @@ describe('manual plugins', () => {
       replacedFile: 'echo.tgz',
       replacedSha256: sha(dev2),
     });
-    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).json()).toMatchObject({
+    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`)).json()).toMatchObject({
       error: 'not_manual',
     });
     expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
@@ -702,7 +696,7 @@ describe('manual plugins', () => {
     const wider = echoTarball('1.1.0', withManifest({ network: { hosts: ['*.example.net'] } }));
     const staged = await t.upload(wider);
     expect(staged.body).toMatchObject({ permissionChanges: ['network.hosts'] });
-    expect((await t.installUpload(staged.body.uploadId, 'echo')).body).toMatchObject({
+    expect((await t.installUpload(staged.body.uploadId)).body).toMatchObject({
       enabled: false,
       manual: { releasedVersion: '1.0.0' },
     });
@@ -715,7 +709,7 @@ describe('manual plugins', () => {
     const acme = echoTarball('0.1.0', withManifest({ id: 'acme' }));
     const fresh = await t.upload(acme);
     expect(fresh.body).toMatchObject({ pluginId: 'acme', replaces: null, permissionChanges: [] });
-    const row = (await t.installUpload(fresh.body.uploadId, 'acme')).body;
+    const row = (await t.installUpload(fresh.body.uploadId)).body;
     expect(row).toMatchObject({
       pluginId: 'acme',
       repoId: null,
@@ -733,7 +727,7 @@ describe('manual plugins', () => {
   it('clears manual on a repository install, and refuses a revert whose version left the index', async () => {
     const t = await withReleased();
     const staged = await t.upload(echoTarball('1.1.0-dev'));
-    await t.installUpload(staged.body.uploadId, 'echo');
+    await t.installUpload(staged.body.uploadId);
 
     const v11 = echoTarball('1.1.0');
     t.files.set('https://plugins.example.com/echo-1.1.0.tgz', v11);
@@ -742,7 +736,7 @@ describe('manual plugins', () => {
     expect(await (await t.b.get('/api/plugin-repos/available')).json()).toMatchObject([
       { installed: { version: '1.1.0-dev', fromThisRepo: true, manual: true } },
     ]);
-    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).json()).toMatchObject({
+    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`)).json()).toMatchObject({
       error: 'released_version_gone',
     });
 
@@ -750,11 +744,10 @@ describe('manual plugins', () => {
       repoId: t.repo.id,
       pluginId: 'echo',
       version: '1.1.0',
-      confirm: 'echo',
     });
     expect(await updated.json()).toMatchObject({ version: '1.1.0', manual: null, enabled: true, sha256: sha(v11) });
     expect(t.audit('plugin_updated').at(-1)?.detail).toMatchObject({ replacedFile: 'echo.tgz' });
-    expect(await (await t.b.post(`/api/plugins/echo/revert`, { confirm: 'echo' })).json()).toMatchObject({
+    expect(await (await t.b.post(`/api/plugins/echo/revert`)).json()).toMatchObject({
       error: 'not_manual',
     });
   });
@@ -815,18 +808,22 @@ describe('manual plugins', () => {
     );
     expect(await queried.json()).toMatchObject({ fileName: 'é.tgz' });
     expect((await t.upload(echoTarball('1.1.0'), '%E0')).body).toMatchObject({ error: 'invalid_file_name' });
+    for (const name of ['acme-1.2.0\u202Ezgt.lave', 'a\u2066b.tgz', 'a\u0085b.tgz', 'a\tb.tgz']) {
+      const res = await t.upload(echoTarball('1.1.0'), encodeURIComponent(name));
+      expect(res.body).toMatchObject({ error: 'invalid_file_name' });
+    }
 
     const future = await t.upload(echoTarball('1.1.0', withManifest({ sdk: '^9.0.0' })));
     expect(future.body).toMatchObject({ sdkCompatible: false, sdk: '^9.0.0' });
-    expect((await t.installUpload(future.body.uploadId, 'echo')).body).toMatchObject({ error: 'incompatible' });
+    expect((await t.installUpload(future.body.uploadId)).body).toMatchObject({ error: 'incompatible' });
 
     // A new upload replaces the staged one.
     const first = await t.upload(echoTarball('1.1.0'));
     const second = await t.upload(echoTarball('1.2.0'));
-    expect((await t.installUpload(first.body.uploadId, 'echo')).body).toMatchObject({ error: 'upload_not_found' });
+    expect((await t.installUpload(first.body.uploadId)).body).toMatchObject({ error: 'upload_not_found' });
 
     clock = new Date(clock.getTime() + 16 * 60_000);
-    expect(await t.installUpload(second.body.uploadId, 'echo')).toMatchObject({
+    expect(await t.installUpload(second.body.uploadId)).toMatchObject({
       status: 409,
       body: { error: 'upload_expired' },
     });
@@ -853,7 +850,7 @@ describe('manual plugins', () => {
     });
     const staged = (await res.json()) as { uploadId: string; permissionChanges: string[] };
     expect(staged.permissionChanges).toEqual([]);
-    const installed = await t.b.post(`/api/plugins/uploads/${staged.uploadId}/install`, { confirm: 'echo' });
+    const installed = await t.b.post(`/api/plugins/uploads/${staged.uploadId}/install`);
     expect(await installed.json()).toMatchObject({
       version: '1.0.1-dev',
       enabled: true,
@@ -868,13 +865,13 @@ describe('manual plugins', () => {
   it('refuses an upload install while a repository install of the same id runs, and keeps the upload', async () => {
     const t = await withReleased();
     const staged = await t.upload(echoTarball('1.1.0-dev'));
-    const running = t.ctx.repos.install({ repoId: t.repo.id, pluginId: 'echo', version: '1.0.0', confirm: 'echo' });
-    expect(await t.installUpload(staged.body.uploadId, 'echo')).toMatchObject({
+    const running = t.ctx.repos.install({ repoId: t.repo.id, pluginId: 'echo', version: '1.0.0' });
+    expect(await t.installUpload(staged.body.uploadId)).toMatchObject({
       status: 409,
       body: { error: 'install_in_progress' },
     });
     await running;
-    expect((await t.installUpload(staged.body.uploadId, 'echo')).body).toMatchObject({ version: '1.1.0-dev' });
+    expect((await t.installUpload(staged.body.uploadId)).body).toMatchObject({ version: '1.1.0-dev' });
   });
 
   it('is admin-only', async () => {
@@ -885,7 +882,7 @@ describe('manual plugins', () => {
     expect((await v.post('/auth/login', { username: 'olga', password: PASSWORD })).status).toBe(200);
     const res = await v.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.1.0')), { 'x-file-name': 'e.tgz' });
     expect(res.status).toBe(403);
-    expect((await v.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).status).toBe(403);
+    expect((await v.post(`/api/plugins/${t.row.id}/revert`)).status).toBe(403);
   });
 });
 

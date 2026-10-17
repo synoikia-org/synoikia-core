@@ -189,6 +189,8 @@ export interface PluginRow {
   statusError: string | null;
   enabled: boolean;
   instances: number;
+  /** Set while an uploaded file replaces the repository version (design §4.6). */
+  manual: ManualInstall | null;
   manifest: {
     name?: string;
     description?: string;
@@ -342,6 +344,28 @@ export interface Repo {
   lastFetchError: string | null;
 }
 
+export interface ManualInstall {
+  fileName: string;
+  uploadedAt: string;
+  /** The repository version that the upload replaced; null when no repository manages the plugin. */
+  releasedVersion: string | null;
+}
+
+/** A staged plugin file, as `POST /api/plugins/uploads` describes it (design §4.6). */
+export interface StagedUpload {
+  uploadId: string;
+  pluginId: string;
+  version: string;
+  sdk: string;
+  sha256: string;
+  fileName: string;
+  sdkCompatible: boolean;
+  expiresAt: string;
+  /** The installed plugin with this id, as it is when the file is staged. */
+  replaces: { version: string; repoName: string | null; manual: boolean; enabled: boolean } | null;
+  permissionChanges: string[];
+}
+
 export interface AvailablePlugin {
   repoId: string;
   repoName: string | null;
@@ -352,7 +376,7 @@ export interface AvailablePlugin {
   versions: { version: string; compatible: boolean }[];
   latest: string | null;
   /** `managed`: installed from a repository. An unmanaged plugin (built in before 0.3.0, or copied in by hand) can be replaced from any repo. */
-  installed: { version: string; fromThisRepo: boolean; managed: boolean } | null;
+  installed: { version: string; fromThisRepo: boolean; managed: boolean; manual: boolean } | null;
   updateAvailable: boolean;
   blocked: string | null;
 }

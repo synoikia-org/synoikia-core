@@ -21,10 +21,14 @@ export class ApiError extends Error {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-async function api<T>(path: string, init: { method?: Method; body?: unknown } = {}): Promise<T> {
+async function api<T>(
+  path: string,
+  init: { method?: Method; body?: unknown; file?: Blob; headers?: Record<string, string> } = {},
+): Promise<T> {
   const method = init.method ?? 'GET';
-  const headers: Record<string, string> = { accept: 'application/json' };
-  if (init.body !== undefined) headers['content-type'] = 'application/json';
+  const headers: Record<string, string> = { accept: 'application/json', ...init.headers };
+  if (init.file) headers['content-type'] = 'application/octet-stream';
+  else if (init.body !== undefined) headers['content-type'] = 'application/json';
   const csrf = csrfToken();
   if (method !== 'GET' && csrf) headers['x-csrf-token'] = csrf;
 
@@ -32,7 +36,7 @@ async function api<T>(path: string, init: { method?: Method; body?: unknown } = 
     method,
     headers,
     credentials: 'same-origin',
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    body: init.file ?? (init.body === undefined ? undefined : JSON.stringify(init.body)),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string; details?: unknown };
   if (!res.ok) {
@@ -54,6 +58,9 @@ export const http = {
   put: <T>(path: string, body: unknown) => api<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body: unknown) => api<T>(path, { method: 'PATCH', body }),
   del: <T = void>(path: string, body?: unknown) => api<T>(path, { method: 'DELETE', body }),
+  /** POSTs a file as the raw body, with its name URI-encoded in `x-file-name`. */
+  upload: <T>(path: string, file: File) =>
+    api<T>(path, { method: 'POST', file, headers: { 'x-file-name': encodeURIComponent(file.name) } }),
 };
 
 /** Human message for a failed call, with validation details when present. */
