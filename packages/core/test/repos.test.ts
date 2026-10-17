@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,8 +115,9 @@ function rawTar(entries: { name: string; type: string; body?: string; link?: str
 
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 
-async function setup(opts: { preinstalled?: boolean } = {}) {
+async function setup(opts: { preinstalled?: boolean; now?: () => Date; prepare?: (dataDir: string) => void } = {}) {
   const dataDir = tmp('synoikia-repos-');
+  opts.prepare?.(dataDir);
   // A plugin already in place that no repository installed (copied in by hand).
   if (opts.preinstalled)
     cpSync(path.join(FIXTURES, 'plugins/echo'), path.join(dataDir, 'plugins/echo'), { recursive: true });
@@ -115,6 +126,7 @@ async function setup(opts: { preinstalled?: boolean } = {}) {
   const redirects = new Map<string, string>();
   const ctx = await createAppContext(loadConfig({ DATA_DIR: dataDir }), {
     memoryDb: true,
+    now: opts.now,
     supervisor: { backoff: { initialMs: 20, maxMs: 100 }, initTimeoutMs: 3000, rpcTimeoutMs: 5000 },
     repoFetch: async (url, init) => {
       fetched.push(url);
@@ -550,6 +562,269 @@ describe('plugin repositories', () => {
     ).toMatchObject({
       error: 'fetch_failed',
     });
+  });
+});
+
+// ── manual plugins (design §4.6) ──
+
+const withManifest = (patch: Record<string, unknown>) => (dir: string) => {
+  const m = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...m, ...patch }));
+};
+
+type Uploaded = { uploadId: string; pluginId: string; version: string; sha256: string };
+
+/** An unsigned repo offering echo 1.0.0, installed and enabled, with one running endpoint. */
+async function withReleased(opts: Parameters<typeof setup>[0] = {}) {
+  const t = await setup(opts);
+  const v1 = echoTarball('1.0.0');
+  t.files.set('https://plugins.example.com/echo-1.0.0.tgz', v1);
+  t.publish(indexFor(null, [{ version: '1.0.0', tarball: v1 }]));
+  const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'unsigned' });
+  const row = await t.ctx.repos.install({ repoId: repo.id, pluginId: 'echo', version: '1.0.0', confirm: 'echo' });
+  await t.ctx.instances.setPluginEnabled(row.id, true);
+  const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: { token: 's3cret' } });
+  await t.ctx.instances.syncNow(inst.id);
+  const upload = async (tarball: Buffer, fileName = 'echo.tgz') => {
+    const res = await t.b.post('/api/plugins/uploads', new Uint8Array(tarball), { 'x-file-name': fileName });
+    return { status: res.status, body: (await res.json()) as Uploaded & Record<string, unknown> };
+  };
+  const installUpload = async (uploadId: string, confirm?: string) => {
+    const res = await t.b.post(`/api/plugins/uploads/${uploadId}/install`, confirm === undefined ? {} : { confirm });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+  const audit = (decision: string) =>
+    t.ctx.db
+      .select()
+      .from(auditLog)
+      .all()
+      .filter((a) => a.decision === decision);
+  return { ...t, v1, repo, row, inst, upload, installUpload, audit };
+}
+
+describe('manual plugins', () => {
+  it('replaces a repository plugin with an upload, keeps its endpoint and connection, and reverts', async () => {
+    const t = await withReleased();
+    const instBefore = t.ctx.db.select().from(pluginInstances).get()!;
+    const dev = echoTarball('1.1.0-dev.1');
+
+    const staged = await t.upload(dev, 'echo-1.1.0-dev.1.tgz');
+    expect(staged).toMatchObject({
+      status: 201,
+      body: {
+        pluginId: 'echo',
+        version: '1.1.0-dev.1',
+        sha256: sha(dev),
+        fileName: 'echo-1.1.0-dev.1.tgz',
+        sdkCompatible: true,
+        replaces: { version: '1.0.0', repoName: 'Test repo', manual: false },
+        permissionChanges: [],
+      },
+    });
+    expect(await t.installUpload(staged.body.uploadId)).toMatchObject({
+      status: 409,
+      body: { error: 'confirm_required' },
+    });
+    expect(await t.installUpload(staged.body.uploadId, 'acme')).toMatchObject({ body: { error: 'confirm_required' } });
+    const installed = await t.installUpload(staged.body.uploadId, 'echo');
+    expect(installed).toMatchObject({
+      status: 200,
+      body: {
+        id: t.row.id,
+        version: '1.1.0-dev.1',
+        repoId: t.repo.id,
+        sha256: sha(dev),
+        signatureVerified: false,
+        // No permission change: the build runs at once on the live endpoint.
+        enabled: true,
+        manual: { fileName: 'echo-1.1.0-dev.1.tgz', releasedVersion: '1.0.0', uploadedAt: expect.any(String) },
+      },
+    });
+    const instAfter = t.ctx.db.select().from(pluginInstances).get()!;
+    expect(instAfter).toMatchObject({ id: instBefore.id, pluginId: t.row.id, config: instBefore.config });
+    expect(instAfter.secretsEnc?.equals(instBefore.secretsEnc!)).toBe(true);
+    expect(t.ctx.instances.status(t.inst.id)).toBe('ready');
+    expect(await (await t.b.get('/api/plugins')).json()).toMatchObject([
+      { pluginId: 'echo', manual: { releasedVersion: '1.0.0' }, instances: 1 },
+    ]);
+    expect(t.audit('plugin_manual_installed')[0]?.detail).toEqual({
+      pluginId: 'echo',
+      version: '1.1.0-dev.1',
+      previousVersion: '1.0.0',
+      sha256: sha(dev),
+      fileName: 'echo-1.1.0-dev.1.tgz',
+      releasedVersion: '1.0.0',
+      enabled: true,
+    });
+    // The upload is used up.
+    expect(await t.installUpload(staged.body.uploadId, 'echo')).toMatchObject({
+      status: 404,
+      body: { error: 'upload_not_found' },
+    });
+
+    // A second build keeps the released version to revert to.
+    const dev2 = echoTarball('1.1.0-dev.2');
+    const again = await t.upload(dev2);
+    expect(again.body).toMatchObject({ replaces: { version: '1.1.0-dev.1', manual: true } });
+    expect((await t.installUpload(again.body.uploadId, 'echo')).body).toMatchObject({
+      version: '1.1.0-dev.2',
+      manual: { releasedVersion: '1.0.0' },
+    });
+
+    // Revert goes through the normal unsigned install, so it asks for the typed id too.
+    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`)).json()).toMatchObject({
+      error: 'confirm_required',
+    });
+    const reverted = await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' });
+    expect(reverted.status).toBe(200);
+    expect(await reverted.json()).toMatchObject({
+      id: t.row.id,
+      version: '1.0.0',
+      sha256: sha(t.v1),
+      manual: null,
+      enabled: true,
+    });
+    expect(t.ctx.instances.status(t.inst.id)).toBe('ready');
+    expect(t.audit('plugin_manual_reverted')[0]?.detail).toMatchObject({
+      version: '1.0.0',
+      previousVersion: '1.1.0-dev.2',
+      replacedFile: 'echo.tgz',
+      replacedSha256: sha(dev2),
+    });
+    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).json()).toMatchObject({
+      error: 'not_manual',
+    });
+    expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
+  });
+
+  it('disables the plugin when an upload changes its permissions, and starts a new id disabled', async () => {
+    const t = await withReleased();
+    const wider = echoTarball('1.1.0', withManifest({ network: { hosts: ['*.example.net'] } }));
+    const staged = await t.upload(wider);
+    expect(staged.body).toMatchObject({ permissionChanges: ['network.hosts'] });
+    expect((await t.installUpload(staged.body.uploadId, 'echo')).body).toMatchObject({
+      enabled: false,
+      manual: { releasedVersion: '1.0.0' },
+    });
+    expect(t.ctx.instances.status(t.inst.id)).toBe('stopped');
+    expect(t.audit('plugin_manual_installed')[0]?.detail).toMatchObject({
+      enabled: false,
+      needsReview: ['network.hosts'],
+    });
+
+    const acme = echoTarball('0.1.0', withManifest({ id: 'acme' }));
+    const fresh = await t.upload(acme);
+    expect(fresh.body).toMatchObject({ pluginId: 'acme', replaces: null, permissionChanges: [] });
+    const row = (await t.installUpload(fresh.body.uploadId, 'acme')).body;
+    expect(row).toMatchObject({
+      pluginId: 'acme',
+      repoId: null,
+      enabled: false,
+      status: 'ok',
+      manual: { releasedVersion: null },
+    });
+    // Without a released version only Uninstall is left.
+    expect(await (await t.b.post(`/api/plugins/${row.id as string}/revert`)).json()).toMatchObject({
+      error: 'not_manual',
+    });
+    expect((await t.b.del(`/api/plugins/${row.id as string}`)).status).toBe(204);
+  });
+
+  it('clears manual on a repository install, and refuses a revert whose version left the index', async () => {
+    const t = await withReleased();
+    const staged = await t.upload(echoTarball('1.1.0-dev'));
+    await t.installUpload(staged.body.uploadId, 'echo');
+
+    const v11 = echoTarball('1.1.0');
+    t.files.set('https://plugins.example.com/echo-1.1.0.tgz', v11);
+    t.publish(indexFor(null, [{ version: '1.1.0', tarball: v11 }]));
+    await t.ctx.repos.refresh(t.repo.id);
+    expect(await (await t.b.get('/api/plugin-repos/available')).json()).toMatchObject([
+      { installed: { version: '1.1.0-dev', fromThisRepo: true, manual: true } },
+    ]);
+    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).json()).toMatchObject({
+      error: 'released_version_gone',
+    });
+
+    const updated = await t.b.post('/api/plugins/install', {
+      repoId: t.repo.id,
+      pluginId: 'echo',
+      version: '1.1.0',
+      confirm: 'echo',
+    });
+    expect(await updated.json()).toMatchObject({ version: '1.1.0', manual: null, enabled: true, sha256: sha(v11) });
+    expect(t.audit('plugin_updated').at(-1)?.detail).toMatchObject({ replacedFile: 'echo.tgz' });
+    expect(await (await t.b.post(`/api/plugins/echo/revert`, { confirm: 'echo' })).json()).toMatchObject({
+      error: 'not_manual',
+    });
+  });
+
+  it('refuses oversized, broken, incompatible, unnamed, replaced and expired uploads', async () => {
+    let clock = new Date('2026-01-01T00:00:00Z');
+    const t = await withReleased({
+      now: () => clock,
+      prepare: (dir) => mkdirSync(path.join(dir, 'plugins-staging/upload-stale'), { recursive: true }),
+    });
+    // Uploads staged before a restart are gone.
+    expect(existsSync(path.join(t.dataDir, 'plugins-staging/upload-stale'))).toBe(false);
+
+    const big = await t.b.post('/api/plugins/uploads', new Uint8Array(50 * 1024 * 1024 + 1), {
+      'x-file-name': 'big.tgz',
+    });
+    expect(big.status).toBe(400);
+    expect(await big.json()).toMatchObject({ error: 'too_large' });
+    await expect(t.ctx.repos.stageUpload(Buffer.alloc(50 * 1024 * 1024 + 1), 'big.tgz')).rejects.toMatchObject({
+      code: 'too_large',
+    });
+
+    const manifest = readFileSync(path.join(FIXTURES, 'plugins/echo/manifest.json'), 'utf8');
+    const linked = rawTar([
+      { name: 'manifest.json', type: '0', body: manifest },
+      { name: 'index.mjs', type: '2', link: '/etc/passwd' },
+    ]);
+    expect((await t.upload(linked)).body).toMatchObject({ error: 'invalid_archive' });
+    expect((await t.upload(Buffer.from('not a tarball at all'))).body).toMatchObject({ error: 'invalid_archive' });
+    const unbuilt = echoTarball('1.1.0', (dir) => rmSync(path.join(dir, 'index.mjs')));
+    expect((await t.upload(unbuilt)).body).toMatchObject({ error: 'invalid_plugin' });
+
+    const noName = await t.b.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.1.0')));
+    expect(await noName.json()).toMatchObject({ error: 'invalid_request' });
+    expect((await t.upload(echoTarball('1.1.0'), '../echo.tgz')).body).toMatchObject({ error: 'invalid_request' });
+    const queried = await t.b.post(
+      `/api/plugins/uploads?fileName=${encodeURIComponent('é.tgz')}`,
+      new Uint8Array(echoTarball('1.1.0')),
+    );
+    expect(await queried.json()).toMatchObject({ fileName: 'é.tgz' });
+    expect((await t.upload(echoTarball('1.1.0'), '%E0')).body).toMatchObject({ error: 'invalid_file_name' });
+
+    const future = await t.upload(echoTarball('1.1.0', withManifest({ sdk: '^9.0.0' })));
+    expect(future.body).toMatchObject({ sdkCompatible: false, sdk: '^9.0.0' });
+    expect((await t.installUpload(future.body.uploadId, 'echo')).body).toMatchObject({ error: 'incompatible' });
+
+    // A new upload replaces the staged one.
+    const first = await t.upload(echoTarball('1.1.0'));
+    const second = await t.upload(echoTarball('1.2.0'));
+    expect((await t.installUpload(first.body.uploadId, 'echo')).body).toMatchObject({ error: 'upload_not_found' });
+
+    clock = new Date(clock.getTime() + 16 * 60_000);
+    expect(await t.installUpload(second.body.uploadId, 'echo')).toMatchObject({
+      status: 409,
+      body: { error: 'upload_expired' },
+    });
+    expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
+    expect(t.ctx.db.select().from(plugins).get()).toMatchObject({ version: '1.0.0', manual: null, enabled: true });
+    expect(t.audit('plugin_manual_installed')).toHaveLength(0);
+  });
+
+  it('is admin-only', async () => {
+    const t = await withReleased();
+    const role = (await (await t.b.post('/api/roles', { name: 'Operators' })).json()) as { id: string };
+    await t.b.post('/api/users', { username: 'olga', password: PASSWORD, roleId: role.id });
+    const v = await browser(createAdminApp(t.ctx)).init();
+    expect((await v.post('/auth/login', { username: 'olga', password: PASSWORD })).status).toBe(200);
+    const res = await v.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.1.0')), { 'x-file-name': 'e.tgz' });
+    expect(res.status).toBe(403);
+    expect((await v.post(`/api/plugins/${t.row.id}/revert`, { confirm: 'echo' })).status).toBe(403);
   });
 });
 
