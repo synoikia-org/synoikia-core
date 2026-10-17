@@ -50,7 +50,7 @@ Load a reference only when the task touches its area:
 4. **Tokens, not values.** Components use `var(--token)` and the global classes. No hex, `rgb()` or named colors in a component; a new value becomes a token in `styles.css` for both themes.
 5. **Core decides security.** The UI hides what the role can't do, but the API is the authority. No secrets or tokens in `localStorage` (the session is a cookie; `http` sends the CSRF header). No `v-html`; render help text with `MarkdownLite`.
 6. **Plugin-agnostic.** No plugin names in code, tests or placeholders. Plugin wording comes from the API (for example `plugin.labels`).
-7. **Tests ship with the change** (see `references/testing.md`).
+7. **Spec and test first.** Follow the `developer` skill: the feature file, then red steps, then the code. Until the admin UI backfill lands, keep the existing tests in `test/` green and update them (see `references/testing.md`).
 
 ## Checks
 
