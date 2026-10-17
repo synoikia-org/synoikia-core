@@ -1,4 +1,14 @@
 // The World's "Acme Tasks" plugin: speaks the JSON-RPC-over-IPC contract and calls the fake upstream over HTTP.
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+// Flag files the World drops next to this file (the child may only read them): `down` stops every
+// answer, `catalog-broken` fails the catalog sync, and a new `restart` value restarts the child once.
+const flag = (name) => existsSync(path.join(HERE, name));
+const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
+
 const op = (key, displayName, group, classification, extra = {}) => ({
   key,
   displayName,
@@ -10,6 +20,12 @@ const op = (key, displayName, group, classification, extra = {}) => ({
   ...extra,
 });
 
+const TASK_PARAMS = {
+  type: 'object',
+  properties: { list: { type: 'string' }, title: { type: 'string' } },
+  required: ['list', 'title'],
+};
+
 const CATALOG = [
   op('lists.tasks', 'show the open tasks', 'lists', 'read', { matchProfile: 'list' }),
   op('lists.count', 'count the tasks', 'lists', 'read', { matchProfile: 'list' }),
@@ -17,14 +33,10 @@ const CATALOG = [
   op('lists.rename', 'rename a list', 'lists', 'write', { kind: 'config', matchProfile: 'list' }),
   op('lists.archive', 'archive a list', 'lists', 'write', { typedConfirmation: true, matchProfile: 'list' }),
   op('lists.delete', 'delete a list', 'lists', 'write', { locked: true, matchProfile: 'list' }),
-  op('tasks.add', 'add a task', 'tasks', 'write', { matchProfile: 'task' }),
+  op('tasks.add', 'add a task', 'tasks', 'write', { matchProfile: 'task', paramsSchema: TASK_PARAMS }),
   op('tasks.complete', 'complete a task', 'tasks', 'write', { matchProfile: 'task' }),
   op('tasks.import', 'import tasks', 'tasks', 'write', { attestationRequired: true, matchProfile: 'list' }),
 ];
-
-const GUIDES = {
-  'tasks.import': { version: '1', content: 'Import at most 100 tasks at once, one title for each line.' },
-};
 
 let config = {};
 let secrets = {};
@@ -42,30 +54,86 @@ async function upstream(method, path, body, headers = {}) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
   if (res.status === 409) throw Object.assign(new Error('the list changed upstream'), { code: 'CONFIG_CONFLICT' });
-  if (!res.ok) throw Object.assign(new Error(`upstream answered ${res.status}`), { code: 'UPSTREAM_ERROR' });
-  return data;
+  if (res.status === 403) throw Object.assign(new Error('insufficient permission'), { code: 'UPSTREAM_DENIED' });
+  if (res.status === 404)
+    throw Object.assign(new Error('not found upstream'), { code: 'UPSTREAM_ERROR', notFound: true });
+  if (!res.ok)
+    throw Object.assign(new Error(`upstream answered ${res.status}${text ? `: ${text}` : ''}`), {
+      code: 'UPSTREAM_ERROR',
+    });
+  return text ? JSON.parse(text) : null;
 }
 
 const listPath = (name) => `/lists/${encodeURIComponent(name)}`;
+/** Each call sends its call id, so the upstream can tell the calls apart. */
+const callHeaders = (ctx) => (ctx.callId ? { 'x-call-id': ctx.callId } : {});
+const openTasksWithIds = (list) => upstream('GET', `${listPath(list)}/tasks?status=open&with=ids`);
 
 const INVOKE = {
-  'lists.tasks': (p) => upstream('GET', `${listPath(p.list)}/tasks?status=open`),
-  'lists.count': async (p) => ({ open: (await upstream('GET', `${listPath(p.list)}/tasks?status=open`)).length }),
-  'lists.share': (p) => upstream('GET', `${listPath(p.list)}/share`),
-  'lists.rename': (p, ctx) => upstream('PUT', listPath(p.list), { name: p.name }, { 'if-match': ctx.expectedHash }),
-  'lists.archive': (p) => upstream('POST', `${listPath(p.list)}/archive`),
-  'lists.delete': (p) => upstream('DELETE', listPath(p.list)),
-  'tasks.add': (p) => upstream('POST', `${listPath(p.list)}/tasks`, { title: p.title }),
-  'tasks.complete': (p) => upstream('POST', `${listPath(p.list)}/tasks/${encodeURIComponent(p.title)}/complete`),
-  'tasks.import': (p) => upstream('POST', `${listPath(p.list)}/import`, { tasks: p.tasks }),
+  'lists.tasks': (p, ctx) => upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx)),
+  'lists.count': async (p, ctx) => ({
+    open: (await upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx))).length,
+  }),
+  'lists.share': (p, ctx) => upstream('GET', `${listPath(p.list)}/share`, undefined, callHeaders(ctx)),
+  'lists.rename': (p, ctx) =>
+    upstream(
+      'PUT',
+      listPath(p.list),
+      { name: p.name, ...(p.sharePassword === undefined ? {} : { sharePassword: p.sharePassword }) },
+      { 'if-match': ctx.expectedHash, ...callHeaders(ctx) },
+    ),
+  'lists.archive': (p, ctx) => upstream('POST', `${listPath(p.list)}/archive`, undefined, callHeaders(ctx)),
+  'lists.delete': (p, ctx) => upstream('DELETE', listPath(p.list), undefined, callHeaders(ctx)),
+  'tasks.add': (p, ctx) => upstream('POST', `${listPath(p.list)}/tasks`, { title: p.title }, callHeaders(ctx)),
+  // Completes exactly the tasks core approved, by their ids.
+  'tasks.complete': async (_p, ctx) => {
+    const done = [];
+    for (const t of ctx.targets ?? []) {
+      if (t.kind !== 'task') continue;
+      await upstream('POST', `/tasks/${encodeURIComponent(t.id)}/complete`, undefined, callHeaders(ctx));
+      done.push(t.id);
+    }
+    return { completed: done };
+  },
+  'tasks.import': (p, ctx) => upstream('POST', `${listPath(p.list)}/import`, { tasks: p.tasks }, callHeaders(ctx)),
 };
 
 const summary = (key, p) => {
   const name = CATALOG.find((o) => o.key === key)?.displayName ?? key;
   return p.title ? `${name}: "${p.title}" in ${p.list}` : `${name}: ${p.list}`;
 };
+
+async function catalog() {
+  if (flag('catalog-broken')) throw Object.assign(new Error('cannot read the catalog'), { code: 'UPSTREAM_ERROR' });
+  const views = (await upstream('GET', '/views')) ?? [];
+  return [...CATALOG, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
+}
+
+async function targetsOf(key, params) {
+  if (typeof params?.list !== 'string') return [];
+  try {
+    if (key === 'tasks.complete') {
+      const open = await openTasksWithIds(params.list);
+      return open.filter((t) => t.title === params.title).map((t) => ({ kind: 'task', id: t.id, name: t.title }));
+    }
+    await upstream('GET', listPath(params.list));
+  } catch (err) {
+    if (err.notFound) throw Object.assign(new Error(`no list ${params.list}`), { code: 'TARGET_RESOLUTION_FAILED' });
+    throw err;
+  }
+  return [{ kind: 'list', id: params.list, name: params.list }];
+}
+
+async function registry() {
+  const out = [];
+  for (const list of await upstream('GET', '/lists')) {
+    out.push({ kind: 'list', id: list.name, name: list.name, attrs: { description: list.description ?? '' } });
+    for (const t of await openTasksWithIds(list.name))
+      out.push({ kind: 'task', id: t.id, name: t.title, parentId: list.name });
+  }
+  return out;
+}
 
 const handlers = {
   init(id, params) {
@@ -75,15 +143,15 @@ const handlers = {
   },
   testConnection: (id) => reply(id, { ok: true, upstreamVersion: '1.0' }),
   getUpstreamVersion: (id) => reply(id, '1.0'),
-  syncCatalog: (id) => reply(id, { upstreamVersion: '1.0', operations: CATALOG }),
-  syncRegistry: (id) => reply(id, []),
+  syncCatalog: async (id) => reply(id, { upstreamVersion: '1.0', operations: await catalog() }),
+  syncRegistry: async (id) => reply(id, await registry()),
   resolveOperation(id, { args }) {
     const [key, params = {}] = args;
-    if (!CATALOG.some((o) => o.key === key)) return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
+    if (!CATALOG.some((o) => o.key === key) && !String(key).startsWith('views.'))
+      return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
     reply(id, { key, params });
   },
-  resolveTargets: (id, { params }) =>
-    reply(id, typeof params?.list === 'string' ? [{ kind: 'list', id: params.list, name: params.list }] : []),
+  resolveTargets: async (id, { key, params }) => reply(id, await targetsOf(key, params)),
   summarize: (id, { key, params }) =>
     reply(id, {
       text: summary(key, params ?? {}),
@@ -91,19 +159,17 @@ const handlers = {
     }),
   async prepareWrite(id, { params }) {
     const current = await upstream('GET', listPath(params.list));
-    reply(id, {
-      params,
-      diff: [{ path: '/name', before: current.name, after: params.name }],
-      expectedHash: current.version,
-    });
+    const diff = [{ path: '/name', before: current.name, after: params.name }];
+    if (params.sharePassword !== undefined)
+      diff.push({ path: '/sharePassword', before: current.sharePassword ?? null, after: params.sharePassword });
+    reply(id, { params, diff, expectedHash: current.version });
   },
-  getGuide(id, { key }) {
-    const guide = GUIDES[key];
-    if (!guide) return fail(id, 'UNKNOWN_OPERATION', `no guide for ${key}`);
-    reply(id, guide);
+  async getGuide(id, { key }) {
+    reply(id, await upstream('GET', `/guides/${encodeURIComponent(key)}`));
   },
   async invoke(id, { key, params, context }) {
     const run = INVOKE[key];
+    if (key.startsWith('views.')) return reply(id, { view: key.slice('views.'.length) });
     if (!run) return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
     reply(id, await run(params ?? {}, context ?? {}));
   },
@@ -113,7 +179,13 @@ const handlers = {
   },
 };
 
+const restartSeen = flagValue('restart');
+globalThis.setInterval(() => {
+  if (flagValue('restart') !== restartSeen) process.exit(1);
+}, 25);
+
 process.on('message', (msg) => {
+  if (flag('down')) process.exit(1);
   const handler = handlers[msg.method];
   if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', msg.method);
   Promise.resolve(handler(msg.id, msg.params)).catch((err) =>

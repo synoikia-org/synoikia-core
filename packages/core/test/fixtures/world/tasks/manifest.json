@@ -7,32 +7,61 @@
   "binding": {
     "namespace": "tasks",
     "functions": ["call"],
-    "searchApis": ["guides"]
+    "searchApis": ["registry", "guides"]
   },
   "capabilities": {
     "targets": true,
     "attestation": true,
-    "configTransform": true
+    "configTransform": true,
+    "registry": true
   },
-  "targets": { "label": "List", "scopes": [] },
+  "targets": {
+    "label": "List",
+    "scopes": []
+  },
   "matchProfiles": {
-    "list": [{ "field": "/list", "label": "List", "op": "eq", "widget": "text" }],
+    "list": [
+      {
+        "field": "/list",
+        "label": "List",
+        "op": "eq",
+        "widget": "text"
+      }
+    ],
     "task": [
-      { "field": "/list", "label": "List", "op": "eq", "widget": "text" },
-      { "field": "/title", "label": "Task", "op": "eq", "widget": "text" }
+      {
+        "field": "/list",
+        "label": "List",
+        "op": "eq",
+        "widget": "text"
+      },
+      {
+        "field": "/title",
+        "label": "Task",
+        "op": "eq",
+        "widget": "text"
+      }
     ]
   },
   "connection": {
     "schema": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "format": "uri" },
-        "token": { "type": "string", "writeOnly": true }
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "token": {
+          "type": "string",
+          "writeOnly": true
+        }
       },
       "required": ["url"]
     },
     "ui": {}
   },
   "sensitiveKeys": [],
-  "network": { "hosts": ["127.0.0.1"] }
+  "network": {
+    "hosts": ["127.0.0.1"]
+  }
 }

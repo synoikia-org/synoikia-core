@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { createAppContext } from '../../src/app.js';
 import type { AppContext } from '../../src/app.js';
@@ -48,6 +49,25 @@ interface Agent {
   /** The user whose credential this is: "admin" or "user 12". */
   owner: string;
   client?: Client;
+  transport?: StreamableHTTPClientTransport;
+}
+
+/** What an agent's app was asked to show: a page link (`url`) or an in-session form (`form`). */
+export interface Prompt {
+  mode: 'url' | 'form';
+  message: string;
+  url?: string;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Polls `check` until it holds, for at most `ms`. */
+export async function eventually(check: () => boolean | Promise<boolean>, what: string, ms = 5000) {
+  const until = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await sleep(20);
+  }
 }
 
 interface Person {
@@ -67,6 +87,19 @@ export class SynoikiaWorld extends QuickPickleWorld {
   lists = new Map<string, Task[]>();
   archived = new Set<string>();
   sharePasswords = new Map<string, string>();
+  descriptions = new Map<string, string>();
+  /** Acme's best-practice guides, by operation key. */
+  guides = new Map<string, { version: string; content: string }>([
+    ['tasks.import', { version: '1', content: 'Import at most 100 tasks at once, one title for each line.' }],
+  ]);
+  /** Acme's saved views; each one is a read in the catalog. */
+  views: string[] = [];
+  /** How Acme misbehaves: refuses every request, or answers with an error that quotes the API token. */
+  upstreamFault?: 'denied' | 'leaky';
+  /** How long Acme takes to answer a request about the tasks of a list. */
+  upstreamDelayMs = 0;
+  /** Sessions an agent left behind when it opened a new one. */
+  oldClients: Client[] = [];
   admin!: Portal;
   adminBase = '';
   mcpBase = '';
@@ -107,6 +140,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
   async stop() {
     for (const agent of this.agents.values()) await agent.client?.close().catch(() => undefined);
+    for (const client of this.oldClients) await client.close().catch(() => undefined);
     await this.servers?.close();
     await this.ctx?.stop();
     await this.upstream?.close();
@@ -116,7 +150,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
   // ── the fake "Acme Tasks" upstream ──
 
   private guardUpstream(req: FakeRequest) {
-    return req.headers.authorization === `Bearer ${API_TOKEN}` ? undefined : { status: 401 };
+    if (req.headers.authorization !== `Bearer ${API_TOKEN}`) return { status: 401 };
+    if (this.upstreamFault === 'denied') return { status: 403 };
+    if (this.upstreamFault === 'leaky') return { status: 500, body: `token ${API_TOKEN} is not valid for this list` };
+    return undefined;
   }
 
   private listVersion(name: string) {
@@ -129,25 +166,45 @@ export class SynoikiaWorld extends QuickPickleWorld {
   private upstreamRoutes() {
     const live = (name: string) => (this.archived.has(name) ? undefined : this.lists.get(name));
     const missing = { status: 404 };
+    const slow = async () => {
+      if (this.upstreamDelayMs) await sleep(this.upstreamDelayMs);
+    };
     return {
+      'GET /lists': () => ({
+        body: [...this.lists.keys()]
+          .filter((name) => !this.archived.has(name))
+          .map((name) => ({ name, description: this.descriptions.get(name) ?? '' })),
+      }),
       'GET /lists/{name}': (req: FakeRequest) => {
         const name = req.params.name!;
-        return live(name) ? { body: { name, version: this.listVersion(name) } } : missing;
+        return live(name)
+          ? { body: { name, version: this.listVersion(name), sharePassword: this.sharePasswords.get(name) ?? null } }
+          : missing;
       },
-      'GET /lists/{name}/tasks': (req: FakeRequest) => {
-        const tasks = live(req.params.name!);
-        return tasks ? { body: tasks.filter((t) => !t.done) } : missing;
+      'GET /lists/{name}/tasks': async (req: FakeRequest) => {
+        const name = req.params.name!;
+        const tasks = live(name);
+        if (!tasks) return missing;
+        if (req.query.get('with') === 'ids')
+          return {
+            body: tasks.flatMap((t, i) => (t.done ? [] : [{ id: `${name}#${i}`, title: t.title }])),
+          };
+        await slow();
+        return { body: tasks.filter((t) => !t.done) };
       },
-      'POST /lists/{name}/tasks': (req: FakeRequest) => {
+      'POST /lists/{name}/tasks': async (req: FakeRequest) => {
         const tasks = live(req.params.name!);
         if (!tasks) return missing;
+        await slow();
         const task = { title: String((req.body as { title?: unknown }).title), done: false };
         tasks.push(task);
         return { status: 201, body: task };
       },
-      'POST /lists/{name}/tasks/{title}/complete': (req: FakeRequest) => {
-        const task = live(req.params.name!)?.find((t) => t.title === req.params.title && !t.done);
-        if (!task) return missing;
+      'POST /tasks/{id}/complete': (req: FakeRequest) => {
+        const id = req.params.id!;
+        const at = id.lastIndexOf('#');
+        const task = live(id.slice(0, at))?.[Number(id.slice(at + 1))];
+        if (!task || task.done) return missing;
         task.done = true;
         return { body: task };
       },
@@ -156,9 +213,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
         const tasks = live(name);
         if (!tasks) return missing;
         if (req.headers['if-match'] !== this.listVersion(name)) return { status: 409 };
-        const to = String((req.body as { name?: unknown }).name);
+        const body = req.body as { name?: unknown; sharePassword?: unknown };
+        const to = String(body.name);
+        const password = typeof body.sharePassword === 'string' ? body.sharePassword : this.sharePasswords.get(name);
         this.lists.delete(name);
+        this.sharePasswords.delete(name);
         this.lists.set(to, tasks);
+        if (password !== undefined) this.sharePasswords.set(to, password);
         return { body: { name: to } };
       },
       'POST /lists/{name}/archive': (req: FakeRequest) => {
@@ -181,7 +242,47 @@ export class SynoikiaWorld extends QuickPickleWorld {
         if (!live(name)) return missing;
         return { body: { list: name, password: this.sharePasswords.get(name) ?? null } };
       },
+      'GET /guides/{key}': (req: FakeRequest) => {
+        const guide = this.guides.get(req.params.key!);
+        return guide ? { body: guide } : missing;
+      },
+      'GET /views': () => ({ body: this.views }),
     };
+  }
+
+  /** What Acme received for one route, such as `POST /lists/Groceries/tasks`. */
+  upstreamRequests(method: string, pathname: string) {
+    return this.upstream!.requests.filter((r) => r.method === method && r.path === pathname);
+  }
+
+  // ── the World's "Acme Tasks" plugin on disk ──
+
+  pluginFile(name: string) {
+    return path.join(this.dataDir, 'plugins', 'tasks', name);
+  }
+
+  /** Drops a flag file the fixture plugin reads: `down`, `restart` or `catalog-broken`. */
+  pluginFlag(name: 'down' | 'restart' | 'catalog-broken', value = '') {
+    writeFileSync(this.pluginFile(name), value);
+  }
+
+  /** Changes the plugin's manifest on disk; `rescan` makes core read it again. */
+  async editManifest(change: (m: Record<string, unknown>) => void, rescan = true) {
+    const file = this.pluginFile('manifest.json');
+    const manifest = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    change(manifest);
+    writeFileSync(file, JSON.stringify(manifest, null, 2));
+    if (rescan) await this.expectOk(this.admin.post('/api/plugins/rescan'), 'rescan plugins');
+  }
+
+  /** Restarts the plugin child of `slug` the way a crash does, and waits until it serves again. */
+  async restartPlugin(slug: string) {
+    const id = await this.tasksInstance(slug);
+    const status = async () =>
+      (await this.expectOk(this.admin.get(`/api/instances/${id}`), 'read instance')).status as string;
+    this.pluginFlag('restart', String(Date.now()));
+    await eventually(async () => (await status()) !== 'ready', 'the plugin to stop');
+    await eventually(async () => (await status()) === 'ready', 'the plugin to be ready');
   }
 
   // ── the admin portal and the Admin API ──
@@ -230,6 +331,17 @@ export class SynoikiaWorld extends QuickPickleWorld {
     this.instances.set(slug, id);
     this.lastInstance = slug;
     return id;
+  }
+
+  /** Changes instance settings through the Admin API; core restarts the plugin child with them. */
+  async instanceSettings(slug: string, settings: Record<string, unknown>) {
+    const id = await this.tasksInstance(slug);
+    await this.expectOk(this.admin.patch(`/api/instances/${id}`, { settings }), 'change instance settings');
+  }
+
+  async sync(slug: string) {
+    const id = await this.tasksInstance(slug);
+    await this.expectOk(this.admin.post(`/api/instances/${id}/sync`), 'sync instance');
   }
 
   async setGroupLevel(slug: string, group: string, level: string) {
@@ -361,10 +473,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
   // ── agents ──
 
   /** A new credential of `owner` for the agent; without `access`, it takes what the portal offers first. */
-  async credential(agent: string, owner: string, access?: Access) {
+  async credential(agent: string, owner: string, access?: Access, name = `agent ${agent}`) {
     const portal = this.person(owner).portal!;
     const created = await this.expectOk(
-      portal.post('/api/me/tokens', { name: `agent ${agent}`, scope: ['*'], ...(access ? { access } : {}) }),
+      portal.post('/api/me/tokens', { name, scope: ['*'], ...(access ? { access } : {}) }),
       'create token',
     );
     await this.agents
@@ -379,19 +491,52 @@ export class SynoikiaWorld extends QuickPickleWorld {
     const a = this.agents.get(agent);
     if (!a) throw new Error(`The World has no agent ${agent} yet`);
     if (a.client) return a.client;
-    const client = new Client({ name: `agent ${agent}`, version: '1.0.0' });
+    return this.connect(agent, slug);
+  }
+
+  /** A fresh MCP session of the agent; with `prompts`, its app can show approval prompts of that kind. */
+  async connect(
+    agent: string,
+    slug: string,
+    prompts?: { mode: 'url' | 'form'; answer: (p: Prompt) => Promise<'accept' | 'decline'> },
+  ) {
+    const a = this.agents.get(agent);
+    if (!a) throw new Error(`The World has no agent ${agent} yet`);
+    if (a.client) this.oldClients.push(a.client);
+    const capabilities = prompts ? { elicitation: prompts.mode === 'url' ? { url: {} } : { form: {} } } : {};
+    const client = new Client({ name: `agent ${agent}`, version: '1.0.0' }, { capabilities });
+    if (prompts)
+      client.setRequestHandler(ElicitRequestSchema, async (req) => {
+        const p = req.params as { mode?: string; message: string; url?: string };
+        const action = await prompts.answer({
+          mode: p.mode === 'url' ? 'url' : 'form',
+          message: p.message,
+          url: p.url,
+        });
+        return action === 'accept' && p.mode !== 'url' ? { action, content: {} } : { action };
+      });
     const url = new URL(`${this.mcpBase}/${slug}`);
-    await client.connect(
-      new StreamableHTTPClientTransport(url, { requestInit: { headers: { authorization: `Bearer ${a.token}` } } }),
-    );
+    const transport = new StreamableHTTPClientTransport(url, {
+      requestInit: { headers: { authorization: `Bearer ${a.token}` } },
+    });
+    await client.connect(transport);
     a.client = client;
+    a.transport = transport;
     return client;
   }
 
-  async execute(agent: string, slug: string, code: string) {
+  /** The id of the agent's current MCP session. */
+  sessionId(agent: string) {
+    return this.agents.get(agent)?.transport?.sessionId;
+  }
+
+  /** Runs `code` with `execute`; `signal` cancels the agent's request. */
+  async execute(agent: string, slug: string, code: string, signal?: AbortSignal) {
     try {
       const client = await this.session(agent, slug);
-      const res = (await client.callTool({ name: 'execute', arguments: { code } })) as { content: { text: string }[] };
+      const res = (await client.callTool({ name: 'execute', arguments: { code } }, undefined, { signal })) as {
+        content: { text: string }[];
+      };
       this.answer = JSON.parse(res.content[0]!.text) as Record<string, unknown>;
     } catch (err) {
       this.answer = { refused: err instanceof Error ? err.message : String(err) };
@@ -429,11 +574,11 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
   // ── the approval page ──
 
-  /** The approval page of the last parked call, in a fresh browser that signs in as `person`. */
-  async approvalPage(person: string) {
-    const approval = this.answer.approval as { url: string } | undefined;
-    if (!approval) throw new Error(`No approval to open: ${JSON.stringify(this.answer)}`);
-    const pagePath = new URL(approval.url, this.mcpBase).pathname;
+  /** The approval page of the last parked call (or of `url`), in a fresh browser that signs in as `person`. */
+  async approvalPage(person: string, url?: string) {
+    const link = url ?? (this.answer.approval as { url: string } | undefined)?.url;
+    if (!link) throw new Error(`No approval to open: ${JSON.stringify(this.answer)}`);
+    const pagePath = new URL(link, this.mcpBase).pathname;
     const jar = new Map<string, string>();
     const send = async (p: string, form?: Record<string, string>) => {
       const res = await fetch(`${this.mcpBase}${p}`, {
@@ -459,8 +604,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
     const html = await (await send(pagePath)).text();
     return {
       html,
-      decide: async (decision: 'approve' | 'deny', confirm?: string) => {
-        const res = await send(pagePath, { csrf: csrfOf(html), decision, ...(confirm ? { confirm } : {}) });
+      decide: async (decision: 'approve' | 'deny' | 'approve_session', confirm?: string) => {
+        const res = await send(pagePath, {
+          csrf: csrfOf(html),
+          decision,
+          ...(confirm ? { confirm } : {}),
+          ...(decision === 'approve_session' ? { grant: '1' } : {}),
+        });
         if (!res.ok) throw new Error(`decide: ${res.status} ${await res.text()}`);
       },
     };
