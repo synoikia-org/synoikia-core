@@ -48,8 +48,13 @@ Other useful commands:
 
 ```sh
 pnpm --filter @synoikia/core exec vitest run test/gate.test.ts   # one test file
+pnpm --filter @synoikia/core exec vitest run --project features   # core's feature files
 pnpm --filter @synoikia/core test:coverage                        # enforces the coverage floors
 ```
+
+## Feature files
+
+Core's feature files are in `packages/core/features/`. Quickpickle runs them in vitest, in the `features` project of `packages/core/vitest.config.ts`. `features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
 
 ## Architecture model
 
