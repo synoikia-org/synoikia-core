@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { isSdkCompatible } from '@synoikia/plugin-sdk';
+import type { Manifest } from '@synoikia/plugin-sdk';
 import { asc, eq } from 'drizzle-orm';
 import semver from 'semver';
 import * as tar from 'tar';
@@ -19,7 +20,7 @@ import { MinisignError, parsePublicKey, verifySignature } from './minisign.js';
 /** Plugin repositories and installs (design §4.2–4.3): explicit installs of pinned versions, verified by
  * sha256 and, for signed repos, a minisign signature from the admin-pinned key. */
 
-const LIMITS = {
+export const LIMITS = {
   indexBytes: 2 * 1024 * 1024,
   tarballBytes: 50 * 1024 * 1024,
   extractedBytes: 200 * 1024 * 1024,
@@ -68,6 +69,18 @@ export const InstallSchema = z.object({
   confirm: z.string().optional(),
 });
 
+const ConfirmSchema = z.object({ confirm: z.string().optional() });
+
+const FileNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .regex(/^[^/\\\0]+$/, 'must be a file name');
+
+const UPLOAD_PREFIX = 'upload-';
+const UPLOAD_TTL_MS = 15 * 60_000;
+
 const MAX_REDIRECTS = 5;
 
 /** `settings` row recording that the pre-configured repository was added once. */
@@ -76,6 +89,7 @@ const DEFAULT_REPO_MARKER = 'plugin_repos.preconfigured';
 export type FetchBytes = (url: string, init?: { signal?: AbortSignal; redirect?: 'manual' }) => Promise<Response>;
 
 type RepoRow = typeof pluginRepos.$inferSelect;
+type PluginRow = typeof plugins.$inferSelect;
 type Actor = { userId?: string };
 
 export interface RepoServiceOptions {
@@ -133,10 +147,29 @@ export function swapDirectory(
   rmSync(backup, { recursive: true, force: true });
 }
 
+interface StagedUpload {
+  id: string;
+  work: string;
+  root: string;
+  fileName: string;
+  sha256: string;
+  manifest: Manifest;
+  sdkCompatible: boolean;
+  expiresAt: Date;
+}
+
 export class PluginRepoService {
   private readonly installing = new Set<string>();
+  private upload: StagedUpload | null = null;
+  private staging = false;
 
-  constructor(private readonly opts: RepoServiceOptions) {}
+  constructor(private readonly opts: RepoServiceOptions) {
+    // Staged uploads do not survive a restart.
+    if (existsSync(this.stagingDir)) {
+      for (const name of readdirSync(this.stagingDir))
+        if (name.startsWith(UPLOAD_PREFIX)) rmSync(path.join(this.stagingDir, name), { recursive: true, force: true });
+    }
+  }
 
   private get db() {
     return this.opts.db;
@@ -466,7 +499,9 @@ export class PluginRepoService {
           description: p.description ?? null,
           versions: p.versions.map((v) => ({ version: v.version, compatible: compatible.includes(v.version) })),
           latest,
-          installed: current ? { version: current.version, fromThisRepo: fromHere, managed: !!current.repoId } : null,
+          installed: current
+            ? { version: current.version, fromThisRepo: fromHere, managed: !!current.repoId, manual: !!current.manual }
+            : null,
           updateAvailable: !!(fromHere && latest && semver.gt(latest, current.version)),
           blocked:
             current?.repoId && !fromHere
@@ -540,18 +575,33 @@ export class PluginRepoService {
 
   async install(raw: unknown, actor: Actor = {}) {
     const input = InstallSchema.parse(raw);
-    if (this.installing.has(input.pluginId)) {
-      throw new ConflictError('install_in_progress', `"${input.pluginId}" is already being installed`);
+    return this.locked(input.pluginId, () => this.installLocked(input, actor));
+  }
+
+  private async locked<T>(pluginId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.installing.has(pluginId)) {
+      throw new ConflictError('install_in_progress', `"${pluginId}" is already being installed`);
     }
-    this.installing.add(input.pluginId);
+    this.installing.add(pluginId);
     try {
-      return await this.installLocked(input, actor);
+      return await fn();
     } finally {
-      this.installing.delete(input.pluginId);
+      this.installing.delete(pluginId);
     }
   }
 
-  private async installLocked(input: z.infer<typeof InstallSchema>, actor: Actor) {
+  private pluginByPluginId(pluginId: string): PluginRow | undefined {
+    return this.db.select().from(plugins).where(eq(plugins.pluginId, pluginId)).get();
+  }
+
+  private pluginRow(rowOrPluginId: string): PluginRow {
+    const row =
+      this.db.select().from(plugins).where(eq(plugins.id, rowOrPluginId)).get() ?? this.pluginByPluginId(rowOrPluginId);
+    if (!row) throw new NotFoundError('plugin_not_found', 'No such plugin');
+    return row;
+  }
+
+  private async installLocked(input: z.infer<typeof InstallSchema>, actor: Actor, reverting = false) {
     const repo = this.repoRow(input.repoId);
     if (repo.keyStatus === 'key_changed') {
       throw new ConflictError(
@@ -573,7 +623,7 @@ export class PluginRepoService {
         `${input.pluginId}@${input.version} needs core ${version.minCoreVersion} or newer`,
       );
     }
-    const current = this.db.select().from(plugins).where(eq(plugins.pluginId, input.pluginId)).get();
+    const current = this.pluginByPluginId(input.pluginId);
     if (current?.repoId && current.repoId !== repo.id) {
       throw new ConflictError(
         'installed_from_elsewhere',
@@ -620,61 +670,217 @@ export class PluginRepoService {
           `The archive contains ${inspected.manifest.id}@${inspected.manifest.version}, not ${input.pluginId}@${input.version}`,
         );
       }
-
-      // Swap directories with instances stopped, then let discovery update the registry row.
-      if (current) await this.opts.stopPlugin(current.id);
-      mkdirSync(this.pluginsDir, { recursive: true });
-      const target = path.join(this.pluginsDir, input.pluginId);
-      try {
-        swapDirectory(root, target, path.join(this.stagingDir, `${randomUUID()}-old`));
-      } catch (err) {
-        // The old version is back in place: bring its instances back up before reporting the failure.
-        if (current) await this.opts.startPlugin(current.id);
-        throw err;
-      }
-      this.opts.discover();
-
-      const row = this.db.select().from(plugins).where(eq(plugins.pluginId, input.pluginId)).get()!;
-      // New installs start disabled, and an update that changes what the plugin may do is disabled
-      // again: enabling it is the admin's review of its binding, capabilities and hosts (design §4.2).
-      const review = current ? permissionChanges(current.manifest, inspected.manifest) : [];
-      // Adopted code comes from a new source, so it waits for the admin's review like a new install.
-      const enabled = current && !adopting ? current.enabled && review.length === 0 : false;
-      this.db.transaction((tx) => {
-        tx.update(plugins)
-          .set({ repoId: repo.id, sha256, signatureVerified, enabled })
-          .where(eq(plugins.id, row.id))
-          .run();
-        writeAudit(tx, {
-          kind: 'config',
-          decision: adopting ? 'plugin_adopted' : current ? 'plugin_updated' : 'plugin_installed',
-          actorKind: 'user',
-          actorId: actor.userId,
-          detail: {
-            pluginId: input.pluginId,
-            version: input.version,
-            previousVersion: current?.version ?? null,
-            repo: repo.url,
-            sha256,
-            signatureVerified,
-            enabled,
-            ...(review.length ? { needsReview: review } : {}),
-          },
-        });
+      return await this.swapIn({
+        root,
+        manifest: inspected.manifest,
+        current,
+        // Adopted code comes from a new source, so it waits for the admin's review like a new install.
+        keepEnabled: !adopting,
+        set: { repoId: repo.id, sha256, signatureVerified, manual: null },
+        decision: reverting
+          ? 'plugin_manual_reverted'
+          : adopting
+            ? 'plugin_adopted'
+            : current
+              ? 'plugin_updated'
+              : 'plugin_installed',
+        detail: {
+          pluginId: input.pluginId,
+          version: input.version,
+          previousVersion: current?.version ?? null,
+          repo: repo.url,
+          sha256,
+          signatureVerified,
+          ...(current?.manual ? { replacedFile: current.manual.fileName, replacedSha256: current.sha256 } : {}),
+        },
+        actor,
       });
-      if (enabled) await this.opts.startPlugin(row.id);
-      return this.db.select().from(plugins).where(eq(plugins.id, row.id)).get()!;
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
   }
 
+  /** The step every install shares: stop, swap the files in, rediscover, record, start again. */
+  private async swapIn(a: {
+    root: string;
+    manifest: Manifest;
+    current: PluginRow | undefined;
+    keepEnabled: boolean;
+    set: Partial<Pick<PluginRow, 'repoId' | 'sha256' | 'signatureVerified' | 'manual'>>;
+    decision: string;
+    detail: Record<string, unknown>;
+    actor: Actor;
+  }): Promise<PluginRow> {
+    const { current } = a;
+    if (current) await this.opts.stopPlugin(current.id);
+    mkdirSync(this.pluginsDir, { recursive: true });
+    try {
+      swapDirectory(
+        a.root,
+        path.join(this.pluginsDir, a.manifest.id),
+        path.join(this.stagingDir, `${randomUUID()}-old`),
+      );
+    } catch (err) {
+      // The old version is back in place: bring its instances back up before reporting the failure.
+      if (current) await this.opts.startPlugin(current.id);
+      throw err;
+    }
+    this.opts.discover();
+
+    const row = this.pluginByPluginId(a.manifest.id)!;
+    // New installs start disabled, and an update that changes what the plugin may do is disabled
+    // again: enabling it is the admin's review of its binding, capabilities and hosts (design §4.2).
+    const review = current ? permissionChanges(current.manifest, a.manifest) : [];
+    const enabled = current && a.keepEnabled ? current.enabled && review.length === 0 : false;
+    this.db.transaction((tx) => {
+      tx.update(plugins)
+        .set({ ...a.set, enabled })
+        .where(eq(plugins.id, row.id))
+        .run();
+      writeAudit(tx, {
+        kind: 'config',
+        decision: a.decision,
+        actorKind: 'user',
+        actorId: a.actor.userId,
+        detail: { ...a.detail, enabled, ...(review.length ? { needsReview: review } : {}) },
+      });
+    });
+    if (enabled) await this.opts.startPlugin(row.id);
+    return this.db.select().from(plugins).where(eq(plugins.id, row.id)).get()!;
+  }
+
+  // ── manual plugins (design §4.6) ──
+
+  private dropUpload() {
+    if (this.upload) rmSync(this.upload.work, { recursive: true, force: true });
+    this.upload = null;
+  }
+
+  /** Extracts and inspects an uploaded tarball, and describes what installing it would change. */
+  async stageUpload(bytes: Buffer, rawFileName: unknown) {
+    const fileName = FileNameSchema.parse(rawFileName);
+    if (bytes.length > LIMITS.tarballBytes) throw new ValidationError('too_large', 'The file is too large');
+    // One extraction at a time, so overlapping uploads cannot fill the disk.
+    if (this.staging) throw new ConflictError('upload_in_progress', 'Another upload is being processed');
+    this.staging = true;
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const id = randomUUID();
+    const work = path.join(this.stagingDir, `${UPLOAD_PREFIX}${id}`);
+    let root: string;
+    let manifest: Manifest;
+    let sdkCompatible: boolean;
+    try {
+      root = await this.extract(bytes, work);
+      const inspected = inspectPluginDir(root);
+      if (inspected.status === 'invalid') throw new ValidationError('invalid_plugin', inspected.error);
+      if (!inspected.manifest) throw new ValidationError('invalid_plugin', 'manifest.json is missing');
+      manifest = inspected.manifest;
+      sdkCompatible = inspected.status === 'ok';
+    } catch (err) {
+      rmSync(work, { recursive: true, force: true });
+      throw err;
+    } finally {
+      this.staging = false;
+    }
+    // One staged upload at a time: a new one replaces the last, which bounds the disk they use.
+    this.dropUpload();
+    const expiresAt = new Date(this.now().getTime() + UPLOAD_TTL_MS);
+    this.upload = { id, work, root, fileName, sha256, manifest, sdkCompatible, expiresAt };
+    setTimeout(() => {
+      if (this.upload?.id === id) this.dropUpload();
+    }, UPLOAD_TTL_MS).unref();
+
+    const current = this.pluginByPluginId(manifest.id);
+    return {
+      uploadId: id,
+      pluginId: manifest.id,
+      version: manifest.version,
+      sdk: manifest.sdk,
+      sha256,
+      fileName,
+      sdkCompatible,
+      expiresAt,
+      replaces: current
+        ? {
+            version: current.version,
+            repoName: current.repoId ? this.repoRow(current.repoId).name : null,
+            manual: !!current.manual,
+          }
+        : null,
+      permissionChanges: current ? permissionChanges(current.manifest, manifest) : [],
+    };
+  }
+
+  /** Installs the staged upload over the plugin with its id, keeping the row, its repository and endpoints. */
+  async installUpload(uploadId: string, raw: unknown, actor: Actor = {}) {
+    const { confirm } = ConfirmSchema.parse(raw);
+    const upload = this.upload;
+    if (!upload || upload.id !== uploadId) throw new NotFoundError('upload_not_found', 'No such upload');
+    if (this.now() >= upload.expiresAt) {
+      this.dropUpload();
+      throw new ConflictError('upload_expired', 'This upload expired; upload the file again');
+    }
+    const { id: pluginId, version, sdk } = upload.manifest;
+    if (confirm !== pluginId) {
+      throw new ConflictError('confirm_required', `This file is unsigned. Type "${pluginId}" to install it`);
+    }
+    if (!upload.sdkCompatible)
+      throw new ConflictError('incompatible', `${pluginId}@${version} needs plugin SDK ${sdk}`);
+    return this.locked(pluginId, async () => {
+      this.upload = null;
+      try {
+        const current = this.pluginByPluginId(pluginId);
+        const releasedVersion = current?.manual
+          ? current.manual.releasedVersion
+          : current?.repoId
+            ? current.version
+            : null;
+        const manual = { fileName: upload.fileName, uploadedAt: this.now().toISOString(), releasedVersion };
+        return await this.swapIn({
+          root: upload.root,
+          manifest: upload.manifest,
+          current,
+          // The typed confirmation is the admin's review of the code; permission changes still disable it.
+          keepEnabled: true,
+          set: { sha256: upload.sha256, signatureVerified: false, manual },
+          decision: 'plugin_manual_installed',
+          detail: {
+            pluginId,
+            version,
+            previousVersion: current?.version ?? null,
+            sha256: upload.sha256,
+            fileName: upload.fileName,
+            releasedVersion,
+          },
+          actor,
+        });
+      } finally {
+        rmSync(upload.work, { recursive: true, force: true });
+      }
+    });
+  }
+
+  /** Reinstalls the repository version a manual install replaced, through the normal install. */
+  async revert(rowOrPluginId: string, raw: unknown = {}, actor: Actor = {}) {
+    const { confirm } = ConfirmSchema.parse(raw);
+    const row = this.pluginRow(rowOrPluginId);
+    const released = row.manual?.releasedVersion;
+    if (!released || !row.repoId) {
+      throw new ConflictError('not_manual', 'This plugin has no released version to revert to');
+    }
+    const repo = this.repoRow(row.repoId);
+    const index = repo.indexCache as RepoIndex | null;
+    const entry = index?.plugins.find((p) => p.id === row.pluginId);
+    if (!entry?.versions.some((v) => v.version === released)) {
+      throw new ConflictError('released_version_gone', `${row.pluginId}@${released} is no longer in ${repo.name}`);
+    }
+    const input = { repoId: repo.id, pluginId: row.pluginId, version: released, confirm };
+    return this.locked(row.pluginId, () => this.installLocked(input, actor, true));
+  }
+
   /** Removes an installed plugin. Blocked while any instance uses it. */
   uninstall(pluginRowOrId: string, actor: Actor = {}) {
-    const row =
-      this.db.select().from(plugins).where(eq(plugins.id, pluginRowOrId)).get() ??
-      this.db.select().from(plugins).where(eq(plugins.pluginId, pluginRowOrId)).get();
-    if (!row) throw new NotFoundError('plugin_not_found', 'No such plugin');
+    const row = this.pluginRow(pluginRowOrId);
     const instances = this.db.select().from(pluginInstances).where(eq(pluginInstances.pluginId, row.id)).all();
     if (instances.length) {
       throw new ConflictError('plugin_has_instances', 'Delete this plugin’s endpoints first', {
