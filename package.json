@@ -15,7 +15,30 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "start": "node --no-node-snapshot packages/core/dist/main.js"
+    "start": "node --no-node-snapshot packages/core/dist/main.js",
+    "workflow": "tsx --conditions=synoikia-source packages/create-plugin/src/cli.ts workflow",
+    "hooks:install": "pnpm workflow hooks install"
+  },
+  "synoikia": {
+    "workflow": {
+      "securityPaths": [
+        "packages/core/src/gate/**",
+        "packages/core/src/sandbox/**",
+        "packages/core/src/approvals/**",
+        "packages/core/src/auth/**",
+        "packages/core/src/crypto/**",
+        "packages/core/src/plugins/**",
+        "packages/core/src/http/**",
+        "packages/core/src/runtime/**",
+        "packages/core/src/instances/**",
+        "packages/core/src/db/schema.ts",
+        "packages/plugin-sdk/src/**",
+        "packages/create-plugin/**",
+        "**/package.json",
+        "Dockerfile",
+        ".github/workflows/**"
+      ]
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -24,6 +47,7 @@
     "eslint": "^10.11.0",
     "eslint-plugin-vue": "^10.5.0",
     "prettier": "^3.6.2",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
     "vitest": "^5.0.2"
