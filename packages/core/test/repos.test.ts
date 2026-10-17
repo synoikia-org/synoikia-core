@@ -776,6 +776,25 @@ describe('manual plugins', () => {
     await expect(t.ctx.repos.stageUpload(Buffer.alloc(50 * 1024 * 1024 + 1), 'big.tgz')).rejects.toMatchObject({
       code: 'too_large',
     });
+    // A chunked body has no content-length; the limit still applies while it streams.
+    let sent = 0;
+    const chunked = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent > 51 * 1024 * 1024) return controller.close();
+        sent += 1024 * 1024;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+    });
+    const streamed = await t.b.post('/api/plugins/uploads', chunked, { 'x-file-name': 'big.tgz' });
+    expect(await streamed.json()).toMatchObject({ error: 'too_large' });
+
+    // Overlapping uploads: the second is refused while the first extracts.
+    const overlapping = await Promise.allSettled([
+      t.ctx.repos.stageUpload(echoTarball('1.1.0'), 'a.tgz'),
+      t.ctx.repos.stageUpload(echoTarball('1.1.1'), 'b.tgz'),
+    ]);
+    expect(overlapping.map((r) => r.status)).toEqual(['fulfilled', 'rejected']);
+    expect(overlapping[1]).toMatchObject({ reason: { code: 'upload_in_progress', status: 409 } });
 
     const manifest = readFileSync(path.join(FIXTURES, 'plugins/echo/manifest.json'), 'utf8');
     const linked = rawTar([
@@ -814,6 +833,48 @@ describe('manual plugins', () => {
     expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
     expect(t.ctx.db.select().from(plugins).get()).toMatchObject({ version: '1.0.0', manual: null, enabled: true });
     expect(t.audit('plugin_manual_installed')).toHaveLength(0);
+  });
+
+  it('keeps a plugin from a signed repository enabled and serving after an upload with no permission change', async () => {
+    const t = await setup();
+    const key = testKey();
+    const v1 = echoTarball('1.0.0');
+    t.files.set('https://plugins.example.com/echo-1.0.0.tgz', v1);
+    t.publish(indexFor(key, [{ version: '1.0.0', tarball: v1 }]));
+    const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'signed', confirmPublicKey: key.publicKey });
+    const row = await t.ctx.repos.install({ repoId: repo.id, pluginId: 'echo', version: '1.0.0' });
+    expect(row.signatureVerified).toBe(true);
+    await t.ctx.instances.setPluginEnabled(row.id, true);
+    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
+    await t.ctx.instances.syncNow(inst.id);
+
+    const res = await t.b.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.0.1-dev')), {
+      'x-file-name': 'echo.tgz',
+    });
+    const staged = (await res.json()) as { uploadId: string; permissionChanges: string[] };
+    expect(staged.permissionChanges).toEqual([]);
+    const installed = await t.b.post(`/api/plugins/uploads/${staged.uploadId}/install`, { confirm: 'echo' });
+    expect(await installed.json()).toMatchObject({
+      version: '1.0.1-dev',
+      enabled: true,
+      signatureVerified: false,
+      manual: { releasedVersion: '1.0.0' },
+    });
+    expect(t.ctx.instances.status(inst.id)).toBe('ready');
+    await t.ctx.instances.syncNow(inst.id);
+    expect(t.ctx.instances.status(inst.id)).toBe('ready');
+  });
+
+  it('refuses an upload install while a repository install of the same id runs, and keeps the upload', async () => {
+    const t = await withReleased();
+    const staged = await t.upload(echoTarball('1.1.0-dev'));
+    const running = t.ctx.repos.install({ repoId: t.repo.id, pluginId: 'echo', version: '1.0.0', confirm: 'echo' });
+    expect(await t.installUpload(staged.body.uploadId, 'echo')).toMatchObject({
+      status: 409,
+      body: { error: 'install_in_progress' },
+    });
+    await running;
+    expect((await t.installUpload(staged.body.uploadId, 'echo')).body).toMatchObject({ version: '1.1.0-dev' });
   });
 
   it('is admin-only', async () => {

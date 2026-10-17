@@ -161,6 +161,7 @@ interface StagedUpload {
 export class PluginRepoService {
   private readonly installing = new Set<string>();
   private upload: StagedUpload | null = null;
+  private staging = false;
 
   constructor(private readonly opts: RepoServiceOptions) {
     // Staged uploads do not survive a restart.
@@ -759,6 +760,9 @@ export class PluginRepoService {
   async stageUpload(bytes: Buffer, rawFileName: unknown) {
     const fileName = FileNameSchema.parse(rawFileName);
     if (bytes.length > LIMITS.tarballBytes) throw new ValidationError('too_large', 'The file is too large');
+    // One extraction at a time, so overlapping uploads cannot fill the disk.
+    if (this.staging) throw new ConflictError('upload_in_progress', 'Another upload is being processed');
+    this.staging = true;
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const id = randomUUID();
     const work = path.join(this.stagingDir, `${UPLOAD_PREFIX}${id}`);
@@ -775,6 +779,8 @@ export class PluginRepoService {
     } catch (err) {
       rmSync(work, { recursive: true, force: true });
       throw err;
+    } finally {
+      this.staging = false;
     }
     // One staged upload at a time: a new one replaces the last, which bounds the disk they use.
     this.dropUpload();

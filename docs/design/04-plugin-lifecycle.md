@@ -140,7 +140,7 @@ An admin can install a plugin from a tarball file, for example an unreleased bui
 - The body limit is 50 MB. The extraction limits of §4.2 apply.
 - Core computes the sha256 and extracts the file into `DATA_DIR/plugins-staging/upload-<id>`. Then core inspects the directory as discovery does (§4.1).
 - The answer gives the upload id, the plugin id and version, the sha256, the SDK compatibility, the plugin that it replaces, and the permission changes (§4.2).
-- Core keeps one staged upload at a time. A new upload removes the previous one.
+- Core keeps one staged upload at a time. A new upload removes the previous one. While core extracts an upload, it refuses another upload (`upload_in_progress`).
 - A staged upload expires after 15 minutes (`upload_expired`). Core removes all staged uploads at start.
 
 **Install.** `POST /api/plugins/uploads/:uploadId/install {confirm}`.
@@ -156,6 +156,8 @@ An admin can install a plugin from a tarball file, for example an unreleased bui
 | None (a new plugin id)              | No                        |
 | Exists, no permission change (§4.2) | Same as before            |
 | Exists, with a permission change    | No                        |
+
+An upload without a permission change keeps the plugin enabled, also over a plugin from a signed repository. Its endpoints serve the uploaded code at once. The typed plugin id is the review of the code by the admin.
 
 The audit event is `plugin_manual_installed`. It records the plugin id, the version, the previous version, the sha256, the file name, `releasedVersion`, the enabled state and the permission changes (`needsReview`).
 
