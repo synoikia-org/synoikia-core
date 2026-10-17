@@ -9,10 +9,10 @@ This repository builds every change spec first and test first. The rules below b
 One change is one slice: one rule of one feature, with three scenarios at most. Each slice gets its own branch and pull request.
 
 1. **Spec.** Write the scenarios in a feature file. Commit them as `spec: …`.
-2. **Architecture.** Place the slice in the model in `docs/architecture/` when it adds or moves a part. Commit as `arch: …`.
+2. **Architecture and plan.** Write the build plan: the slices in order, and the existing code each one reuses. Put it in the pull request description. Place the slice in the model in `docs/architecture/` when it adds or moves a part. Commit as `arch: …`.
 3. **Red.** Write the step definitions. Run the scenarios and see them fail because the behavior is missing. Commit as `test: …`.
-4. **Green.** Write the least code that makes the scenarios pass. Commit as `feat: …` or `fix: …`.
-5. **Refactor.** Clean up with the scenarios green. Commit as `refactor: …`.
+4. **Green.** Write the least code that makes the scenarios pass. Use existing code that does the same work. Commit as `feat: …` or `fix: …`.
+5. **Refactor.** Clean up with the scenarios green. Extract code that duplicates the same behavior into one shared function. Commit as `refactor: …`.
 6. **Pull request.** Push and open the pull request. Fill in the template.
 
 ## Commits

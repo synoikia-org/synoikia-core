@@ -33,8 +33,8 @@ The World sets up what the scenarios name, from synthetic data. It uses the prod
 
 1. **Run the slice. See it red.** The undefined steps are the work list.
 2. **Write the next scenario's steps.** Keep them plain, specific to the scenario and with their values written out. Run them. They must fail because the behavior is missing, not because the glue is broken. Commit as `test: …`.
-3. **Write the least code that makes the scenario pass.** Commit as `feat: …` or `fix: …`.
-4. **Refactor** with the scenario green. Commit as `refactor: …`.
+3. **Write the least code that makes the scenario pass.** Search first for code that does the same work: a helper, a service, a schema or a component. Use it. Commit as `feat: …` or `fix: …`.
+4. **Refactor** with the scenario green. Find code that duplicates the same behavior, in this slice or in existing code. Extract it into one shared function and make each caller use it. Commit as `refactor: …`.
 5. **Repeat** until every scenario of the slice is green.
 
 ## Unit tests
@@ -54,4 +54,4 @@ Run `pnpm workflow pre-push` and the repo's checks. Push and mark the pull reque
 
 ## Done when
 
-Every scenario of the slice is green and the suite passes. There is no code that the scenarios do not need. The audit ran if it was needed, and the pull request is ready.
+Every scenario of the slice is green and the suite passes. There is no code that the scenarios do not need, and no code that does the same work twice. The audit ran if it was needed, and the pull request is ready.

@@ -24,13 +24,17 @@ description: >-
 
 Check the request against the repo before you plan. If the work is done already or the premise is wrong, show the evidence and ask what the user meant. If you are not sure of the size, treat the task as big.
 
-A big task goes through plan mode (`EnterPlanMode`) before any edit, branch or commit. The plan lists the slices in order. Each slice is one pull request into `main`.
+Do not use plan mode. The requirements and architecture steps are the plan:
+
+- `requirements-engineer` specifies the whole task wide. Every scenario outside the first slice gets `@backlog`.
+- `architect` places the task in the model and writes the build plan: the slices in order, with what each one needs first.
+- The user agrees the spec and the plan before any code. Each slice is then one pull request into `main`.
 
 ## 2. Run one slice
 
 1. **Branch.** Create a branch from `main` with a name that passes `pnpm workflow check-branch`. Do not use a session's generated branch name.
 2. **Requirements.** Use `requirements-engineer`. Its output is the feature file and a `spec:` commit.
-3. **Architecture.** Use `architect` when the slice adds or moves a part of the model. Its output is an `arch:` commit.
+3. **Architecture.** Use `architect`. Its output is the build plan and, when the slice adds or moves a part, an `arch:` commit.
 4. **Build.** Use `developer`. Its output is the `test:`, `feat:` or `fix:` and `refactor:` commits and a ready pull request.
 
 Move to the next step only when the user agrees that the current step is done. Skipping a step is the user's decision. Propose it and wait for a clear yes.

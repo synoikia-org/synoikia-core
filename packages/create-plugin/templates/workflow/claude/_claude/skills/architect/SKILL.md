@@ -1,22 +1,23 @@
 ---
 name: architect
 description: >-
-  Place one slice in the LikeC4 model in docs/architecture by interviewing the user on each design decision,
-  layer by layer in arc42's views. Use it after the spec and before code, when a slice adds or moves a part,
-  a relation or a deployment unit.
+  Plan the build and place it in the LikeC4 model in docs/architecture, by interviewing the user on each design
+  decision, layer by layer in arc42's views. Use it after the spec and before code, for every task. It replaces
+  plan mode: its build plan says which slices come in which order.
 ---
 
 # Architect
 
-**In:** the feature file of the slice.
-**Out:** the slice placed in the LikeC4 model in `docs/architecture/`, and an `arch:` commit.
+**In:** the feature files of the task, with the first slice selected.
+**Out:** the build plan, and the task placed in the LikeC4 model in `docs/architecture/` with an `arch:` commit.
 
-Write only the model. Do not write code or diagram files.
+Write only the model and the plan. Do not write code or diagram files.
 
 1. **Read the model.** If there is no model, this slice starts it, with just enough to place the slice.
 2. **Ask the design into the model, layer by layer.** Follow arc42's order: context and scope, then the building blocks level by level, then deployment. Ask in rounds, as `change-workflow` says. Write each answer into the model before the next round.
 3. **Send behavior questions back.** A question about what the product does belongs to the spec. Return it to `requirements-engineer`. Do not settle it in the model.
-4. **Push.** When no question is open and the user agrees, commit as `arch: …` and push.
+4. **Write the build plan.** List the slices in order. For each slice, give its rule, the parts of the model it changes, and the slices it needs first. Name the existing code that each slice reuses or extracts. Ask the user about the order in one last round.
+5. **Push.** When no question is open and the user agrees, commit the model as `arch: …` and push. Put the build plan in the pull request description. Later slices update the plan in their own pull requests.
 
 ## Rules for the model
 
@@ -40,4 +41,4 @@ Write only the model. Do not write code or diagram files.
 
 ## Done when
 
-No question is open and the user agrees that the model places the slice.
+No question is open, the user agrees the build plan, and the model places the next slice.
