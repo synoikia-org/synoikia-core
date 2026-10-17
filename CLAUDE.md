@@ -20,7 +20,7 @@ Each security-critical directory under `packages/core/src` (`gate/`, `sandbox/`,
 
 Admin UI work (any `.vue` file or `packages/admin-ui`) follows the `vue-development` skill (`.claude/skills/vue-development/`): vue-query for server state, Pinia setup stores for the session only, shared composables, `styles.css` tokens, `ModalDialog` over native dialogs. Load it before writing or reviewing portal code.
 
-Every task that changes the repo starts with the `change-workflow` skill (`.claude/skills/change-workflow/`): size the task, go through plan mode for logical or big changes, and propose a work pattern (one PR, or a chain of child PRs into an integration branch run unattended) for the user to approve.
+Every task that changes the repo starts with the `change-workflow` skill. Changes are built spec first and test first, one slice for each pull request: `requirements-engineer` writes the feature file, `architect` writes the build plan, and `developer` builds it red then green. The rules for commits, branches, feature files and tests are in `docs/workflow.md`. CI checks them, and the git hooks check them before a push.
 
 Backend work (`packages/core`, `packages/plugin-sdk`, `packages/create-plugin`) follows the `core-development` skill (`.claude/skills/core-development/`): thin Hono routes over services, zod at every boundary, `ServiceError` codes, audit in the write's transaction, reuse of the shared helpers. Load it before writing or reviewing backend code.
 
@@ -33,6 +33,8 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test   # 
 pnpm --filter @synoikia/core exec vitest run test/gate.test.ts                # one test file
 pnpm --filter @synoikia/core test:coverage                                      # enforces coverage floors
 pnpm format                                                                     # fix formatting
+pnpm hooks:install                                                              # once per clone: the workflow git hooks
+pnpm workflow pre-push                                                          # the workflow checks (branch, phases, features, prose)
 ```
 
 - Tests resolve workspace packages to their TypeScript sources (the `synoikia-source` export condition), so no build is needed before `pnpm test`.
@@ -45,14 +47,14 @@ pnpm format                                                                     
 - Unused variables are allowed only with a `_` prefix.
 - Keep comments minimal: one or two lines, only for what the code can't say (a reason, a constraint, a design § reference). No multi-line comment blocks, in code, YAML, SQL or workflows; the design doc and READMEs carry the long explanations.
 - Prettier formats everything (a hook runs it after each edit). Template layout in `.vue` files is Prettier's job, not ESLint's.
-- Keep changes focused and add tests for new behavior (see `.github/PULL_REQUEST_TEMPLATE.md`).
+- Keep changes focused. Specify new behavior in a feature file before the code (`docs/workflow.md`). A new test file is a pure-function unit test in `test/unit/`.
 - Keep `README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md` and `SECURITY.md` current: when a change affects what one of them describes (features, setup, commands, packages, ports, config, releases, security scope), update it in the same PR, along with the design doc section.
 
 ## Design documents
 
 `docs/design/` is the SDD of core. `docs/design/README.md` is its index, rules and glossary. When behavior changes, update the section it belongs to in the same PR.
 
-- Write in ASD-STE100 Simplified Technical English: short sentences (20 words at most for procedures, 25 for descriptions), active voice, simple tenses, one statement per sentence, and the glossary's terms only, each with one meaning.
+- Write by the `technical-writing` skill, with the glossary's terms only, each with one meaning.
 - Describe the current design only. No history: no earlier, reverted or revised designs, no "this replaces", "used to" or migration notes. Those belong in commit messages and PRs.
 - Keep section numbers stable: code comments cite them. A new subsection takes a new number; never renumber or reuse one.
 - State facts that the code confirms. If the code and the SDD disagree, find out which one is wrong before you edit either.
@@ -79,7 +81,7 @@ A breaking change to the SDK or `@synoikia/core/testing` breaks every plugin rep
 
 ## Security review
 
-Before opening a PR that touches `gate/`, `sandbox/`, `approvals/`, `auth/`, `crypto/`, `plugins/`, `http/`, `runtime/`, `instances/`, the SDK's RPC contract or its rules, transports and catalog adapters, `packages/create-plugin`, the DB schema, a `package.json` or the `Dockerfile`, run the `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) on the diff and address its findings. It also runs `pnpm audit` and triages known CVEs by whether the vulnerable dependency ships and is reachable.
+Before opening a PR that touches a path in `synoikia.workflow.securityPaths` (root `package.json`), run the `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) on the diff and address its findings. Put its `Security audit:` line in the PR description: the `Workflow` CI job fails a ready PR without it. The reviewer also runs `pnpm audit` and triages known CVEs by whether the vulnerable dependency ships and is reachable.
 
 ## Protected files
 

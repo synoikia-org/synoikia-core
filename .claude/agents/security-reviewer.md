@@ -57,3 +57,8 @@ Report only issues you can tie to concrete code, a concrete attack or failure, o
 - **Fix**: the smallest change that restores the control, plus the test that would have caught it.
 
 Rank findings by severity. If there are none, say so plainly and list the boundaries you checked. Say what you could not verify (for example, behavior that depends on deployment) rather than guessing.
+
+End the report with one line for the pull request description, on a line of its own. The `Workflow` CI job checks for it:
+
+- `Security audit: <the boundary>. <what the review found and what was fixed>`
+- `Security audit: none. <why the change crosses no boundary>`

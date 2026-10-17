@@ -36,7 +36,7 @@ Core is a Node 22 ESM server: Hono for HTTP, Drizzle on SQLite, isolated-vm for 
 8. **Plugin-agnostic.** No plugin names in code, tests or messages; tests use the `echo` fixture and neutral slugs (`acme`).
 9. **Published APIs are contracts.** `@synoikia/plugin-sdk` and `@synoikia/core/testing` are used by every plugin repo. Don't change an exported signature unless the task asks for it, and call out a breaking change. SDK `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` are security code.
 10. **Small and direct.** No speculative options, base classes, generic wrappers or config for one caller. Comments are one or two lines, for a reason or a `§` reference only.
-11. **Tests ship with the change** (see `references/testing.md`), and the design doc section changes with the behavior.
+11. **Spec and test first.** Follow the `developer` skill: the feature file, then red steps, then the code. A new test file is a pure-function unit test in `test/unit/`. Until an area's backfill lands, keep its existing tests in `test/` green and update them (see `references/testing.md`). The design doc section changes with the behavior.
 
 ## Checks
 

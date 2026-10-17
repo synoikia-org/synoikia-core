@@ -8,6 +8,16 @@ Thanks for taking the time to contribute. Bug reports, feature requests and pull
 
 For the architecture and design rationale behind core, the sandbox, the permission gate and the plugin protocol, see the software design description in [`docs/design/`](docs/design/README.md).
 
+## How a change is built
+
+Every change is built spec first and test first, one slice for each pull request. [docs/workflow.md](docs/workflow.md) has the rules for feature files, commits, branches, tests and prose. Install the git hooks once, so the checks run before you push:
+
+```sh
+pnpm hooks:install
+```
+
+Pull requests merge by rebase, so keep each commit in its phase. The `Workflow` CI job checks the branch name, the commit phases, the feature files and the prose. It also checks that the scenarios fail at the `test:` commit and pass at the head.
+
 ## Before opening a pull request
 
 CI (`.github/workflows/ci.yml`) runs `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build` and `pnpm test`, plus a Docker build. Run the same commands locally first:
@@ -19,9 +29,10 @@ pnpm format:check   # pnpm format to fix
 pnpm typecheck
 pnpm build
 pnpm test
+pnpm workflow pre-push
 ```
 
-Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature should come with tests covering it. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
+Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature starts with its scenarios. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
 
 When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md) and the section of [`docs/design/`](docs/design/README.md) it belongs to.
 

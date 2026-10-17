@@ -37,6 +37,13 @@ pnpm build
 pnpm test           # all packages; workspace deps resolve to TS sources, no build needed
 ```
 
+The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
+
+```sh
+pnpm hooks:install        # once per clone: .githooks runs the checks before a commit and a push
+pnpm workflow pre-push    # branch name, commit phases, feature files and prose since origin/main
+```
+
 Other useful commands:
 
 ```sh
