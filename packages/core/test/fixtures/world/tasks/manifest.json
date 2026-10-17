@@ -1,0 +1,23 @@
+{
+  "id": "tasks",
+  "name": "Acme Tasks (World fixture)",
+  "version": "1.0.0",
+  "sdk": "^0.2.0",
+  "entry": "index.mjs",
+  "binding": {
+    "namespace": "tasks",
+    "functions": ["call"]
+  },
+  "connection": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "format": "uri" }
+      },
+      "required": ["url"]
+    },
+    "ui": {}
+  },
+  "sensitiveKeys": [],
+  "network": { "hosts": ["127.0.0.1"] }
+}
