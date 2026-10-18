@@ -10,7 +10,7 @@ import { applyRegistrySync } from '../catalog/registry.js';
 import { roleEndpointSwitches } from '../catalog/role-levels.js';
 import { applyCatalogSync } from '../catalog/sync.js';
 import type { SyncSummary } from '../catalog/sync.js';
-import { aad } from '../crypto/index.js';
+import { aad, DecryptionError } from '../crypto/index.js';
 import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
 import { pendingApprovals, pluginInstances, plugins } from '../db/schema.js';
@@ -23,7 +23,13 @@ import { PluginProcess, PluginTimeoutError, PluginUnavailableError } from '../pl
 import { getSettings } from '../settings.js';
 import { PluginSupervisor } from '../plugins/supervisor.js';
 import type { InstanceStatus } from '../plugins/supervisor.js';
-import { mergeSecrets, storedSecretsFor, summarizeSecrets, validateConnection } from './connection.js';
+import {
+  mergeSecrets,
+  secretFieldNames,
+  storedSecretsFor,
+  summarizeSecrets,
+  validateConnection,
+} from './connection.js';
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
 
@@ -359,6 +365,26 @@ export class InstanceManager {
     );
   }
 
+  /** The stored secrets for the connection form. A wrong master key leaves them unreadable: a save that gives
+   * every secret field anew replaces them (design §7.2). */
+  private connectionSecrets(
+    row: InstanceRow,
+    manifest: Manifest,
+    patch: Record<string, string | null> = {},
+  ): Record<string, string> {
+    try {
+      return this.readSecrets(row);
+    } catch (err) {
+      if (!(err instanceof DecryptionError)) throw err;
+      const given = (k: string) => patch[k] === null || (typeof patch[k] === 'string' && patch[k] !== '');
+      if (secretFieldNames(manifest).every(given)) return {};
+      throw new ConflictError(
+        'secrets_unreadable',
+        'The stored secrets cannot be read with the current master key. Enter them again.',
+      );
+    }
+  }
+
   private sealSecrets(instanceId: string, secrets: Record<string, string>): Buffer | null {
     if (Object.keys(secrets).length === 0) return null;
     return this.opts.secrets.encryptJson(secrets, aad('plugin_instances', 'secrets_enc', instanceId));
@@ -500,7 +526,7 @@ export class InstanceManager {
     const manifest = this.plugin(row.pluginId).parsed;
     return {
       config: row.config as Record<string, unknown>,
-      secrets: summarizeSecrets(manifest, this.readSecrets(row)),
+      secrets: summarizeSecrets(manifest, this.connectionSecrets(row, manifest)),
       schema: manifest.connection.schema,
       ui: manifest.connection.ui,
       help: manifest.connection.help,
@@ -517,7 +543,7 @@ export class InstanceManager {
     const manifest = this.plugin(row.pluginId).parsed;
     const stored = storedSecretsFor(
       manifest,
-      { config: row.config as Record<string, unknown>, secrets: this.readSecrets(row) },
+      { config: row.config as Record<string, unknown>, secrets: this.connectionSecrets(row, manifest, input.secrets) },
       input,
     );
     const secrets = mergeSecrets(manifest, stored, input.secrets ?? {});
@@ -552,7 +578,10 @@ export class InstanceManager {
   ) {
     const row = this.row(id);
     const plugin = this.plugin(row.pluginId);
-    const current = { config: row.config as Record<string, unknown>, secrets: this.readSecrets(row) };
+    const current = {
+      config: row.config as Record<string, unknown>,
+      secrets: this.connectionSecrets(row, plugin.parsed, candidate?.secrets),
+    };
     const stored = candidate ? storedSecretsFor(plugin.parsed, current, candidate) : current.secrets;
     const secrets = mergeSecrets(plugin.parsed, stored, candidate?.secrets ?? {});
     const validated = validateConnection(plugin.parsed, {
