@@ -95,6 +95,9 @@ async function withPendingCall(
   const username = opts.username ?? 'admin';
   const admin = await ctx.users.create({ username, password: PASSWORD });
   let secret = '';
+  // Enrolment uses the previous step's code, so a step boundary must not pass before it is confirmed.
+  const msLeft = 30_000 - (Date.now() % 30_000);
+  if (msLeft < 2_000) await new Promise((r) => setTimeout(r, msLeft + 50));
   const step = currentStep();
   if (opts.totp !== false) {
     secret = ctx.users.beginTotp(admin.id).secret;
