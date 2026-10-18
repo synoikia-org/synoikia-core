@@ -196,6 +196,27 @@ Feature: Portal sign-in
       When user 12 asks for new recovery codes with the code "123456"
       Then user 12 is told "Two-factor authentication is off"
 
+  Rule: Wrong codes in the profile count toward the lock
+
+    Scenario Outline: Five wrong codes <for what> lock the name
+      Given user 12 has an authenticator app and 10 recovery codes
+      And user 12 gave a wrong code <for what> 5 times
+      When user 12 gives the current code <for what>
+      Then user 12 is told "Too many failed attempts"
+      And the first recovery code signs user 12 in after the lock ends
+
+      Examples:
+        | for what               |
+        | for new recovery codes |
+        | to turn off the app    |
+
+    Scenario: The wrong codes in the profile are in the audit log, and the lock is announced once
+      Given user 12 has an authenticator app
+      And the admin gets a notification when a sign-in is locked
+      When user 12 gives a wrong code 3 times for new recovery codes and 2 times to turn off the app
+      Then the audit log shows 3 failed codes of user 12 for new recovery codes and 2 to turn off the app
+      And the admin got one notification "Sign-in locked"
+
   Rule: A person sets up an authenticator app in their profile
 
     Scenario: User 12 sets up an authenticator app
