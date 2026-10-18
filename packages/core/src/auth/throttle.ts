@@ -17,6 +17,7 @@ const DEFAULTS: ThrottleOptions = { maxFailures: 5, windowMs: 15 * 60_000, ipLim
 
 export class LoginThrottle {
   private readonly failures: HitWindows;
+  private readonly locks: HitWindows;
   private readonly ipHits: HitWindows;
   private readonly opts: ThrottleOptions;
 
@@ -28,12 +29,13 @@ export class LoginThrottle {
     this.opts = { ...DEFAULTS, ...opts };
     // Bounded: random usernames or spoofed IPs from the internet can't grow these without limit.
     this.failures = new HitWindows(now, maxKeys);
+    this.locks = new HitWindows(now, maxKeys);
     this.ipHits = new HitWindows(now, maxKeys);
   }
 
   /** Tracked keys (tests and diagnostics). */
   get size(): number {
-    return this.failures.size + this.ipHits.size;
+    return this.failures.size + this.locks.size + this.ipHits.size;
   }
 
   /** Counts a request from `ip`; false when the IP is over budget. */
@@ -46,17 +48,21 @@ export class LoginThrottle {
 
   /** Seconds until the username may try again, or 0. */
   lockedFor(username: string, surface: LoginSurface = 'admin'): number {
-    const list = this.failures.recent(failureKey(username, surface), this.opts.windowMs);
-    if (list.length < this.opts.maxFailures) return 0;
-    return Math.ceil((list[0]! + this.opts.windowMs - this.now()) / 1000);
+    const lockedAt = this.locks.recent(failureKey(username, surface), this.opts.windowMs).at(-1);
+    if (lockedAt === undefined) return 0;
+    return Math.ceil((lockedAt + this.opts.windowMs - this.now()) / 1000);
   }
 
-  /** Records a failure; returns true if this failure triggered a lockout. */
+  /** Records a failure; returns true if this failure triggered a lockout, which lasts a window from now. */
   fail(username: string, surface: LoginSurface = 'admin'): boolean {
-    return this.failures.add(failureKey(username, surface), this.opts.windowMs).length === this.opts.maxFailures;
+    const key = failureKey(username, surface);
+    if (this.failures.add(key, this.opts.windowMs).length !== this.opts.maxFailures) return false;
+    this.locks.add(key, this.opts.windowMs);
+    return true;
   }
 
   succeed(username: string, surface: LoginSurface = 'admin') {
     this.failures.delete(failureKey(username, surface));
+    this.locks.delete(failureKey(username, surface));
   }
 }

@@ -226,6 +226,8 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   });
 
   app.post('/auth/totp', async (c) => {
+    if (!ctx.throttle.allowIp(clientIp(c, ctx.config.TRUST_PROXY)))
+      return c.json({ error: 'rate_limited', message: 'Too many attempts; try again later' }, 429);
     const { code } = await readJson(c, z.object({ code: z.string().min(1).max(32) }));
     const pending = verifyPayload<{ mfaUser: string }>(ctx.keys.state, getCookie(c, MFA_COOKIE));
     if (!pending) return c.json({ error: 'mfa_expired', message: 'Sign in again' }, 401);

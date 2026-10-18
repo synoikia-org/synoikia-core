@@ -390,10 +390,18 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     if (!checkUiCsrf(c, body.csrf) || !pending)
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Your sign-in expired; try again.', 401);
     const user = ctx.users.get(pending.mfaUser);
-    if (ctx.throttle.lockedFor(user.username, 'mcp') > 0)
+    const ip = clientIp(c, ctx.config.TRUST_PROXY);
+    if (!ctx.throttle.allowIp(ip) || ctx.throttle.lockedFor(user.username, 'mcp') > 0)
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Too many attempts; try again later.', 429);
     if (!ctx.users.verifySecondFactor(user.id, String(body.code ?? ''))) {
-      ctx.throttle.fail(user.username, 'mcp');
+      const username = user.username;
+      if (ctx.throttle.fail(username, 'mcp')) ctx.events.emit('auth.lockout', { username, ip, surface: 'mcp' });
+      writeAudit(ctx.db, {
+        kind: 'auth',
+        decision: 'totp_failed',
+        actorKind: 'system',
+        detail: { username, ip, surface: 'mcp' },
+      });
       return totpPage(c, { mfa: String(body.mfa), continueTo, csrf: uiCsrf(ctx, c), error: 'Invalid code.' }, 401);
     }
     ctx.throttle.succeed(user.username, 'mcp');
