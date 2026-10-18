@@ -23,6 +23,8 @@ export interface Decision {
   via?: DecisionChannel;
   channel?: ApprovalChannel;
   decidedBy?: string;
+  /** The approver's user id, for decisions on the approval page. */
+  decidedById?: string;
   /** Set for decisions on the approval page. */
   signIn?: ApproverSignIn;
   reason?: string;
@@ -320,7 +322,14 @@ export class ApprovalService {
   /** The approval page's decision. A wrong typed confirmation is rejected so the approver can retry. */
   decide(
     id: string,
-    input: { approve: boolean; confirm?: string; decidedBy: string; signIn?: ApproverSignIn; sessionGrantUntil?: Date },
+    input: {
+      approve: boolean;
+      confirm?: string;
+      decidedBy: string;
+      decidedById?: string;
+      signIn?: ApproverSignIn;
+      sessionGrantUntil?: Date;
+    },
   ): Decision {
     const live = this.open(id);
     if (input.approve && live.row.confirmLiteral && input.confirm !== live.row.confirmLiteral) {
@@ -330,6 +339,7 @@ export class ApprovalService {
       outcome: input.approve ? 'approved' : 'denied',
       via: 'url',
       decidedBy: input.decidedBy,
+      ...(input.decidedById ? { decidedById: input.decidedById } : {}),
       ...(input.signIn ? { signIn: input.signIn } : {}),
       ...(input.approve && input.sessionGrantUntil ? { sessionGrantUntil: input.sessionGrantUntil } : {}),
     };

@@ -138,6 +138,7 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
         approve,
         confirm: typeof body.confirm === 'string' ? body.confirm : undefined,
         decidedBy: who.user.username,
+        decidedById: who.user.id,
         signIn: who.signIn,
         sessionGrantUntil,
       });

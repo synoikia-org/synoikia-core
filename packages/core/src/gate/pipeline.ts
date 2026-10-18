@@ -464,6 +464,7 @@ export function createGateBindings(
               principal: principalKey(caller),
               client: caller.client.id,
               createdBy: approval.decidedBy ?? 'unknown',
+              createdById: approval.decidedById,
               approvalId: request.id,
               expiresAt: new Date(Math.min(approval.sessionGrantUntil.getTime(), cap)),
             });
