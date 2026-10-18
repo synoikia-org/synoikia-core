@@ -78,7 +78,7 @@ export function parseOpenApi(spec: string | Record<string, unknown>, service?: s
   }
   if (!isPlainObject(doc)) throw new SpecError(`The ${name} is empty`);
   if (typeof doc.openapi !== 'string' || !/^3\.[01]\./.test(doc.openapi))
-    throw new SpecError(`The ${name} is not OpenAPI 3.0`);
+    throw new SpecError(`The ${name} is not OpenAPI 3`);
   if (!isPlainObject(doc.paths)) throw new SpecError(`The ${name} has no paths`);
   return doc;
 }
@@ -89,6 +89,8 @@ const MAX_NESTING = 64;
 /** How many schema nodes one catalog build may produce: a spec with huge `$ref` fan-out is refused, not expanded. */
 export interface RefBudget {
   left: number;
+  /** The upstream's name in the refusal. */
+  service?: string;
 }
 export const DEFAULT_REF_BUDGET = 500_000;
 
@@ -101,7 +103,8 @@ export function resolveRefs(
   budget: RefBudget = { left: DEFAULT_REF_BUDGET },
   nesting = 0,
 ): unknown {
-  if (--budget.left < 0) throw new SpecError('The API spec expands to too many schema nodes');
+  if (--budget.left < 0)
+    throw new SpecError(`The ${budget.service ? `${budget.service} ` : ''}API spec expands to too many schema nodes`);
   if (nesting > MAX_NESTING) return { description: 'Nested too deeply' };
   if (Array.isArray(value)) return value.map((v) => resolveRefs(spec, v, depth, seen, budget, nesting + 1));
   if (!value || typeof value !== 'object') return value;
@@ -227,16 +230,25 @@ function bySpecificity(a: RestOperation, b: RestOperation): number {
   return 0;
 }
 
-/** Builds the catalog; throws `SpecError` for an invalid or tiny spec, or one with indistinguishable
- * templates (`/user/{id}`, `/user/{userId}/`) that could route around a lock. */
+/** Builds the catalog; an invalid or tiny spec, or one with indistinguishable templates (`/user/{id}`,
+ * `/user/{userId}/`) that could route around a lock, is an upstream error that names the service. */
 export function buildOpenApiCatalog(
   specText: string | Record<string, unknown>,
   opts: OpenApiCatalogOptions,
 ): OpenApiCatalog {
+  try {
+    return buildCatalog(specText, opts);
+  } catch (err) {
+    if (!(err instanceof SpecError)) throw err;
+    throw new PluginError(ErrorCodes.UpstreamError, `The ${opts.service} API description is not valid: ${err.message}`);
+  }
+}
+
+function buildCatalog(specText: string | Record<string, unknown>, opts: OpenApiCatalogOptions): OpenApiCatalog {
   const spec = parseOpenApi(specText, opts.service);
   const actionWords = opts.actionWords === undefined ? DEFAULT_ACTION_WORDS : opts.actionWords;
   const pathActionWords = opts.pathActionWords === undefined ? DEFAULT_PATH_ACTION_WORDS : opts.pathActionWords;
-  const budget: RefBudget = { left: DEFAULT_REF_BUDGET };
+  const budget: RefBudget = { left: DEFAULT_REF_BUDGET, service: opts.service };
   const shapes = new Map<string, string>();
   const operations: OperationDescriptor[] = [];
   const byVerb = new Map<HttpVerb, RestOperation[]>(HTTP_VERBS.map((v) => [v, []]));
@@ -412,7 +424,7 @@ export function restBinding(opts: RestBindingOptions): RestBinding {
       if (!match)
         throw new PluginError(
           ErrorCodes.UnknownOperation,
-          `${method} ${req.path} is not a ${opts.service} API operation`,
+          `${method} ${req.path} is not an operation of the ${opts.service} API`,
         );
       if (match.op.body && req.body !== undefined && method !== 'GET' && !isPlainObject(req.body))
         throw new PluginError(ErrorCodes.InvalidParams, `body must be an object of ${match.op.body} fields`);
@@ -457,7 +469,10 @@ export function restBinding(opts: RestBindingOptions): RestBinding {
       const { method, template } = split(key, '', '');
       const known = (await opts.catalog()).byVerb.get(method as HttpVerb)?.find((op) => op.template === template);
       if (!known)
-        throw new PluginError(ErrorCodes.UnknownOperation, `${baseKey(key)} is not a ${opts.service} API operation`);
+        throw new PluginError(
+          ErrorCodes.UnknownOperation,
+          `${baseKey(key)} is not an operation of the ${opts.service} API`,
+        );
       let path: string;
       try {
         path = fillTemplate(template, p.path ?? {});
