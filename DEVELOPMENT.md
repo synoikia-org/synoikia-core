@@ -43,6 +43,7 @@ The whole core suite takes about three minutes. While you work, run only the fea
 pnpm --filter @synoikia/core test:features features/identity                 # one folder
 pnpm --filter @synoikia/core test:features features/identity features/approvals   # several folders
 pnpm --filter @synoikia/admin-ui test:features                              # the portal in Chromium, against a real core
+pnpm --filter @synoikia/plugin-sdk test:features                            # the plugin SDK, as a plugin author uses it
 ```
 
 The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
@@ -65,6 +66,8 @@ pnpm --filter @synoikia/core test:coverage                        # enforces the
 Core's feature files are in `packages/core/features/`. Quickpickle runs them in vitest, in the `features` project of `packages/core/vitest.config.ts`. `features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
 
 The portal's feature files are in `packages/admin-ui/features/`. Their World builds the portal once and starts core with it for each scenario. Steps drive the portal in Chromium through Playwright, by roles, labels and visible text. CI installs Chromium with `pnpm --filter @synoikia/admin-ui exec playwright install --with-deps chromium`.
+
+The plugin SDK's feature files are in `packages/plugin-sdk/features/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
 
 ## Architecture model
 
