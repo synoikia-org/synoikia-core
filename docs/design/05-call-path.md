@@ -42,9 +42,10 @@ binding(args)
   │     mode approve: session grant (§5.8) → invoke (auto-approved:grant:<id>)
   │     mode approve: pre-approval rule (never locked) → invoke (auto-approved:rule:<id>)
   ├─ 7. human approval (§5.3), then access checked again            | PERMISSION_DENIED / OPERATION_DISABLED
+  │      classification checked again                               | OPERATION_CHANGED
   ├─ 8. targets resolved again                                      | TARGETS_CHANGED
   ├─ 9. catalog version checked again, write counted                | PLUGIN_UNAVAILABLE / RATE_LIMITED
-  ├─ 10. invoke (plugin)                                            | UPSTREAM_* / PLUGIN_* / INVALID_PARAMS
+  ├─ 10. invoke (plugin)                                            | UPSTREAM_* / PLUGIN_* / INVALID_PARAMS / TIMEOUT
   ├─ 11. redaction of the result (§5.5)
   └─ 12. audit (each branch, refusals included)
 ```
@@ -58,13 +59,14 @@ binding(args)
 | `OPERATION_DISABLED`       | Level `none` (also a write in a group at `read`), a read-only principal, a locked operation without its own `ask`, or a level change while the approval was open. The message gives the reason. |
 | `TARGET_RESOLUTION_FAILED` | The plugin cannot resolve a target.                                                                                                                                                             |
 | `TARGETS_CHANGED`          | The targets are not the targets that the approver saw. The call must be made again.                                                                                                             |
+| `OPERATION_CHANGED`        | The classification of the operation is not the classification that the approver saw. The call must be made again.                                                                               |
 | `CONFIG_CONFLICT`          | The object changed after it was read (`prepareWrite`).                                                                                                                                          |
 | `INVALID_PARAMS`           | The plugin refused the parameters of the call.                                                                                                                                                  |
-| `PERMISSION_DENIED`        | A human denied the call, the client declined, the approval timed out, the client cannot show an approval and cannot park, or the client has too many parked executions.                         |
+| `PERMISSION_DENIED`        | A human denied the call, the client declined, the approval timed out or was cancelled, the client cannot show an approval and cannot park, or the client has too many parked executions.        |
 | `RATE_LIMITED`             | The principal used its write budget.                                                                                                                                                            |
 | `UPSTREAM_DENIED`          | The upstream refused the call for lack of permission.                                                                                                                                           |
 | `UPSTREAM_ERROR`           | The upstream call failed.                                                                                                                                                                       |
-| `UPSTREAM_TIMEOUT`         | `invoke` did not answer in time. The result is unknown (see below).                                                                                                                             |
+| `UPSTREAM_TIMEOUT`         | `invoke` did not answer before its deadline. The result is unknown (see below).                                                                                                                 |
 | `PLUGIN_UNAVAILABLE`       | The plugin child is down, or the bundle changed while the call waited.                                                                                                                          |
 | `PLUGIN_ERROR`             | The plugin answer is not valid, or the plugin gave an error code that core does not pass on.                                                                                                    |
 | `EXECUTION_ENDED`          | The `execute` run ended before the call, or core stopped its parked execution.                                                                                                                  |
@@ -91,7 +93,8 @@ binding(args)
 - **One call at a time.** The calls of one `execute` run in sequence. While a call waits for approval, the full `execute` waits.
 - **An `execute` ends with its sandbox.** The run ends when the script returns, throws or times out. It also ends when the MCP request is cancelled or the session closes. Then core refuses the calls that remain (`EXECUTION_ENDED`) and cancels an open approval. A parked execution (§5.6) is the one exception. It reaches the upstream only after a human decision.
 - **Catalog version.** Core reads the catalog version (§10) when it gates a call. It reads it again just before `invoke`. If it is not set or it changed, core refuses the call with `PLUGIN_UNAVAILABLE`. A plugin update or a restart onto other code during the approval then cannot run the call under the rules of another bundle.
-- **Timeouts.** Core cannot cancel an `invoke` that timed out. The upstream can still complete the write. Core audits the call as `error:UPSTREAM_TIMEOUT`, which means "result unknown". Each `invoke` has a unique `context.callId`. A plugin can send it to an upstream that supports idempotency keys.
+- **Timeouts.** The deadline of an `invoke` is 500 ms before the end of the sandbox time limit. The agent then gets `UPSTREAM_TIMEOUT` before the run ends. With less than 500 ms left, core sends nothing upstream and refuses the call with `TIMEOUT`.
+- **Unknown results.** Core cannot cancel an `invoke` that timed out. The upstream can still complete the write. Core audits the call as `error:UPSTREAM_TIMEOUT`, which means "result unknown". Each `invoke` has a unique `context.callId`. A plugin can send it to an upstream that supports idempotency keys.
 - **`prepareWrite`** runs for write operations of kind `config` on plugins with `configTransform`.
 - **Rate limits.** These limits apply for each principal and instance. They are separate from pre-approval rule limits.
   - `execute` and `search` runs: 30 each minute by default. Core refuses a run with `RATE_LIMITED` before it creates an isolate.
@@ -218,6 +221,8 @@ An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`
 9. **Tool annotations.** `search` has `readOnlyHint: true`. `execute` has `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. The gate does not depend on them.
 10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403, also an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides.
 11. **Redacted values.** The approval page shows the same redacted parameters as the audit log. It must not show secrets.
+12. **Classification checked again.** A sync can change an operation from read to write while its approval is open. If the classification or the lock changed, core refuses the call (`OPERATION_CHANGED`). Scenario: [`@id:read-to-write-approval`](../../packages/core/features/approvals/read-to-write-approval.feature).
+13. **Reason in the audit.** An approval that ends without approval gives its reason, for example `user_deleted`, in the audit `detail.reason` of the call.
 
 **Approval states.**
 
