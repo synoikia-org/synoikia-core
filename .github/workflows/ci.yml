@@ -72,7 +72,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm --filter @synoikia/core exec vitest run --project unit
-      - run: pnpm --filter '!@synoikia/core' -r test
+      - run: pnpm --filter @synoikia/plugin-sdk --filter @synoikia/create-plugin --filter @synoikia/admin-ui test
 
   docker:
     runs-on: ubuntu-latest
