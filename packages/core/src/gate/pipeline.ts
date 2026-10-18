@@ -122,6 +122,7 @@ const DENIAL_MESSAGES: Record<string, string> = {
   prompt_failed: 'needs approval, but the client could not show the approval prompt',
   confirmation_mismatch: 'was denied (confirmation mismatch)',
   endpoint_stopped: 'was cancelled: the endpoint was stopped or reconfigured while it waited for approval',
+  user_deleted: 'was cancelled: the owner of this credential was deleted',
   park_refused:
     'needs approval, and an earlier approval of this execution was not given or it reached its approval limit; call execute again',
   too_many_parked:
@@ -413,6 +414,7 @@ export function createGateBindings(
           if (approval.channel) audit.detail.approvalChannel = approval.channel;
           if (approval.outcome === 'cancelled' && signal.aborted) ensureRunning();
           if (approval.outcome !== 'approved') {
+            if (approval.reason) audit.detail.reason = approval.reason;
             const label = approval.outcome === 'timed_out' ? 'timed-out' : 'denied';
             reject(
               label,
