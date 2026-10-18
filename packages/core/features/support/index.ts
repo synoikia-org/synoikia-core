@@ -58,3 +58,6 @@ import '../instances/steps/instance-supervision.steps.js';
 import '../instances/steps/instance-lifecycle.steps.js';
 import '../instances/steps/catalog-sync.steps.js';
 import '../access/steps/catalog-access-on-sync.steps.js';
+import '../plugin-testing/steps/plugin-test-harness.steps.js';
+import '../plugin-testing/steps/plugin-contract-check.steps.js';
+import '../plugin-testing/steps/repository-release-check.steps.js';

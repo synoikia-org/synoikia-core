@@ -19,7 +19,7 @@ const seen = new WeakMap<
     answer?: PageResponse;
   }
 >();
-const seenBy = (world: SynoikiaWorld) => {
+export const seenBy = (world: SynoikiaWorld) => {
   let s = seen.get(world);
   if (!s) seen.set(world, (s = {}));
   return s;
