@@ -53,3 +53,8 @@ import '../plugins/steps/plugin-repositories.steps.js';
 import '../plugins/steps/plugin-install-and-update.steps.js';
 import '../plugins/steps/manual-plugins.steps.js';
 import '../plugins/steps/plugin-discovery.steps.js';
+import '../plugins/steps/plugin-isolation.steps.js';
+import '../instances/steps/instance-supervision.steps.js';
+import '../instances/steps/instance-lifecycle.steps.js';
+import '../instances/steps/catalog-sync.steps.js';
+import '../access/steps/catalog-access-on-sync.steps.js';

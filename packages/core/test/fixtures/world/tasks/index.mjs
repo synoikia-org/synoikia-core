@@ -1,5 +1,5 @@
 // The World's "Acme Tasks" plugin: speaks the JSON-RPC-over-IPC contract and calls the fake upstream over HTTP.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,7 +7,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation`, `count-is-write` (the count
 // syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON), `diff-path` (`dot` or `bare`)
 // and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
-// restarts the child once.
+// restarts the child once. Isolation and supervision: `report`, `start-check`, `hang`/`crash`/`forget` (a method
+// name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove) and `catalog-changed`.
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 const upstreamVersion = () => flagValue('upstream-version') || '1.0';
@@ -125,6 +126,17 @@ const summary = (key, p) => {
   return p.title ? `${name}: "${p.title}" in ${p.list}` : `${name}: ${p.list}`;
 };
 
+const changes = () => (flag('catalog-changes') ? JSON.parse(flagValue('catalog-changes')) : {});
+const added = () => (changes().add ?? []).map((a) => op(a.key, a.displayName, a.group, a.classification, a.extra));
+const known = (key) => [...CATALOG, ...added()].some((o) => o.key === key) || String(key).startsWith('views.');
+
+// Contract breaks: an operation without its classification, a key twice, or result secrets that name no field.
+const BROKEN = {
+  'no-classification': (ops) => ops.map((o) => (o.key === 'lists.count' ? { ...o, classification: undefined } : o)),
+  duplicate: (ops) => [...ops, ops[0]],
+  'empty-secret-keys': (ops) => ops.map((o) => (o.key === 'lists.count' ? { ...o, sensitiveResult: { keys: [] } } : o)),
+};
+
 async function catalog() {
   if (flag('catalog-broken')) throw Object.assign(new Error('cannot read the catalog'), { code: 'UPSTREAM_ERROR' });
   const views = (await upstream('GET', '/views')) ?? [];
@@ -136,7 +148,48 @@ async function catalog() {
         ? { ...o, sensitiveResult: secretResult }
         : o,
   );
-  return [...ops, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
+  const { change = {}, remove = [] } = changes();
+  const changed = ops
+    .filter((o) => !remove.includes(o.key))
+    .map((o) => (change[o.key] ? { ...o, ...change[o.key] } : o));
+  const all = [...changed, ...added(), ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
+  const broken = BROKEN[flagValue('catalog-output')];
+  return broken ? broken([...all, op('lists.done', 'show the done tasks', 'lists', 'read')]) : all;
+}
+
+/** What the plugin can reach from its process, sent to Acme so the World can see it. */
+async function report() {
+  const attempt = (fn) => {
+    try {
+      fn();
+      return 'allowed';
+    } catch (err) {
+      return err.code ?? String(err.message);
+    }
+  };
+  const body = {
+    ownFile: attempt(() => readFileSync(path.join(HERE, 'manifest.json'))),
+    systemFile: attempt(() => readFileSync('/etc/passwd')),
+    coreKey: attempt(() => readFileSync(path.join(HERE, '..', '..', 'master.key'))),
+    coreDatabase: attempt(() => readFileSync(path.join(HERE, '..', '..', 'synoikia.sqlite'))),
+    write: attempt(() => writeFileSync(path.join(HERE, 'written.txt'), 'x')),
+    env: Object.keys(process.env)
+      .filter((k) => k !== '__CF_USER_TEXT_ENCODING')
+      .sort(),
+    secrets: Object.keys(secrets).sort(),
+    config: Object.keys(config).sort(),
+  };
+  await upstream('POST', '/report', body).catch(() => undefined);
+}
+
+/** The start checks that Acme answers, as a plugin that verifies its connection would. */
+async function startCheck() {
+  try {
+    await upstream('GET', '/lists');
+  } catch (err) {
+    if (err.code) throw err;
+    throw Object.assign(new Error('cannot reach upstream'), { code: 'UPSTREAM_ERROR' });
+  }
 }
 
 // Every target names its list as the scope "list", except in the "Inbox", which belongs to no list.
@@ -175,9 +228,11 @@ async function registry() {
 }
 
 const handlers = {
-  init(id, params) {
+  async init(id, params) {
     config = params.config;
     secrets = params.secrets ?? {};
+    if (flag('report')) await report();
+    if (flag('start-check')) await startCheck();
     reply(id);
   },
   testConnection: (id) => reply(id, { ok: true, upstreamVersion: upstreamVersion() }),
@@ -186,8 +241,7 @@ const handlers = {
   syncRegistry: async (id) => reply(id, await registry()),
   resolveOperation(id, { args }) {
     const [key, params = {}] = args;
-    if (!CATALOG.some((o) => o.key === key) && !String(key).startsWith('views.'))
-      return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
+    if (!known(key)) return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
     reply(id, { key, params });
   },
   resolveTargets: async (id, { key, params }) => reply(id, await targetsOf(key, params)),
@@ -214,6 +268,7 @@ const handlers = {
   async invoke(id, { key, params, context }) {
     const run = INVOKE[key];
     if (key.startsWith('views.')) return reply(id, { view: key.slice('views.'.length) });
+    if (!run && known(key)) return reply(id, { ran: key });
     if (!run) return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);
     reply(id, await run(params ?? {}, context ?? {}));
   },
@@ -224,14 +279,19 @@ const handlers = {
 };
 
 const restartSeen = flagValue('restart');
+let catalogChangedSeen = flagValue('catalog-changed');
 globalThis.setInterval(() => {
   if (flagValue('restart') !== restartSeen) process.exit(1);
+  if (flagValue('catalog-changed') === catalogChangedSeen) return;
+  catalogChangedSeen = flagValue('catalog-changed');
+  process.send({ jsonrpc: '2.0', method: 'catalogChanged', params: { reason: 'Acme changed' } });
 }, 25);
 
 process.on('message', (msg) => {
-  if (flag('down')) process.exit(1);
-  const handler = handlers[msg.method];
-  if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', msg.method);
+  if (flag('down') || flagValue('crash') === msg.method) process.exit(1);
+  if (flagValue('hang') === msg.method) return;
+  const handler = flagValue('forget') === msg.method ? undefined : handlers[msg.method];
+  if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', `method not found: ${msg.method}`);
   Promise.resolve(handler(msg.id, msg.params)).catch((err) =>
     fail(msg.id, err.code ?? 'UPSTREAM_ERROR', String(err.message ?? err)),
   );

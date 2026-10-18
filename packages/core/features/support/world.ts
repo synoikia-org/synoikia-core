@@ -1,6 +1,18 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +63,8 @@ export const OPERATIONS: Record<string, string> = {
   'add a task': 'tasks.add',
   'complete a task': 'tasks.complete',
   'import tasks': 'tasks.import',
+  'show the done tasks': 'lists.done',
+  'clear a list': 'lists.clear',
 };
 
 export const opKey = (name: string) => {
@@ -108,13 +122,26 @@ export const csrfOf = (html: string) => /name="csrf" value="([^"]+)"/.exec(html)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// A data directory with the migrated database, the World's admin and the key file, built once per process and
-// copied for each scenario: a fresh core costs migrations and a password hash otherwise.
-const TEMPLATE = path.join(tmpdir(), `synoikia-world-template-${process.pid}`);
+// A data directory with the migrated database, the World's admin and the key file, built once and copied for
+// each scenario: a fresh core costs migrations and a password hash otherwise. Its name holds a fingerprint of
+// the migrations and the fixture plugins, so all test processes share it until one of them changes.
+const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
 let template: Promise<string> | undefined;
 
+function fingerprint() {
+  const hash = createHash('sha256');
+  for (const root of [MIGRATIONS, PLUGINS])
+    for (const file of (readdirSync(root, { recursive: true }) as string[]).sort()) {
+      const full = path.join(root, file);
+      if (statSync(full).isFile()) hash.update(file).update(readFileSync(full));
+    }
+  return hash.digest('hex').slice(0, 16);
+}
+
 async function buildTemplate(): Promise<string> {
-  if (existsSync(path.join(TEMPLATE, '.ready'))) return TEMPLATE;
+  const name = `synoikia-world-template-${fingerprint()}`;
+  const target = path.join(tmpdir(), name);
+  if (existsSync(path.join(target, '.ready'))) return target;
   const dir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-build-'));
   cpSync(PLUGINS, path.join(dir, 'plugins'), { recursive: true });
   const ctx = await createAppContext(
@@ -127,10 +154,16 @@ async function buildTemplate(): Promise<string> {
   );
   await ctx.stop();
   writeFileSync(path.join(dir, '.ready'), '');
-  rmSync(TEMPLATE, { recursive: true, force: true });
-  renameSync(dir, TEMPLATE);
-  process.once('exit', () => rmSync(TEMPLATE, { recursive: true, force: true }));
-  return TEMPLATE;
+  try {
+    renameSync(dir, target);
+  } catch {
+    // Another test process built the same template first.
+    rmSync(dir, { recursive: true, force: true });
+  }
+  for (const old of readdirSync(tmpdir()))
+    if (old.startsWith('synoikia-world-template-') && old !== name)
+      rmSync(path.join(tmpdir(), old), { recursive: true, force: true });
+  return target;
 }
 
 // The process clock: `passTime` moves it with core's clock, for the parts of core that read the wall time.
@@ -278,6 +311,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
   portalAnswer: { status: number; body: Record<string, unknown> } = { status: 0, body: {} };
   /** Start-up settings core gets on top of the World's own, kept across restarts. */
   coreEnv: Record<string, string> = {};
+  /** How core supervises plugins (restart pause, start and call limits), kept across restarts. */
+  supervision?: AppOptions['supervisor'];
   /** Whether core starts with the World's admin from its start-up settings. */
   bootstrapAdmin = true;
   acme?: AcmeId;
@@ -337,6 +372,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
           oidcAllowInsecure: true,
           repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
+          ...(this.supervision ? { supervisor: this.supervision } : {}),
           ...opts,
         },
       );
@@ -581,10 +617,50 @@ export class SynoikiaWorld extends QuickPickleWorld {
       | 'count-is-write'
       | 'secret-result'
       | 'diff-path'
-      | 'upstream-version',
+      | 'upstream-version'
+      | 'report'
+      | 'start-check'
+      | 'hang'
+      | 'crash'
+      | 'forget'
+      | 'catalog-output'
+      | 'catalog-changes'
+      | 'catalog-changed',
     value = '',
   ) {
     writeFileSync(this.pluginFile(name), value);
+  }
+
+  /** The plugin's catalog from its next sync on: operations it adds, changes by name, or removes. */
+  changeCatalog(change: {
+    add?: { name: string; group: string; classification: 'read' | 'write'; extra?: Record<string, unknown> }[];
+    change?: Record<string, Record<string, unknown>>;
+    remove?: string[];
+    restore?: string[];
+  }) {
+    const file = this.pluginFile('catalog-changes');
+    const now = (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}) as {
+      add?: unknown[];
+      change?: Record<string, Record<string, unknown>>;
+      remove?: string[];
+    };
+    const add = (change.add ?? []).map((a) => ({ key: opKey(a.name), displayName: a.name, ...a }));
+    const changed = Object.fromEntries(Object.entries(change.change ?? {}).map(([n, c]) => [opKey(n), c]));
+    const restore = (change.restore ?? []).map(opKey);
+    const next = {
+      add: [...(now.add ?? []), ...add],
+      change: { ...now.change, ...changed },
+      remove: [...(now.remove ?? []).filter((k) => !restore.includes(k)), ...(change.remove ?? []).map(opKey)],
+    };
+    this.pluginFlag('catalog-changes', JSON.stringify(next));
+  }
+
+  /** The running processes of the World's plugin, as the operating system lists them. */
+  pluginProcesses() {
+    const entry = path.join(realpathSync(path.dirname(this.pluginFile('index.mjs'))), 'index.mjs');
+    return execFileSync('ps', ['-eo', 'args'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((line) => line.includes(entry)).length;
   }
 
   /** Changes the plugin's manifest on disk; `rescan` makes core read it again. */
