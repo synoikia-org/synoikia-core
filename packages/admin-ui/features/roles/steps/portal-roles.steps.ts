@@ -83,21 +83,39 @@ Then(
 );
 
 When(
-  'the admin removes {instance} from {string} on the roles page',
-  async (world: PortalWorld, slug: string, role: string) => {
+  /^the admin removes \/([a-z0-9-]+) from "([^"]+)" on the roles page and (confirms|cancels) the question$/,
+  async (world: PortalWorld, slug: string, role: string, answer: string) => {
     await rolesPage(world);
     await onInstance(world, role, slug)
       .getByRole('checkbox', { name: `/${slug}` })
       .uncheck();
+    await world.answerQuestion(answer === 'confirms' ? 'Remove' : 'Cancel');
   },
 );
 
 Then(
-  '{string} no longer has {instance}, and the portal asked nothing',
-  async (world: PortalWorld, role: string, slug: string) => {
-    await expect.poll(async () => (await roleRow(world, role))?.endpoints.length).toBe(0);
-    await expect.poll(() => switches(world, role, slug).count()).toBe(0);
-    expect(await world.page.getByRole('dialog').count()).toBe(0);
+  'the question said that {string} loses its maximum levels, personal levels and own rules on {instance}',
+  (world: PortalWorld, role: string, slug: string) => {
+    for (const part of [role, `/${slug}`, 'maximum levels', 'personal levels', 'own rules'])
+      expect(world.question.text).toContain(part);
+  },
+);
+
+Then('{string} no longer has {instance}', async (world: PortalWorld, role: string, slug: string) => {
+  await expect.poll(async () => (await roleRow(world, role))?.endpoints.length).toBe(0);
+  await expect.poll(() => switches(world, role, slug).count()).toBe(0);
+});
+
+Then(
+  '{string} still has {instance}, and still may at most {level} in the group {string}',
+  async (world: PortalWorld, role: string, slug: string, level: string, group: string) => {
+    await expect.poll(() => world.page.getByRole('dialog').count()).toBe(0);
+    const box = onInstance(world, role, slug).getByRole('checkbox', { name: `/${slug}` });
+    expect(await box.isChecked()).toBe(true);
+    await seen(switches(world, role, slug));
+    const id = await world.tasksInstance(slug);
+    expect((await roleRow(world, role))?.endpoints.map((e) => e.instanceId)).toEqual([id]);
+    expect((await roleLevels(world, role, slug)).groups.find((g) => g.key === group)?.roleLevel).toBe(level);
   },
 );
 

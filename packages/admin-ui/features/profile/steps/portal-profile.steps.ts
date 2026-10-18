@@ -72,19 +72,39 @@ Then('the profile no longer lists {string}', async (world: PortalWorld, name: st
 
 // ── two-factor ──
 
-When('the admin sets up two-factor sign-in on their profile with the current code', async (world: PortalWorld) => {
+async function setUpTwoFactor(world: PortalWorld) {
   await profile(world);
   await world.page.getByRole('button', { name: 'Set up two-factor authentication' }).click();
   const secret = (await world.page.locator('code.secret').textContent()) ?? '';
   await world.page.getByRole('textbox', { name: 'Code' }).fill(totpCode(secret.trim()));
   await world.page.getByRole('button', { name: 'Confirm' }).click();
+}
+
+When('the admin sets up two-factor sign-in on their profile with the current code', async (world: PortalWorld) => {
+  await setUpTwoFactor(world);
+});
+
+Given(
+  'the admin set up two-factor sign-in on their profile and sees the recovery codes',
+  async (world: PortalWorld) => {
+    await setUpTwoFactor(world);
+    await seen(world.page.locator('pre.recovery'));
+    world.noted.reloads = '/api/profile';
+  },
+);
+
+Then('the profile still shows the recovery codes', async (world: PortalWorld) => {
+  await world.page.waitForTimeout(500);
+  const codes = world.page.locator('pre.recovery');
+  expect(await codes.count()).toBe(1);
+  expect((await codes.textContent())?.trim().split('\n').length).toBeGreaterThan(1);
+  await seen(world.page.getByRole('button', { name: 'I saved them' }));
 });
 
 Then('the profile shows the recovery codes until the admin says they saved them', async (world: PortalWorld) => {
   const codes = world.page.locator('pre.recovery');
   await seen(codes);
   expect((await codes.textContent())?.trim().split('\n').length).toBeGreaterThan(1);
-  // The portal loads the profile again, which now has two-factor on, after the browser was offline a minute.
   await world.page.getByRole('button', { name: 'I saved them' }).click();
   await expect.poll(() => codes.count()).toBe(0);
 });
