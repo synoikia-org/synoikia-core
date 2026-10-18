@@ -84,8 +84,14 @@ When('the admin opens the older events in the audit log', async (world: PortalWo
 Then('the audit log shows events 101 and on of the total', async (world: PortalWorld) => {
   const pager = world.page.getByText(/^101–\d+ of \d+$/);
   await seen(pager);
-  const [, last, total] = /^101–(\d+) of (\d+)$/.exec((await pager.textContent()) ?? '')!;
-  expect(Number(last)).toBe(Number(total));
-  expect(Number(total)).toBeGreaterThan(105);
-  await expect.poll(() => eventRows(world).count()).toBe(Number(total) - 100);
+  // While the page loads, the pager can still show the full range of 100.
+  const range = async () =>
+    /^101–(\d+) of (\d+)$/
+      .exec((await pager.textContent()) ?? '')!
+      .slice(1)
+      .map(Number);
+  await expect.poll(async () => new Set(await range()).size).toBe(1);
+  const [, total] = await range();
+  expect(total).toBeGreaterThan(105);
+  await expect.poll(() => eventRows(world).count()).toBe(total! - 100);
 });
