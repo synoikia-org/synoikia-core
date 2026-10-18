@@ -73,6 +73,17 @@ export interface CallerContext {
 
 type OperationRow = typeof operations.$inferSelect;
 
+/** How an approved call runs besides its classification: a sync must not change it during the wait (§5.3). */
+const runRules = (op: OperationRow) =>
+  canonicalJson({
+    typedConfirmation: op.typedConfirmation,
+    sensitiveParams: [...(op.sensitiveParams ?? [])].sort(),
+    sensitiveResult:
+      op.sensitiveResult && op.sensitiveResult !== 'whole'
+        ? { ...op.sensitiveResult, keys: [...op.sensitiveResult.keys].sort() }
+        : (op.sensitiveResult ?? null),
+  });
+
 /** What per-principal limits are keyed on: the stable principal, never the display name. */
 export const principalKey = (caller: CallerContext) => caller.client.key ?? caller.client.id ?? 'anonymous';
 
@@ -238,6 +249,8 @@ export function createGateBindings(
         );
       }
       const operation = op!;
+      // The row that redacts the result: re-read after a human approval.
+      let resultRules = operation;
 
       // 2. Attestation (design §5.2), for an operation this caller can reach.
       if (operation.attestationRequired) {
@@ -437,9 +450,13 @@ export function createGateBindings(
               new BindingError('OPERATION_DISABLED', `${operation.key} was disabled while waiting for approval`),
             );
           }
-          // The human approved one classification; a sync during the wait may have changed it (§5.3).
+          // The human approved one classification and its run rules; a sync during the wait may change them (§5.3).
           const opNow = deps.db.select().from(operations).where(eq(operations.id, operation.id)).get();
-          if (!opNow || (opNow.locked ? 'locked' : opNow.classification) !== audit.classification) {
+          if (
+            !opNow ||
+            (opNow.locked ? 'locked' : opNow.classification) !== audit.classification ||
+            runRules(opNow) !== runRules(operation)
+          ) {
             reject(
               'rejected:operation_changed',
               new BindingError(
@@ -448,6 +465,7 @@ export function createGateBindings(
               ),
             );
           }
+          resultRules = opNow!;
           decision = 'human-approved';
           const maxHours = rt.settings.sessionGrantMaxHours;
           if (
@@ -531,7 +549,7 @@ export function createGateBindings(
       // 10–11. Redact (the operation's declared result secrets first, then by key name and secret
       // value), audit, hand back. Nothing past this point sees the plugin's raw result.
       finish(decision, { resultStatus: 'ok' });
-      return rt.redact(redactResult(result, operation.sensitiveResult));
+      return rt.redact(redactResult(result, resultRules.sensitiveResult));
     } catch (err) {
       const raw = toBindingError(err);
       // Plugin and upstream messages are free text: scrub the instance's secret values out of them.
