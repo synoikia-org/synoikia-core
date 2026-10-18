@@ -109,7 +109,7 @@ Feature: Call pipeline
 
     Scenario: Acme does not answer in time
       Given the admin sets the group "tasks" of "tasks" to write
-      And a run on "tasks" may take 1 second, and Acme takes 3 seconds to answer
+      And a run on "tasks" may take 3 seconds, and Acme takes 5 seconds to answer
       When agent 7 adds "butter" to "Groceries"
       Then agent 7 is told that the result of the add is unknown
       And the audit log records the add of "butter" as timed out

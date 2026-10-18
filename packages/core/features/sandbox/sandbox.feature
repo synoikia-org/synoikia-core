@@ -40,7 +40,7 @@ Feature: Sandbox
       Then agent 7 gets the new task "butter"
 
     Scenario: A slow answer from Acme uses the time limit
-      Given a run on "tasks" may take 1 second, and Acme takes 2 seconds to answer
+      Given a run on "tasks" may take 3 seconds, and Acme takes 5 seconds to answer
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that Acme did not answer in time
 
