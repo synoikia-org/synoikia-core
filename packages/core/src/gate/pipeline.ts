@@ -481,7 +481,7 @@ export function createGateBindings(
               instanceId: rt.instanceId,
               principal: principalKey(caller),
               client: caller.client.id,
-              createdBy: approval.decidedBy ?? 'unknown',
+              createdBy: approval.decidedBy,
               createdById: approval.decidedById,
               approvalId: request.id,
               expiresAt: new Date(Math.min(approval.sessionGrantUntil.getTime(), cap)),

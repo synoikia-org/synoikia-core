@@ -14,8 +14,8 @@ export interface SessionGrant {
   client?: string;
   /** The approver's username, for display. */
   createdBy: string;
-  /** The approver's user id: the actor of the grant's audit rows. */
-  createdById?: string;
+  /** The approver's user id: the actor of the grant's audit rows, and how the grant ends with that user. */
+  createdById: string;
   approvalId: string;
   createdAt: Date;
   expiresAt: Date;
@@ -54,7 +54,7 @@ export class SessionGrantService {
         kind: 'config',
         instanceId: grant.instanceId,
         decision: 'session_grant.created',
-        actorKind: grant.createdById ? 'user' : 'system',
+        actorKind: 'user',
         actorId: grant.createdById,
         detail: {
           grantId: grant.id,
