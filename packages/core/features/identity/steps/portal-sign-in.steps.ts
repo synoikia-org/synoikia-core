@@ -423,3 +423,81 @@ Then(
     ]);
   },
 );
+
+// ── new recovery codes ──
+
+async function askForNewCodes(world: SynoikiaWorld, user: number, code: string) {
+  const answer = await keep(
+    world,
+    world.person(person(user)).portal!.post('/api/profile/totp/recovery-codes', { code }),
+  );
+  identity(world).newCodes = answer.body.recoveryCodes as string[] | undefined;
+}
+
+/** Whether `code` signs `user` in at the code step, in a fresh browser. */
+async function codeSignsIn(world: SynoikiaWorld, user: number, code: string) {
+  await passwordStep(world, person(user), undefined, 'check');
+  const res = await identity(world).browsers.get('check')!.post('/auth/totp', { code });
+  return res.status === 200;
+}
+
+When('user {int} asks for new recovery codes with the current code', async (world: SynoikiaWorld, user: number) => {
+  await askForNewCodes(world, user, world.totpCode(appOf(world, person(user)).secret));
+});
+
+When(
+  /^user (\d+) asks for new recovery codes with (their first recovery code|a wrong code|the code that confirmed the app)$/,
+  async (world: SynoikiaWorld, user: string, which: string) => {
+    const who = person(Number(user));
+    const app = appOf(world, who);
+    const code =
+      which === 'a wrong code'
+        ? wrongCode(world, who)
+        : which === 'their first recovery code'
+          ? app.recoveryCodes[0]!
+          : app.enrollCode;
+    await askForNewCodes(world, Number(user), code);
+  },
+);
+
+When(
+  'user {int} asks for new recovery codes with the code {string}',
+  async (world: SynoikiaWorld, user: number, code: string) => {
+    await askForNewCodes(world, user, code);
+  },
+);
+
+Then(
+  'user {int} gets 10 new recovery codes, with 10 left, and only the new ones sign in',
+  async (world: SynoikiaWorld, user: number) => {
+    const fresh = identity(world).newCodes;
+    const old = appOf(world, person(user)).recoveryCodes;
+    expect(identity(world).answer.status).toBe(200);
+    expect(fresh).toHaveLength(10);
+    expect(fresh!.filter((c) => old.includes(c))).toEqual([]);
+    const me = await world.expectOk(world.person(person(user)).portal!.get('/api/profile'), 'read profile');
+    expect(me.recoveryCodesLeft).toBe(10);
+    expect(await codeSignsIn(world, user, old[1]!)).toBe(false);
+    expect(await codeSignsIn(world, user, fresh![0]!)).toBe(true);
+  },
+);
+
+Then(
+  'the audit log shows that user {int} replaced their recovery codes',
+  async (world: SynoikiaWorld, user: number) => {
+    const rows = (await authRows(world)).filter((r) => r.decision === 'totp_recovery_rotated');
+    expect(rows.map((r) => [r.actorId, r.detail])).toEqual([
+      [world.person(person(user)).id, { username: world.person(person(user)).username }],
+    ]);
+  },
+);
+
+Then(
+  'user {int} is told {string}, and the first recovery code still signs user {int} in',
+  async (world: SynoikiaWorld, _user: number, message: string, user: number) => {
+    const { answer } = identity(world);
+    expect(answer.status).toBe(401);
+    expect(answer.text).toContain(message);
+    expect(await codeSignsIn(world, user, appOf(world, person(user)).recoveryCodes[0]!)).toBe(true);
+  },
+);

@@ -109,6 +109,40 @@ Then('the profile shows the recovery codes until the admin says they saved them'
   await expect.poll(() => codes.count()).toBe(0);
 });
 
+async function askForNewCodes(world: PortalWorld, code: (secret: string) => string) {
+  await profile(world);
+  await world.page.getByRole('button', { name: 'New recovery codes' }).click();
+  const dialog = world.page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Code' }).fill(code(world.person('admin').totpSecret!));
+  await dialog.getByRole('button', { name: 'Get new codes' }).click();
+}
+
+When('the admin asks for new recovery codes on their profile with the current code', async (world: PortalWorld) => {
+  await askForNewCodes(world, (secret) => totpCode(secret));
+});
+
+When('the admin asks for new recovery codes on their profile with a wrong code', async (world: PortalWorld) => {
+  await askForNewCodes(world, (secret) => {
+    const valid = new Set([-1, 0, 1].map((s) => totpCode(secret, s)));
+    let n = 123456;
+    while (valid.has(String(n))) n++;
+    return String(n);
+  });
+});
+
+Then('the profile shows the new recovery codes until the admin says they saved them', async (world: PortalWorld) => {
+  const codes = world.page.locator('pre.recovery');
+  await seen(codes);
+  expect((await codes.textContent())?.trim().split('\n')).toHaveLength(10);
+  expect(await world.page.getByRole('dialog').count()).toBe(0);
+  await world.page.getByRole('button', { name: 'I saved them' }).click();
+  await expect.poll(() => codes.count()).toBe(0);
+});
+
+Then('the question says {string}', async (world: PortalWorld, text: string) => {
+  await seen(world.page.getByRole('dialog').getByRole('alert').getByText(text));
+});
+
 // ── password ──
 
 async function changePassword(world: PortalWorld, current: string, next: string, confirm: string) {

@@ -296,3 +296,47 @@ When(
     await world.sync(slug);
   },
 );
+
+// ── secrets that the master key cannot read ──
+
+When(
+  'the admin tests the phone channel, renames it, and then saves it with a new token',
+  async (world: SynoikiaWorld) => {
+    await world.signInAgain();
+    const id = await phoneId(world);
+    of(world).answer = [
+      await answerOf(world.admin.post(`/api/notifiers/${id}/test`)),
+      await answerOf(world.admin.patch(`/api/notifiers/${id}`, { name: 'Phone 2' })),
+      await answerOf(world.admin.patch(`/api/notifiers/${id}`, { secrets: { token: 'tk_phone_new' } })),
+    ];
+  },
+);
+
+Then(
+  'the admin was told twice to enter the secrets again, and then the phone channel has its token set',
+  (world: SynoikiaWorld) => {
+    const [tested, renamed, saved] = of(world).answer;
+    const refusal = {
+      status: 409,
+      body: {
+        error: 'secrets_unreadable',
+        message: 'The stored secrets cannot be read with the current master key. Enter them again.',
+      },
+    };
+    expect(tested).toEqual(refusal);
+    expect(renamed).toEqual(refusal);
+    expect(saved).toMatchObject({ status: 200, body: { name: 'Phone', secrets: { token: { set: true } } } });
+    expect(saved!.body).not.toHaveProperty('secretsUnreadable');
+  },
+);
+
+When('the admin lists the channels', async (world: SynoikiaWorld) => {
+  await world.signInAgain();
+  of(world).answer = [await answerOf(world.admin.get('/api/notifiers'))];
+});
+
+Then('the admin sees the phone channel, marked as having secrets that cannot be read', (world: SynoikiaWorld) => {
+  const [listed] = of(world).answer;
+  expect(listed!.status).toBe(200);
+  expect(listed!.body).toMatchObject([{ name: 'Phone', secretsUnreadable: true, secrets: {} }]);
+});

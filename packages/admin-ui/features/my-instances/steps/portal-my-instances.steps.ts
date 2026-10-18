@@ -205,6 +205,19 @@ Then('{string} shows {string}, with no level to pick', async (world: PortalWorld
   expect(await world.page.getByRole('radiogroup', { name: `Level of ${key}` }).count()).toBe(0);
 });
 
+Then(
+  '{string} shows {string}, and user 12 can still pick Ask for it and for the group {string}',
+  async (world: PortalWorld, name: string, text: string, group: string) => {
+    const key = OPERATIONS[name]!;
+    await world.page.getByRole('button', { name: `Expand ${group}` }).click();
+    await seen(world.page.locator(`[data-op="${key}"]`).getByText(text, { exact: true }));
+    const ask = (radiogroup: string) =>
+      world.page.getByRole('radiogroup', { name: radiogroup }).getByRole('radio', { name: 'Ask', exact: true });
+    expect(await ask(`Level of ${key}`).isEnabled()).toBe(true);
+    expect(await ask(`Access for ${group}`).isEnabled()).toBe(true);
+  },
+);
+
 // ── own rules ──
 
 When(

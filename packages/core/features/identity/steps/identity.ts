@@ -11,6 +11,8 @@ export interface IdentityState {
   browsers: Map<string, Portal>;
   /** Each person's authenticator app: its secret, the code it was confirmed with and the recovery codes. */
   apps: Map<string, { secret: string; enrollCode: string; recoveryCodes: string[]; uri: string }>;
+  /** The recovery codes that the last request for new ones gave. */
+  newCodes?: string[];
   /** The address core sees for the people who sign in, when a scenario sets one. */
   address?: string;
   /** The last code given, and the browser on the consent page with its last page. */
