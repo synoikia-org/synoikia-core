@@ -53,7 +53,7 @@ Feature files live in `features/<domain>/<feature>.feature` inside the package o
 - **Use real values from the World.** Name the World's things, not a category. Write `Given the instance "nas-01" has 3 pools`, not `Given an instance with pools`.
 - **Write what someone can see in a `Then`.** Name what the admin, the agent or the upstream service observes, not an internal verdict.
 - **Use the field's standard terms and the glossary's words.** Use each term with one meaning.
-- **Tags.** Use only `@id:<kebab-case>`, `@backlog` for scenarios not built yet, and `@long-running` for slow scenarios.
+- **Tags.** Use only `@id:<kebab-case>`, `@backlog`, `@long-running` and `@exclusive`. `@backlog` marks a scenario not built yet, `@long-running` a slow scenario, and `@exclusive` a scenario that must run alone in its test process.
 - **No comments.** Put an explanation in the feature narrative.
 
 Scenarios run in vitest through quickpickle. They drive the product through its real interface: the MCP endpoints, the Admin API, the plugin entry or the portal in a browser. They never call internal services and never mock internal modules.
