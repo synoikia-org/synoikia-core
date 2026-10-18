@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { expect } from 'vitest';
-import { csrfOf, totpCode } from '../../support/world.js';
+import { csrfOf } from '../../support/world.js';
 import type { PageBrowser, PageResponse, SynoikiaWorld } from '../../support/world.js';
 
 /** What the identity steps keep between steps of one scenario. */
@@ -79,7 +79,7 @@ export async function enroll(world: SynoikiaWorld, person: string, steps = -1) {
   const portal = world.person(person).portal!;
   const begun = await world.expectOk(portal.post('/api/profile/totp/begin'), 'start two-factor setup');
   const secret = begun.secret as string;
-  const enrollCode = totpCode(secret, steps);
+  const enrollCode = world.totpCode(secret, steps);
   const confirmed = await world.expectOk(
     portal.post('/api/profile/totp/confirm', { code: enrollCode }),
     'confirm two-factor setup',
@@ -97,7 +97,7 @@ export const appOf = (world: SynoikiaWorld, person: string) => {
 
 /** A code the app of `person` would never show now. */
 export const wrongCode = (world: SynoikiaWorld, person: string) => {
-  const valid = new Set([-1, 0, 1].map((s) => totpCode(appOf(world, person).secret, s)));
+  const valid = new Set([-1, 0, 1].map((s) => world.totpCode(appOf(world, person).secret, s)));
   for (let n = 123456; ; n++) if (!valid.has(String(n))) return String(n);
 };
 
@@ -182,7 +182,7 @@ export async function approvalBrowser(world: SynoikiaWorld, person: string) {
   const signIn = await world.signInOnPage(browser.send, person, path);
   const mfa = /name="mfa" value="([^"]+)"/.exec(signIn.html)?.[1];
   if (mfa) {
-    const code = totpCode(appOf(world, person).secret);
+    const code = world.totpCode(appOf(world, person).secret);
     await browser.send('/oauth/login/totp', { csrf: csrfOf(signIn.html), mfa, continue: path, code });
   }
   identity(world).approval = { browser, path };

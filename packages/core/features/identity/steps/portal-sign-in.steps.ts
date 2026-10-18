@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { eventually, totpCode } from '../../support/world.js';
+import { eventually } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
 import {
   appOf,
@@ -265,7 +265,7 @@ Given(
 
 Given('user {int} signed in with the current code in another browser', async (world: SynoikiaWorld, user: number) => {
   await passwordStep(world, person(user), undefined, 'other browser');
-  await codeStep(world, person(user), totpCode(appOf(world, person(user)).secret), 'other browser');
+  await codeStep(world, person(user), world.totpCode(appOf(world, person(user)).secret), 'other browser');
   expect(identity(world).answer.body).toEqual({ status: 'ok' });
 });
 
@@ -276,7 +276,7 @@ Given('user {int} gave their password and then a wrong code 5 times', async (wor
 });
 
 When('user {int} gives the current code', async (world: SynoikiaWorld, user: number) => {
-  await codeStep(world, person(user), totpCode(appOf(world, person(user)).secret));
+  await codeStep(world, person(user), world.totpCode(appOf(world, person(user)).secret));
 });
 
 When('user {int} gives the code that confirmed the app', async (world: SynoikiaWorld, user: number) => {
@@ -284,11 +284,11 @@ When('user {int} gives the code that confirmed the app', async (world: SynoikiaW
 });
 
 When('user {int} gives the code from 30 seconds ago', async (world: SynoikiaWorld, user: number) => {
-  await codeStep(world, person(user), totpCode(appOf(world, person(user)).secret, -1));
+  await codeStep(world, person(user), world.totpCode(appOf(world, person(user)).secret, -1));
 });
 
 When('user {int} gives the code from a minute ago', async (world: SynoikiaWorld, user: number) => {
-  await codeStep(world, person(user), totpCode(appOf(world, person(user)).secret, -2));
+  await codeStep(world, person(user), world.totpCode(appOf(world, person(user)).secret, -2));
 });
 
 When('user {int} gives the same code again', async (world: SynoikiaWorld, user: number) => {
@@ -349,7 +349,7 @@ When('user {int} starts to set up another authenticator app', async (world: Syno
 When(
   'user {int} turns off their authenticator app with the current code',
   async (world: SynoikiaWorld, user: number) => {
-    const code = totpCode(appOf(world, person(user)).secret);
+    const code = world.totpCode(appOf(world, person(user)).secret);
     await keep(world, world.person(person(user)).portal!.post('/api/profile/totp/disable', { code }));
   },
 );

@@ -52,7 +52,7 @@ Given('the admin pre-approves adding any task to {string} once an hour', async (
 Given(
   'the admin pre-approves adding any task to {string}, but the rule expired yesterday',
   async (world: SynoikiaWorld, list: string) => {
-    const yesterday = new Date(Date.now() - 24 * 3_600_000).toISOString();
+    const yesterday = new Date(world.nowMs() - 24 * 3_600_000).toISOString();
     await world.rule(world.lastInstance, 'add a task', anyTaskIn(list), { extra: { expiresAt: yesterday } });
   },
 );

@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import type { CryptoKey, JWK } from 'jose';
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import type { CryptoKey, JWK, JWTVerifyGetKey } from 'jose';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { createAppContext } from '../../src/app.js';
 import type { AppContext, AppOptions } from '../../src/app.js';
@@ -46,6 +46,9 @@ const gatewayKey = () =>
     const { publicKey, privateKey } = await generateKeyPair('RS256');
     return { privateKey, jwk: { ...(await exportJWK(publicKey)), kid: 'acme-access-1', alg: 'RS256', use: 'sig' } };
   })());
+/** The key set the access gateway publishes at its team domain. */
+const gatewayKeySet: JWTVerifyGetKey = async (header, token) =>
+  createLocalJWKSet({ keys: [(await gatewayKey()).jwk] })(header, token);
 
 /** How long core waits for an answer to a form before the call moves to the approval link (30 s in production). */
 export const FORM_WAIT_MS = 1000;
@@ -124,7 +127,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // A data directory with the migrated database, the World's admin and the key file, built once and copied for
 // each scenario: a fresh core costs migrations and a password hash otherwise. Its name holds a fingerprint of
-// the migrations and the fixture plugins, so all test processes share it until one of them changes.
+// the migrations and the fixture plugins, and a 10-minute period, so its admin session is never idle too long.
 const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
 let template: Promise<string> | undefined;
 
@@ -145,8 +148,10 @@ const TEST_HASH_COST = { memoryCost: 1024, timeCost: 1, parallelism: 1 };
 // password check otherwise.
 const SESSION_FILE = '.admin-session.json';
 
+const TEMPLATE_PERIOD_MS = 10 * 60_000;
+
 async function buildTemplate(): Promise<string> {
-  const name = `synoikia-world-template-${fingerprint()}`;
+  const name = `synoikia-world-template-${fingerprint()}-${Math.floor(Date.now() / TEMPLATE_PERIOD_MS)}`;
   const target = path.join(tmpdir(), name);
   if (existsSync(path.join(target, '.ready'))) return target;
   const dir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-build-'));
@@ -181,25 +186,24 @@ async function buildTemplate(): Promise<string> {
     // Another test process built the same template first.
     rmSync(dir, { recursive: true, force: true });
   }
-  for (const old of readdirSync(tmpdir()))
-    if (old.startsWith('synoikia-world-template-') && old !== name)
-      rmSync(path.join(tmpdir(), old), { recursive: true, force: true });
+  // Another test process may still copy a recent template.
+  for (const old of readdirSync(tmpdir())) {
+    const full = path.join(tmpdir(), old);
+    const built = old.startsWith('synoikia-world-template-') && statSync(full, { throwIfNoEntry: false })?.mtimeMs;
+    if (built && Date.now() - built > 6 * TEMPLATE_PERIOD_MS) rmSync(full, { recursive: true, force: true });
+  }
   return target;
 }
 
-// The process clock: `passTime` moves it with core's clock, for the parts of core that read the wall time.
-const realNow = Date.now.bind(Date);
-let wallShiftMs = 0;
-Date.now = () => realNow() + wallShiftMs;
-
-/** The RFC 6238 code (SHA-1, 6 digits, 30 s) of an authenticator app with this base32 secret, `steps` periods from now. */
-export function totpCode(secret: string, steps = 0) {
+/** The RFC 6238 code (SHA-1, 6 digits, 30 s) of an authenticator app with this base32 secret at `nowMs`, `steps`
+ * periods later. */
+function totpAt(secret: string, nowMs: number, steps: number) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   let bits = '';
   for (const ch of secret.replace(/=+$/, '')) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');
   const key = Buffer.from(bits.match(/.{8}/g)!.map((b) => parseInt(b, 2)));
   const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + steps));
+  counter.writeBigUInt64BE(BigInt(Math.floor(nowMs / 30_000) + steps));
   const mac = createHmac('sha1', key).update(counter).digest();
   const offset = mac[mac.length - 1]! & 0x0f;
   return String((mac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0');
@@ -275,6 +279,33 @@ export function tasksBuild(version: string) {
   }
   return archive;
 }
+
+/** The scenarios of a feature file share one process (vitest.config.ts); an @exclusive one runs alone in it. */
+class ProcessGate {
+  private shared = 0;
+  /** Set while an exclusive scenario waits or runs; it resolves when that scenario ends. */
+  private exclusive?: Promise<void>;
+  private drained?: () => void;
+
+  async enter(alone: boolean): Promise<() => void> {
+    while (this.exclusive) await this.exclusive;
+    if (!alone) {
+      this.shared++;
+      return () => {
+        if (--this.shared === 0) this.drained?.();
+      };
+    }
+    let end!: () => void;
+    this.exclusive = new Promise((r) => (end = r));
+    if (this.shared > 0) await new Promise<void>((r) => (this.drained = r));
+    this.drained = undefined;
+    return () => {
+      this.exclusive = undefined;
+      end();
+    };
+  }
+}
+const gate = new ProcessGate();
 
 interface Person {
   id: string;
@@ -352,12 +383,24 @@ export class SynoikiaWorld extends QuickPickleWorld {
   repoDelayMs = 0;
   /** Lets go of the data directory, as a stopping server does. */
   private releaseLock?: () => void;
+  /** Lets the other scenarios of the process go on (`ProcessGate`). */
+  private leaveGate?: () => void;
 
   async init() {
     await super.init();
     // A @long-running step may wait for a real timer of core, such as the shortest approval expiry.
     const { info } = this as unknown as { info: { tags: string[]; config: { stepTimeout: number } } };
     if (info.tags.includes('@long-running')) info.config.stepTimeout = 20_000;
+    this.leaveGate = await gate.enter(info.tags.includes('@exclusive'));
+    try {
+      await this.setUp();
+    } catch (err) {
+      await this.stop();
+      throw err;
+    }
+  }
+
+  private async setUp() {
     this.upstream = await startFakeHttp({ routes: this.upstreamRoutes(), guard: (req) => this.guardUpstream(req) });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
     const templateDir = await (template ??= buildTemplate());
@@ -366,7 +409,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
     // The template holds the admin already.
     this.bootstrapAdmin = false;
     await this.startCore();
-    this.admin = await this.adminFromTemplate(templateDir);
+    this.admin = await this.adminFromTemplate();
     const me = await this.expectOk(this.admin.get('/api/profile'), 'read profile');
     this.people.set('admin', { id: me.id as string, ...ADMIN, portal: this.admin });
   }
@@ -391,8 +434,9 @@ export class SynoikiaWorld extends QuickPickleWorld {
           formFallbackMs: FORM_WAIT_MS,
           passwordHashCost: TEST_HASH_COST,
           notifyRetryDelaysMs: [200, 400],
-          now: () => new Date(realNow() + this.clockMs),
+          now: () => new Date(this.nowMs()),
           oidcAllowInsecure: true,
+          externalKeys: (domain) => (domain === GATEWAY.teamDomain ? gatewayKeySet : undefined),
           repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
           ...(this.supervision ? { supervisor: this.supervision } : {}),
@@ -405,8 +449,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
       throw err;
     }
     for (const warning of this.ctx.warnings) this.serverLog.push(`WARN ${warning}`);
-    await this.ctx.start();
-    this.servers = await startServers(this.ctx);
+    try {
+      await this.ctx.start();
+      this.servers = await startServers(this.ctx);
+    } catch (err) {
+      await this.stopCore();
+      throw err;
+    }
     this.adminBase = `http://127.0.0.1:${this.servers.admin.port}`;
     this.mcpBase = `http://127.0.0.1:${this.servers.mcp.port}`;
   }
@@ -456,10 +505,19 @@ export class SynoikiaWorld extends QuickPickleWorld {
     await this.signInAgain();
   }
 
-  /** Moves core's clock and the process clock ahead; nobody signs in again. */
+  /** Moves core's clock ahead; nobody signs in again. */
   passTime(ms: number) {
     this.clockMs += ms;
-    wallShiftMs += ms;
+  }
+
+  /** Core's clock: the real time plus what the scenario moved it. */
+  nowMs() {
+    return Date.now() + this.clockMs;
+  }
+
+  /** The code the authenticator app with this secret shows on core's clock, `steps` periods later. */
+  totpCode(secret: string, steps = 0) {
+    return totpAt(secret, this.nowMs(), steps);
   }
 
   /** Stops core and starts it again on the same data, with `env` added to its start-up settings; agents open new
@@ -473,6 +531,9 @@ export class SynoikiaWorld extends QuickPickleWorld {
     await this.servers?.close();
     await this.ctx?.stop();
     this.releaseLock?.();
+    this.servers = undefined;
+    this.ctx = undefined;
+    this.releaseLock = undefined;
     Object.assign(this.coreEnv, env);
     await this.startCore();
   }
@@ -495,25 +556,36 @@ export class SynoikiaWorld extends QuickPickleWorld {
   /** Restarts core with a public address for its MCP listener, which OAuth and the consent page need. */
   async publicMcpAddress() {
     if (this.coreEnv.PUBLIC_MCP_URL) return;
-    const port = await new Promise<number>((resolve) => {
-      const probe = createServer().listen(0, '127.0.0.1', () => {
-        const { port } = probe.address() as { port: number };
-        probe.close(() => resolve(port));
+    // Another scenario may take the free port before core listens on it; then core tries another one.
+    for (let attempt = 1; ; attempt++) {
+      const port = await new Promise<number>((resolve) => {
+        const probe = createServer().listen(0, '127.0.0.1', () => {
+          const { port } = probe.address() as { port: number };
+          probe.close(() => resolve(port));
+        });
       });
-    });
-    await this.restartCore({ MCP_PORT: String(port), PUBLIC_MCP_URL: `http://127.0.0.1:${port}` });
+      try {
+        return await this.restartCore({ MCP_PORT: String(port), PUBLIC_MCP_URL: `http://127.0.0.1:${port}` });
+      } catch (err) {
+        if (attempt === 5 || (err as { code?: string }).code !== 'EADDRINUSE') throw err;
+      }
+    }
   }
 
   async stop() {
-    wallShiftMs = 0;
-    for (const undo of this.cleanups.splice(0).reverse()) await undo().catch(() => undefined);
-    for (const agent of this.agents.values()) await agent.client?.close().catch(() => undefined);
-    for (const client of this.oldClients) await client.close().catch(() => undefined);
-    await this.servers?.close();
-    await this.ctx?.stop();
-    this.releaseLock?.();
-    await this.upstream?.close();
-    if (this.dataDir) rmSync(this.dataDir, { recursive: true, force: true });
+    try {
+      for (const undo of this.cleanups.splice(0).reverse()) await undo().catch(() => undefined);
+      for (const agent of this.agents.values()) await agent.client?.close().catch(() => undefined);
+      for (const client of this.oldClients) await client.close().catch(() => undefined);
+      await this.servers?.close();
+      await this.ctx?.stop();
+      this.releaseLock?.();
+      await this.upstream?.close();
+      if (this.dataDir) rmSync(this.dataDir, { recursive: true, force: true });
+    } finally {
+      this.leaveGate?.();
+      this.leaveGate = undefined;
+    }
   }
 
   // ── the fake "Acme Tasks" upstream ──
@@ -878,18 +950,16 @@ export class SynoikiaWorld extends QuickPickleWorld {
     this.portalAnswer = { status: r.status, body: (await r.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
-  /** A portal session in its own browser, signed in with a password. */
-  /** The admin's portal with the template's session. A session past its idle limit drops the template, so the
-   * next feature file builds a fresh one. */
-  private async adminFromTemplate(templateDir: string) {
+  /** The admin's portal with the template's session, or a fresh sign-in if that session ended. */
+  private async adminFromTemplate() {
     const saved = JSON.parse(readFileSync(path.join(this.dataDir, SESSION_FILE), 'utf8')) as Record<string, string>;
     const page = await this.portalBrowser();
     for (const [name, value] of Object.entries(saved)) page.jar.set(name, value);
     if ((await page.get('/api/profile')).ok) return page;
-    rmSync(templateDir, { recursive: true, force: true });
     return this.portal(ADMIN.username, ADMIN.password);
   }
 
+  /** A portal session in its own browser, signed in with a password. */
   async portal(username: string, password: string) {
     const page = await this.portalBrowser();
     await this.expectOk(page.post('/auth/login', { username, password }), `sign in as ${username}`);
@@ -1482,16 +1552,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
   // ── the access gateway ──
 
-  /** Puts the access gateway in front of core: its key set answers at its team domain, and core trusts it. */
+  /** Puts the access gateway in front of core, which gets its key set at its team domain (`externalKeys`). */
   async accessGateway() {
-    const { jwk } = await gatewayKey();
-    const certs = `https://${GATEWAY.teamDomain}/cdn-cgi/access/certs`;
-    const real = globalThis.fetch;
-    globalThis.fetch = (input, init) => {
-      const url = input instanceof Request ? input.url : String(input);
-      return url === certs ? Promise.resolve(Response.json({ keys: [jwk] })) : real(input, init);
-    };
-    this.cleanups.push(() => Promise.resolve((globalThis.fetch = real)));
     await this.expectOk(
       this.admin.put('/api/settings/mcp', { clientAuth: { external: true }, cfAccess: GATEWAY }),
       'turn on the access gateway',

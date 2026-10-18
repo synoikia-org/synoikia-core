@@ -4,7 +4,6 @@ import path from 'node:path';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { runCli } from '../../support/core-process.js';
-import { totpCode } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
 import { appOf, codeStep, passwordStep } from '../../identity/steps/identity.js';
 
@@ -113,7 +112,7 @@ When(
   async (world: SynoikiaWorld, user: number) => {
     const person = `user ${user}`;
     await passwordStep(world, person);
-    await codeStep(world, person, totpCode(appOf(world, person).secret));
+    await codeStep(world, person, world.totpCode(appOf(world, person).secret));
   },
 );
 

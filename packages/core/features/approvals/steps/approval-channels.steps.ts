@@ -405,7 +405,7 @@ Then(
   (world: SynoikiaWorld, _a, minutes: number) => {
     expectWaiting(world);
     const expiresAt = Date.parse((world.answer.approval as { expiresAt: string }).expiresAt);
-    expect(Math.round((expiresAt - Date.now()) / 60_000)).toBe(minutes);
+    expect(Math.round((expiresAt - world.nowMs()) / 60_000)).toBe(minutes);
   },
 );
 

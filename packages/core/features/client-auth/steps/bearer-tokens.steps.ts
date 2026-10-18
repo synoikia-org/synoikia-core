@@ -32,7 +32,7 @@ When(
   async (world: SynoikiaWorld) => {
     const id = await world.tasksInstance('tasks');
     await keepAnswer(world, world.admin.post('/api/tokens', { name: 'stray', scope: ['no-such-instance'] }));
-    const yesterday = new Date(Date.now() + world.clockMs - 86_400_000).toISOString();
+    const yesterday = new Date(world.nowMs() - 86_400_000).toISOString();
     await keepAnswer(world, world.admin.post('/api/tokens', { name: 'late', scope: [id], expiresAt: yesterday }));
   },
 );
@@ -131,7 +131,7 @@ Given(
   'agent {word} has a credential of the admin that expires in one hour',
   async (world: SynoikiaWorld, agent: string) => {
     await world.tasksInstance('tasks');
-    const expiresAt = new Date(Date.now() + world.clockMs + 3_600_000).toISOString();
+    const expiresAt = new Date(world.nowMs() + 3_600_000).toISOString();
     const created = await world.expectOk(
       world.admin.post('/api/me/tokens', { name: `agent ${agent}`, scope: ['*'], expiresAt }),
       'create token',

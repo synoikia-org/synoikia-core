@@ -342,20 +342,25 @@ Then('the admin is shown the file name {string}', (world: SynoikiaWorld, file: s
 });
 
 When('the admin uploads two builds of Acme Tasks at once', async (world: SynoikiaWorld) => {
-  // The first build has thousands of files, so it still unpacks when the second one arrives.
+  // The first build has thousands of files. Small uploads follow it until one arrives while it still unpacks.
   manyFiles ??= tasksArchive(
     '1.1.0',
     undefined,
     Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`f${i}.txt`, 'x'])),
   );
-  const first = world.admin.post('/api/plugins/uploads', new Uint8Array(manyFiles), { 'x-file-name': 'a.tgz' });
-  await new Promise((r) => setTimeout(r, 30));
-  const second = world.admin.post('/api/plugins/uploads', new Uint8Array(tasksBuild('1.1.0')), {
-    'x-file-name': 'b.tgz',
-  });
-  const answers = await Promise.all([first, second].map((r) => world.answerOf(r)));
-  world.portalAnswer = answers.find((a) => a.status !== 201) ?? answers[1]!;
-  expect(answers.map((a) => a.status).sort()).toEqual([201, 409]);
+  let done = false;
+  const first = world
+    .answerOf(world.admin.post('/api/plugins/uploads', new Uint8Array(manyFiles), { 'x-file-name': 'a.tgz' }))
+    .finally(() => (done = true));
+  const answers: Awaited<ReturnType<SynoikiaWorld['answerOf']>>[] = [];
+  while (!done && !answers.some((a) => a.status === 409)) {
+    const small = world.admin.post('/api/plugins/uploads', new Uint8Array(tasksBuild('1.1.0')), {
+      'x-file-name': 'b.tgz',
+    });
+    answers.push(await world.answerOf(small));
+  }
+  answers.push(await first);
+  world.portalAnswer = answers.find((a) => a.status === 409) ?? answers.at(-1)!;
 });
 
 Then('the admin is told that another upload is being processed', (world: SynoikiaWorld) => {
