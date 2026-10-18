@@ -217,6 +217,14 @@ Feature: Portal sign-in
       Then the audit log shows 3 failed codes of user 12 for new recovery codes and 2 to turn off the app
       And the admin got one notification "Sign-in locked"
 
+  Rule: A wrong current password in the profile counts toward the lock
+
+    Scenario: Five wrong current passwords lock the name
+      Given user 12 gave a wrong current password 5 times
+      When user 12 changes their password with the right current password
+      Then user 12 is told "Too many failed attempts"
+      And the audit log shows 5 failed current passwords of user 12
+
   Rule: A person sets up an authenticator app in their profile
 
     Scenario: User 12 sets up an authenticator app
