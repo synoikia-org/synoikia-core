@@ -23,6 +23,22 @@ describe('LoginThrottle', () => {
     expect(throttle.lockedFor('admin', 'mcp')).toBeGreaterThan(0);
   });
 
+  it('locks the name again after a burst of failures pushed the count past five', () => {
+    let now = 0;
+    const throttle = new LoginThrottle({}, () => now);
+    // Concurrent wrong passwords all pass the lock check before any of them is recorded.
+    for (let i = 0; i < 20; i++) {
+      throttle.fail('alice');
+      now += 100;
+    }
+    expect(throttle.lockedFor('alice')).toBeGreaterThan(0);
+    // The lock started at the fifth failure, 400 ms in, and ends 15 minutes later.
+    now = 400 + 15 * 60_000;
+    expect(throttle.lockedFor('alice')).toBe(0);
+    for (let i = 0; i < 6; i++) throttle.fail('alice');
+    expect(throttle.lockedFor('alice')).toBeGreaterThan(0);
+  });
+
   it('bounds the rate limiter the same way', () => {
     let now = 0;
     const limiter = new SlidingWindowLimiter(() => now, 50);
