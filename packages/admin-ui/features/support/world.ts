@@ -316,6 +316,43 @@ export class PortalWorld extends QuickPickleWorld {
     return fake;
   }
 
+  // ── roles ──
+
+  /** The role `name` has exactly the instances at `slugs`, made first where needed. */
+  async roleInstances(name: string, slugs: string[]) {
+    const roleId = await this.role(name);
+    const instanceIds = [];
+    for (const slug of slugs) instanceIds.push(await this.tasksInstance(slug));
+    await this.expectOk(
+      (await this.adminApi()).put(`/api/roles/${roleId}/instances`, { instanceIds }),
+      'role instances',
+    );
+  }
+
+  /** Turns on switches of the role `name` on the instance at `slug`. */
+  async roleSwitches(name: string, slug: string, switches: Record<string, boolean>) {
+    const roleId = await this.role(name);
+    const id = await this.tasksInstance(slug);
+    await this.expectOk((await this.adminApi()).patch(`/api/roles/${roleId}/endpoints/${id}`, switches), 'switches');
+  }
+
+  /** The most the role `name` may do in a group, or with one operation by its key, on the instance at `slug`. */
+  async roleLevel(name: string, slug: string, target: { group: string } | { operation: string }, level: string) {
+    const roleId = await this.role(name);
+    const id = await this.tasksInstance(slug);
+    const admin = await this.adminApi();
+    if ('group' in target) {
+      await this.expectOk(admin.put(`/api/roles/${roleId}/endpoints/${id}/groups/${target.group}`, { level }), 'level');
+      return;
+    }
+    const ops = (await this.expectOk(admin.get(`/api/instances/${id}/operations`), 'operations')) as unknown as {
+      id: string;
+      key: string;
+    }[];
+    const op = ops.find((o) => o.key === target.operation)!;
+    await this.expectOk(admin.put(`/api/roles/${roleId}/endpoints/${id}/operations/${op.id}`, { level }), 'level');
+  }
+
   // ── "Acme Tasks": the plugin, its instances and its repositories ──
 
   /** The admin's row of the plugin "tasks", if it is installed. */
@@ -517,6 +554,15 @@ export class PortalWorld extends QuickPickleWorld {
       );
       this.signedIn = true;
     }
+    await this.open(where);
+  }
+
+  /** The browser of a person other than the admin, signed in through the Admin API, open at `where`. */
+  async openAs(name: string, where: string) {
+    const client = await this.apiAs(name);
+    await this.context.addCookies(
+      [...client.jar].map(([cookie, value]) => ({ name: cookie, value, domain: '127.0.0.1', path: '/' })),
+    );
     await this.open(where);
   }
 
