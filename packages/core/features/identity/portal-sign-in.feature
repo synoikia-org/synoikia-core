@@ -173,6 +173,29 @@ Feature: Portal sign-in
       Then user 12 is in the portal, and the first recovery code does not work again
       And the audit log shows that user 12 used a recovery code, with 9 left
 
+  Rule: A current code from the app replaces all recovery codes
+
+    Scenario: User 12 gets new recovery codes, and the old ones stop working
+      Given user 12 has an authenticator app and 10 recovery codes
+      When user 12 asks for new recovery codes with the current code
+      Then user 12 gets 10 new recovery codes, with 10 left, and only the new ones sign in
+      And the audit log shows that user 12 replaced their recovery codes
+
+    Scenario Outline: <what> does not replace the recovery codes
+      Given user 12 has an authenticator app and 10 recovery codes
+      When user 12 asks for new recovery codes with <code>
+      Then user 12 is told "Invalid code", and the first recovery code still signs user 12 in
+
+      Examples:
+        | what                            | code                            |
+        | A recovery code                 | their first recovery code       |
+        | A wrong code                    | a wrong code                    |
+        | The code that confirmed the app | the code that confirmed the app |
+
+    Scenario: Without an authenticator app there are no recovery codes to replace
+      When user 12 asks for new recovery codes with the code "123456"
+      Then user 12 is told "Two-factor authentication is off"
+
   Rule: A person sets up an authenticator app in their profile
 
     Scenario: User 12 sets up an authenticator app

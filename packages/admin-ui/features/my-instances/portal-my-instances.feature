@@ -47,6 +47,14 @@ Feature: My instances in the portal
       When user 12 opens /tasks in the portal
       Then "add a task" shows "Off", with no level to pick
 
+  Rule: A person can raise again what their own level closed
+
+    Scenario: User 12 lowers the writes-only group "tasks" to Read, and can raise it again
+      Given user 12 has the role "family", which has the instance /tasks with personal levels
+      And "family" may at most Ask in the group "tasks" of /tasks
+      When user 12 sets the group "tasks" of /tasks to Read
+      Then "add a task" shows "Off: your own level", and user 12 can still pick Ask for it and for the group "tasks"
+
   Rule: Own rules appear only where the role allows them
 
     Scenario: The rules show on /tasks, where the role allows them, and not on /shopping

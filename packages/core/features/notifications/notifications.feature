@@ -21,6 +21,20 @@ Feature: Notifications
       When the admin adds a webhook, tests it, turns it off and deletes it
       Then the test reached the webhook, the webhook showed as off, and the admin has no channel left
 
+  Rule: A channel whose secrets the master key cannot read asks for them again
+
+    Scenario: After a restart with another master key, the admin enters the token of the phone channel again
+      Given the admin has a phone channel with a token
+      And the operator restarts the server with another master key
+      When the admin tests the phone channel, renames it, and then saves it with a new token
+      Then the admin was told twice to enter the secrets again, and then the phone channel has its token set
+
+    Scenario: The channel list still shows a channel whose secrets cannot be read
+      Given the admin has a phone channel with a token
+      And the operator restarts the server with another master key
+      When the admin lists the channels
+      Then the admin sees the phone channel, marked as having secrets that cannot be read
+
   Rule: Delivery is signed, filtered and tried again
 
     Scenario: A failed sync reaches a signed webhook on the third try, and skips the channel of another instance

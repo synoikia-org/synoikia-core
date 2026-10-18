@@ -37,6 +37,19 @@ Feature: My profile in the portal
       When the browser is offline for a minute and comes back
       Then the profile still shows the recovery codes
 
+  Rule: A current code gives new recovery codes, which stay until the person saved them
+
+    Scenario: The admin gets new recovery codes from their profile
+      Given the admin has an authenticator app
+      When the admin asks for new recovery codes on their profile with the current code
+      Then the profile shows the new recovery codes until the admin says they saved them
+      And the profile says "10 recovery codes left"
+
+    Scenario: A wrong code is refused in the question
+      Given the admin has an authenticator app
+      When the admin asks for new recovery codes on their profile with a wrong code
+      Then the question says "Invalid code"
+
   Rule: A new password is checked before and after it is sent
 
     Scenario: A new password that does not match its confirmation is not sent
