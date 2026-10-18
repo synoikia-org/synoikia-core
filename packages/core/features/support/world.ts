@@ -129,7 +129,7 @@ const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../.
 let template: Promise<string> | undefined;
 
 function fingerprint() {
-  const hash = createHash('sha256');
+  const hash = createHash('sha256').update(JSON.stringify(TEST_HASH_COST));
   for (const root of [MIGRATIONS, PLUGINS])
     for (const file of (readdirSync(root, { recursive: true }) as string[]).sort()) {
       const full = path.join(root, file);
@@ -137,6 +137,9 @@ function fingerprint() {
     }
   return hash.digest('hex').slice(0, 16);
 }
+
+// A cheap password hash: core's real cost (64 MiB, 3 passes) is most of a scenario's CPU, and no scenario checks it.
+const TEST_HASH_COST = { memoryCost: 1024, timeCost: 1, parallelism: 1 };
 
 // The admin's portal cookies from a sign-in in the template, shared by every scenario: a sign-in costs a
 // password check otherwise.
@@ -158,7 +161,7 @@ async function buildTemplate(): Promise<string> {
       ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
       ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
     }),
-    { log: createLogger('error', () => undefined) },
+    { log: createLogger('error', () => undefined), passwordHashCost: TEST_HASH_COST },
   );
   await ctx.start();
   const servers = await startServers(ctx);
@@ -386,6 +389,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         }),
         {
           formFallbackMs: FORM_WAIT_MS,
+          passwordHashCost: TEST_HASH_COST,
           notifyRetryDelaysMs: [200, 400],
           now: () => new Date(realNow() + this.clockMs),
           oidcAllowInsecure: true,
