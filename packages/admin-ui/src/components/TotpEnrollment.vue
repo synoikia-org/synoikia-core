@@ -4,7 +4,7 @@ import { latestError } from '../composables/useApiMutation';
 import { useBeginTotp, useConfirmTotp } from '../composables/useProfile';
 
 /** TOTP enrollment: show the secret/otpauth URI, confirm with a code, show recovery codes once. */
-const emit = defineEmits<{ enrolled: [] }>();
+const emit = defineEmits<{ confirmed: []; enrolled: [] }>();
 
 const beginTotp = useBeginTotp();
 const confirmTotp = useConfirmTotp();
@@ -14,7 +14,8 @@ const recovery = computed(() => confirmTotp.data.value?.recoveryCodes);
 const error = computed(() => latestError([beginTotp, confirmTotp]));
 
 const begin = () => beginTotp.mutate();
-const confirm = () => confirmTotp.mutate(code.value.trim(), { onSettled: () => (code.value = '') });
+const confirm = () =>
+  confirmTotp.mutate(code.value.trim(), { onSuccess: () => emit('confirmed'), onSettled: () => (code.value = '') });
 </script>
 
 <template>

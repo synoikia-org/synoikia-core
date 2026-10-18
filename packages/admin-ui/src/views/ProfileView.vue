@@ -39,6 +39,8 @@ const messages = computed<Record<string, Message>>(() => {
 });
 const pw = ref({ current: '', next: '', confirm: '' });
 const disableCode = ref('');
+// Two-factor is on once confirmed, but the codes stay until the person saved them, whatever a reload says.
+const showingCodes = ref(false);
 const theme = ref<ThemePref>(getTheme());
 const THEME_LABELS: Record<ThemePref, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
 function pickTheme(pref: ThemePref) {
@@ -98,6 +100,7 @@ function unlink() {
   });
 }
 async function enrolled() {
+  showingCodes.value = false;
   await refreshProfile();
   await session.load();
 }
@@ -162,7 +165,7 @@ async function enrolled() {
 
       <section class="card">
         <h2>Two-factor authentication</h2>
-        <template v-if="me.totpEnabled">
+        <template v-if="me.totpEnabled && !showingCodes">
           <p class="small"><span class="pill ok">On</span> Enter a current code (or a recovery code) to turn it off.</p>
           <form class="row" @submit.prevent="disableTotp">
             <input
@@ -176,7 +179,7 @@ async function enrolled() {
             <button class="btn btn-danger" type="submit" :disabled="!disableCode.trim()">Turn off</button>
           </form>
         </template>
-        <TotpEnrollment v-else @enrolled="enrolled" />
+        <TotpEnrollment v-else @confirmed="showingCodes = true" @enrolled="enrolled" />
         <p v-if="messages.totp" class="alert" :class="messages.totp.kind" :role="messageRole(messages.totp.kind)">
           {{ messages.totp.text }}
         </p>
