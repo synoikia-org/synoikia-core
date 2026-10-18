@@ -28,9 +28,9 @@ Feature: Plugins in the portal
   Rule: The admin sees which hosts a plugin contacts
 
     Scenario: A host from a connection field is explained, and a fixed host is shown as it is
-      Given Acme Tasks contacts the host of its "Base URL" field and "sync.acme.example"
+      Given Acme Tasks contacts the host of its "Acme address" field and "sync.acme.example"
       When the admin opens the plugins in the portal
-      Then Acme Tasks contacts "the host of each instance's Base URL", written as "{{connection.url}}"
+      Then Acme Tasks contacts "the host of each instance's Acme address", written as "{{connection.url}}"
       And Acme Tasks contacts "sync.acme.example"
 
   Rule: An upload shows what it replaces before the install

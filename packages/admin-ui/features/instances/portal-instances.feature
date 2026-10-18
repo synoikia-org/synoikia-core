@@ -178,7 +178,7 @@ Feature: Instances in the portal
       And /groceries approves Ask operations in the agent session
 
     Scenario: Deleting needs the typed path, and Enter in the question saves no settings
-      When the admin types "groceries" in the delete question of /groceries and presses Enter
+      When the admin types "groceries" in the delete question of /groceries and confirms with Enter
       Then /groceries still exists, with its settings unchanged
       And after Delete, /groceries is gone and the portal shows the overview
 
