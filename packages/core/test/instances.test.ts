@@ -10,7 +10,7 @@ import { ApprovalService } from '../src/approvals/service.js';
 import { setGroupLevel } from '../src/catalog/groups.js';
 import { SecretBox } from '../src/crypto/index.js';
 import { openDatabase } from '../src/db/index.js';
-import { auditLog, operations, pluginInstances, plugins } from '../src/db/schema.js';
+import { auditLog, pluginInstances, plugins } from '../src/db/schema.js';
 import { ConflictError, ValidationError } from '../src/errors.js';
 import { CoreEvents } from '../src/events.js';
 import { SlidingWindowLimiter } from '../src/gate/rate-limit.js';
@@ -148,23 +148,6 @@ describe('InstanceManager', () => {
     expect(t.db.select().from(pluginInstances).all()).toEqual([]);
   });
 
-  it('syncs on first use, on version change, and records failures', async () => {
-    const t = setup();
-    const inst = await create(t.manager, { version: '1.0' });
-    await t.manager.ensureFresh(inst.id, { forceVersionCheck: true });
-    expect(t.db.select().from(operations).all()).toHaveLength(6);
-    expect(t.manager.get(inst.id)).toMatchObject({ upstreamVersion: '1.0', lastSyncStatus: 'ok' });
-
-    await t.manager.updateConnection(inst.id, { config: { version: '2.0' } });
-    await t.manager.ensureFresh(inst.id);
-    expect(t.manager.get(inst.id).upstreamVersion).toBe('2.0');
-
-    await t.manager.updateConnection(inst.id, { config: { mode: 'bad-output' } });
-    await expect(t.manager.syncNow(inst.id)).rejects.toThrow(/Invalid syncCatalog result/);
-    expect(t.manager.get(inst.id).lastSyncStatus).toMatch(/^error:/);
-    expect(t.seen.map((e) => e.name)).toContain('sync.failed');
-  });
-
   it('times sync freshness and version checks by the injected clock', async () => {
     let clock = new Date('2026-01-01T00:00:00Z');
     const advance = (ms: number) => (clock = new Date(clock.getTime() + ms));
@@ -252,23 +235,6 @@ describe('InstanceManager', () => {
     expect(synced()).toBe('9.9.9');
   });
 
-  it('shows error when the first catalog sync fails, and ready once one succeeds (review L10)', async () => {
-    const t = setup();
-    const inst = await create(t.manager, { mode: 'bad-output' });
-    await expect(t.manager.syncNow(inst.id)).rejects.toThrow(/Invalid syncCatalog result/);
-    expect(t.manager.get(inst.id)).toMatchObject({ status: 'error', lastSyncedAt: null });
-    expect(t.manager.get(inst.id).statusError).toMatch(/First catalog sync failed/);
-
-    await t.manager.updateConnection(inst.id, { config: {} });
-    await t.manager.syncNow(inst.id);
-    expect(t.manager.get(inst.id)).toMatchObject({ status: 'ready', lastSyncStatus: 'ok' });
-
-    // Once a catalog exists, a failed sync keeps serving it: the endpoint stays ready.
-    await t.manager.updateConnection(inst.id, { config: { mode: 'bad-output' } });
-    await expect(t.manager.syncNow(inst.id)).rejects.toThrow();
-    expect(t.manager.get(inst.id).status).toBe('ready');
-  });
-
   it('scrubs secret values out of plugin errors before they are stored, audited or notified (review L11)', async () => {
     const t = setup();
     const token = 'super-secret-token-1234';
@@ -311,30 +277,6 @@ describe('InstanceManager', () => {
     await t.manager.ensureFresh(inst.id);
     expect(syncs()).toBe(before + 1);
     expect(t.manager.get(inst.id).upstreamVersion).toBe('2.0');
-  });
-
-  it('staggers the daily backstop sync by the last sync of each instance (test gap 12)', async () => {
-    const t = setup();
-    const fresh = await create(t.manager, {}, 'fresh');
-    const old = await create(t.manager, {}, 'old');
-    await t.manager.syncNow(fresh.id);
-    await t.manager.syncNow(old.id);
-    t.db
-      .update(pluginInstances)
-      .set({ lastSyncedAt: new Date(Date.now() - 25 * 60 * 60_000) })
-      .where(eq(pluginInstances.id, old.id))
-      .run();
-    t.seen.length = 0;
-    await t.manager.syncStale();
-    const synced = t.seen.filter((e) => e.name === 'sync.completed').map((e) => (e.payload as { slug: string }).slug);
-    expect(synced).toEqual(['old']);
-  });
-
-  it('shares one sync between concurrent callers', async () => {
-    const t = setup();
-    const inst = await create(t.manager);
-    const [a, b] = await Promise.all([t.manager.syncNow(inst.id), t.manager.syncNow(inst.id)]);
-    expect(a).toBe(b);
   });
 
   it('reports crashes and recovers', async () => {

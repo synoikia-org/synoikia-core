@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createLogger, formatLine } from '../src/log.js';
-import type { LogLevel } from '../src/log.js';
+import { createLogger, formatLine } from '../../src/log.js';
+import type { LogLevel } from '../../src/log.js';
 
 describe('logger', () => {
   it('drops lines below LOG_LEVEL', () => {

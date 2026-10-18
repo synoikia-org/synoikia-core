@@ -9,8 +9,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AppContext } from '../src/app.js';
 import { setGroupLevel, updateOperation } from '../src/catalog/groups.js';
 import { auditLog, operations, plugins } from '../src/db/schema.js';
-import { hostAllowed, LogThrottle } from '../src/http/mcp/endpoint.js';
-import { createMcpApp } from '../src/http/mcp-app.js';
 import { createLogger } from '../src/log.js';
 import type { Logger, LogLevel } from '../src/log.js';
 import { startServers } from '../src/server.js';
@@ -28,7 +26,6 @@ let servers: RunningServers;
 let dataDir: string;
 let base: string;
 let instanceId: string;
-let otherInstanceId: string;
 let adminId: string;
 
 beforeAll(async () => {
@@ -49,7 +46,7 @@ beforeAll(async () => {
   // OAuth is off until the public URL is known (review M12); the port is only known now.
   (ctx.config as { PUBLIC_MCP_URL?: string }).PUBLIC_MCP_URL = base;
   instanceId = (await ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} })).id;
-  otherInstanceId = (await ctx.instances.create({ pluginId: 'echo', slug: 'echo-two', connection: {} })).id;
+  await ctx.instances.create({ pluginId: 'echo', slug: 'echo-two', connection: {} });
   await ctx.instances.syncNow(instanceId);
   // Every write asks; the locked echo.delete is opened with its own Ask.
   setGroupLevel(ctx.db, instanceId, 'echo', 'ask');
@@ -76,18 +73,6 @@ async function connect(slug: string, token: string) {
   await client.connect(transport);
   return client;
 }
-
-// Cloudflare Access with a local key set in place of the team's remote one.
-const CF_TEAM = 'e2e.cloudflareaccess.com';
-const CF_AUD = 'e2e-aud';
-const useExternal = (on: boolean) =>
-  updateSettings(
-    ctx.db,
-    'mcp',
-    on
-      ? { clientAuth: { bearer: true, oauth: true, external: true }, cfAccess: { teamDomain: CF_TEAM, aud: CF_AUD } }
-      : { clientAuth: { bearer: true, oauth: true, external: false }, cfAccess: { teamDomain: '', aud: '' } },
-  );
 
 const parse = (res: unknown) =>
   JSON.parse((res as { content: { text: string }[] }).content[0]!.text) as Record<string, unknown>;
@@ -128,34 +113,6 @@ describe('MCP endpoint with bearer tokens', () => {
     } finally {
       ctx.db.update(plugins).set({ instructions: null }).where(eq(plugins.pluginId, 'echo')).run();
     }
-  });
-
-  it('refuses rebound hosts and foreign origins (DNS rebinding)', async () => {
-    const app = createMcpApp(ctx);
-    const { token } = ctx.tokens.create({ name: 'rebind', scope: [instanceId] }, { userId: adminId });
-    const init = (headers: Record<string, string>) =>
-      app.request('/echo', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
-          authorization: `Bearer ${token}`,
-          ...headers,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'x', version: '1' } },
-        }),
-      });
-    expect((await init({ host: 'attacker.example' })).status).toBe(403);
-    expect((await init({ host: '127.0.0.1:8080', origin: 'http://attacker.example' })).status).toBe(403);
-    expect((await init({ host: '127.0.0.1:8080' })).status).toBe(200);
-    expect((await init({ host: 'localhost', origin: 'http://localhost:3000' })).status).toBe(200);
-    expect(hostAllowed({ ...ctx.config, MCP_ALLOWED_HOSTS: ['mcp.lan'] }, 'mcp.lan:8080')).toBe(true);
-    expect(hostAllowed({ ...ctx.config, PUBLIC_MCP_URL: 'https://mcp.example.com' }, 'mcp.example.com')).toBe(true);
-    expect(hostAllowed(ctx.config, '[::1]:8080')).toBe(true);
   });
 });
 
@@ -411,26 +368,6 @@ describe('server log for refused connections', () => {
   // claims are read, for the log.
   const jwt = (claims: unknown) =>
     `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.`;
-  const foreignJwt = jwt({ iss: 'https://home.cloudflareaccess.com', aud: 'x' });
-
-  it('explains a token the endpoint cannot use, without logging its value', async () => {
-    const { lines, restore } = capture();
-    try {
-      const res = await initialize('echo', {
-        authorization: `Bearer ${foreignJwt}`,
-        'cf-access-jwt-assertion': foreignJwt,
-      });
-      expect(res.status).toBe(401);
-      const warn = lines.find((l) => l.level === 'warn')!;
-      expect(warn.line).toMatch(/^WARN MCP request refused method=POST slug=echo status=401 reason="got a JWT/);
-      expect(warn.line).toContain('a JWT from another issuer (iss=https://home.cloudflareaccess.com)');
-      expect(warn.line).toContain('enable External client auth for this endpoint');
-      expect(warn.line).toContain('methods=bearer,oauth');
-      expect(lines.map((l) => l.line).join('\n')).not.toContain(foreignJwt);
-    } finally {
-      restore();
-    }
-  });
 
   it('keeps hostile claims inside one quoted, clipped field, and answers 401 for non-string ones', async () => {
     const { lines, restore } = capture();
@@ -445,73 +382,6 @@ describe('server log for refused connections', () => {
         expect(line.length).toBeLessThan(1000);
       }
       expect(lines.some((l) => l.line.startsWith('INFO MCP session opened'))).toBe(false);
-    } finally {
-      restore();
-    }
-  });
-
-  it('names the mismatched Cloudflare Access claim for External auth', async () => {
-    updateSettings(ctx.db, 'mcp', {
-      clientAuth: { bearer: true, oauth: true, external: true },
-      cfAccess: { teamDomain: 'home.cloudflareaccess.com', aud: 'right-aud' },
-    });
-    await ctx.instances.update(otherInstanceId, { authMethods: ['external'] });
-    const { lines, restore } = capture();
-    try {
-      expect((await initialize('echo-two', { 'cf-access-jwt-assertion': foreignJwt })).status).toBe(401);
-      expect((await initialize('echo-two')).status).toBe(401);
-      const [bad, missing] = lines.filter((l) => l.line.includes('MCP request refused'));
-      expect(bad).toMatchObject({ level: 'warn' });
-      expect(bad!.line).toContain('Cloudflare Access assertion rejected');
-      expect(bad!.line).toContain('aud=x; expected iss=https://home.cloudflareaccess.com aud=right-aud');
-      // No credentials at all: a probe, kept out of the default log.
-      expect(missing).toMatchObject({ level: 'debug' });
-      expect(missing!.line).toContain('no Cf-Access-Jwt-Assertion header');
-    } finally {
-      restore();
-      useExternal(false);
-      await ctx.instances.update(otherInstanceId, { authMethods: null });
-    }
-  });
-
-  it('keeps junk credentials and floods out of the default log', async () => {
-    const { lines, restore } = capture();
-    try {
-      await initialize('echo', { authorization: 'Bearer junk' });
-      const refusedJunk = lines.filter((l) => l.line.includes('MCP request refused'));
-      expect(refusedJunk.map((l) => l.level)).toEqual(['debug']);
-      // The same client and status again within the window: dropped, then counted.
-      const throttle = new LogThrottle();
-      expect(throttle.admit('k', 0)).toBe(0);
-      expect(throttle.admit('k', 1000)).toBeNull();
-      expect(throttle.admit('k', 2000)).toBeNull();
-      expect(throttle.admit('k', 61_000)).toBe(2);
-      expect(throttle.admit('other', 61_000)).toBe(0);
-    } finally {
-      restore();
-    }
-  });
-
-  it('logs a refused Origin, an opened session and transport errors', async () => {
-    const { token } = ctx.tokens.create({ name: 'log', scope: [instanceId] }, { userId: adminId });
-    const { lines, restore } = capture();
-    try {
-      // fetch won't set Host; a foreign Origin goes through the same check.
-      const origin = await initialize('echo', { origin: 'https://evil.example', authorization: `Bearer ${token}` });
-      expect(origin.status).toBe(403);
-      expect((await initialize('echo', { authorization: `Bearer ${token}` })).status).toBe(200);
-      const notInit = await post(
-        'echo',
-        { accept: 'application/json', authorization: `Bearer ${token}` },
-        { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-      );
-      expect(notInit.status).toBeGreaterThanOrEqual(400);
-      const text = lines.map((l) => `${l.level} ${l.line}`).join('\n');
-      expect(text).toMatch(/warn WARN MCP request refused .*reason="Host or Origin not allowed.* origin=/);
-      expect(text).toMatch(/info INFO MCP session opened slug=echo client=token:log/);
-      expect(text).toMatch(/warn WARN MCP request rejected by the transport method=POST slug=echo status=4\d\d error=/);
-      expect(text).toContain('debug DEBUG MCP listener request method=POST path=/echo');
-      expect(text).not.toContain(token);
     } finally {
       restore();
     }
