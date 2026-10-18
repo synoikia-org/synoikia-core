@@ -77,6 +77,8 @@ type OperationRow = typeof operations.$inferSelect;
 export const principalKey = (caller: CallerContext) => caller.client.key ?? caller.client.id ?? 'anonymous';
 
 const MAX_ERROR_MESSAGE = 500;
+// `invoke` times out this long before the run does, so the agent learns that the result is unknown.
+const INVOKE_MARGIN_MS = 500;
 const PASSTHROUGH_PLUGIN_CODES = new Set([
   'UNKNOWN_OPERATION',
   'INVALID_PARAMS',
@@ -482,22 +484,33 @@ export function createGateBindings(
       }
 
       // 9. The real upstream call, within what's left of the sandbox budget.
+      const remaining = budget.remainingMs() - INVOKE_MARGIN_MS;
+      // Inside the margin the run ends before any answer could arrive, so nothing goes upstream.
+      if (remaining <= 0) reject('rejected:time_limit', new BindingError('TIMEOUT', 'Sandbox time limit exceeded'));
       if (isWrite && !deps.limiter.take(writeBucket, rt.settings.writesPerMinute, 60_000)) overWriteBudget();
-      const remaining = Math.max(1, budget.remainingMs());
-      const result = await rt.plugin().call(
-        'invoke',
-        {
-          key: operation.key,
-          params,
-          context: {
-            callId: randomUUID(),
-            expectedHash,
-            deadlineMs: remaining,
-            ...(rt.manifest.capabilities.targets ? { targets } : {}),
+      const result = await rt
+        .plugin()
+        .call(
+          'invoke',
+          {
+            key: operation.key,
+            params,
+            context: {
+              callId: randomUUID(),
+              expectedHash,
+              deadlineMs: remaining,
+              ...(rt.manifest.capabilities.targets ? { targets } : {}),
+            },
           },
-        },
-        remaining,
-      );
+          remaining,
+        )
+        .catch((err: unknown) => {
+          if (!(err instanceof PluginTimeoutError)) throw err;
+          throw new BindingError(
+            'UPSTREAM_TIMEOUT',
+            `${rt.manifest.name} did not answer in time. The result is unknown: check before you retry`,
+          );
+        });
 
       // 10–11. Redact (the operation's declared result secrets first, then by key name and secret
       // value), audit, hand back. Nothing past this point sees the plugin's raw result.
