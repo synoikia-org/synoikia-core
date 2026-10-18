@@ -169,7 +169,7 @@ async function buildTemplate(): Promise<string> {
     { log: createLogger('error', () => undefined), passwordHashCost: TEST_HASH_COST },
   );
   await ctx.start();
-  const servers = await startServers(ctx);
+  const servers = keepIdleConnections(await startServers(ctx));
   const page = browser({
     request: (p, init) => fetch(`http://127.0.0.1:${servers.admin.port}${String(p)}`, { ...init, redirect: 'manual' }),
   });
@@ -229,6 +229,15 @@ export interface AcmeId {
 }
 
 /** Polls `check` until it holds, for at most `ms`. */
+/** The servers never close an idle connection, so fetch closes it first: no reset when a reused socket races the close. */
+function keepIdleConnections<
+  T extends { admin: { server: { keepAliveTimeout: number } }; mcp: { server: { keepAliveTimeout: number } } },
+>(servers: T): T {
+  servers.admin.server.keepAliveTimeout = 0;
+  servers.mcp.server.keepAliveTimeout = 0;
+  return servers;
+}
+
 export async function eventually(check: () => boolean | Promise<boolean>, what: string, ms = 5000) {
   const until = Date.now() + ms;
   while (!(await check())) {
@@ -451,7 +460,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
     for (const warning of this.ctx.warnings) this.serverLog.push(`WARN ${warning}`);
     try {
       await this.ctx.start();
-      this.servers = await startServers(this.ctx);
+      this.servers = keepIdleConnections(await startServers(this.ctx));
     } catch (err) {
       await this.stopCore();
       throw err;
