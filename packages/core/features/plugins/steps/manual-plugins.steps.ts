@@ -11,6 +11,8 @@ interface Uploads {
   ids: string[];
   last?: { fileName: string; archive: Buffer };
   running?: Promise<Response>;
+  /** Acme's catalog requests before the last install, so a sync the install starts on its own counts too. */
+  viewsBeforeInstall?: number;
 }
 const state = new WeakMap<SynoikiaWorld, Uploads>();
 const of = (world: SynoikiaWorld) => {
@@ -48,8 +50,10 @@ async function staged(world: SynoikiaWorld, archive: Buffer, fileName = 'tasks.t
   expect(answer.status, JSON.stringify(answer)).toBe(201);
 }
 
-const installUpload = (world: SynoikiaWorld, id = of(world).ids.at(-1)!) =>
-  world.answerOf(world.admin.post(`/api/plugins/uploads/${id}/install`));
+const installUpload = (world: SynoikiaWorld, id = of(world).ids.at(-1)!) => {
+  of(world).viewsBeforeInstall = world.upstreamRequests('GET', '/views').length;
+  return world.answerOf(world.admin.post(`/api/plugins/uploads/${id}/install`));
+};
 
 async function installed(world: SynoikiaWorld, archive: Buffer, fileName?: string) {
   await staged(world, archive, fileName);
@@ -137,10 +141,9 @@ Then(
     const status = async () =>
       (await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance')).status as string;
     await eventually(async () => (await status()) === 'ready', `${slug} to be ready`);
-    const before = world.upstreamRequests('GET', '/views').length;
     await world.sync(slug);
     const views = world.upstreamRequests('GET', '/views');
-    expect(views.length).toBeGreaterThan(before);
+    expect(views.length).toBeGreaterThan(of(world).viewsBeforeInstall!);
     expect(views.at(-1)?.headers.authorization).toBe(`Bearer ${API_TOKEN}`);
     const { fileName, archive } = of(world).last!;
     expect((await auditOf(world, 'plugin_manual_installed')).map((r) => r.detail)).toEqual([
