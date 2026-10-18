@@ -32,4 +32,4 @@ Every new repository gets the spec- and test-first workflow. `docs/workflow.md` 
 
 `@synoikia/create-plugin/vitest` exports `pluginFiles()`, the Vitest plugin that loads `.yaml` and `.md` imports as the bundle does.
 
-Templates are plain files with `{{name}}` placeholders; nothing in a template runs. A smoke test scaffolds every archetype and runs its generated tests against the workspace SDK and core.
+Templates are plain files with `{{name}}` placeholders. Nothing in a template runs. The scaffold scenarios (`features/scaffold`) and the smoke test scaffold each archetype and auth pair between them. They run its generated tests against the workspace SDK and core.
