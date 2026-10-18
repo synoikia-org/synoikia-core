@@ -49,6 +49,7 @@ export const REASON_LABELS: Record<string, string> = {
   level_write: 'Auto-approved at Write',
   group_missing: 'No group',
   not_in_role: 'Not in your role',
+  own_level: 'Off: your own level',
   unknown_operation: 'Unknown',
 };
 
