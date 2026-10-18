@@ -138,6 +138,10 @@ function fingerprint() {
   return hash.digest('hex').slice(0, 16);
 }
 
+// The admin's portal cookies from a sign-in in the template, shared by every scenario: a sign-in costs a
+// password check otherwise.
+const SESSION_FILE = '.admin-session.json';
+
 async function buildTemplate(): Promise<string> {
   const name = `synoikia-world-template-${fingerprint()}`;
   const target = path.join(tmpdir(), name);
@@ -147,11 +151,25 @@ async function buildTemplate(): Promise<string> {
   const ctx = await createAppContext(
     loadConfig({
       DATA_DIR: dir,
+      MCP_HOST: '127.0.0.1',
+      MCP_PORT: '0',
+      ADMIN_HOST: '127.0.0.1',
+      ADMIN_PORT: '0',
       ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
       ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
     }),
     { log: createLogger('error', () => undefined) },
   );
+  await ctx.start();
+  const servers = await startServers(ctx);
+  const page = browser({
+    request: (p, init) => fetch(`http://127.0.0.1:${servers.admin.port}${String(p)}`, { ...init, redirect: 'manual' }),
+  });
+  await page.init();
+  const signIn = await page.post('/auth/login', { username: ADMIN.username, password: ADMIN.password });
+  if (!signIn.ok) throw new Error(`The template's admin sign-in failed: ${signIn.status}`);
+  writeFileSync(path.join(dir, SESSION_FILE), JSON.stringify(Object.fromEntries(page.jar)));
+  await servers.close();
   await ctx.stop();
   writeFileSync(path.join(dir, '.ready'), '');
   try {
@@ -339,12 +357,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
     if (info.tags.includes('@long-running')) info.config.stepTimeout = 20_000;
     this.upstream = await startFakeHttp({ routes: this.upstreamRoutes(), guard: (req) => this.guardUpstream(req) });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
-    cpSync(await (template ??= buildTemplate()), this.dataDir, { recursive: true });
+    const templateDir = await (template ??= buildTemplate());
+    cpSync(templateDir, this.dataDir, { recursive: true });
     rmSync(path.join(this.dataDir, '.ready'));
     // The template holds the admin already.
     this.bootstrapAdmin = false;
     await this.startCore();
-    this.admin = await this.portal(ADMIN.username, ADMIN.password);
+    this.admin = await this.adminFromTemplate(templateDir);
     const me = await this.expectOk(this.admin.get('/api/profile'), 'read profile');
     this.people.set('admin', { id: me.id as string, ...ADMIN, portal: this.admin });
   }
@@ -856,6 +875,17 @@ export class SynoikiaWorld extends QuickPickleWorld {
   }
 
   /** A portal session in its own browser, signed in with a password. */
+  /** The admin's portal with the template's session. A session past its idle limit drops the template, so the
+   * next feature file builds a fresh one. */
+  private async adminFromTemplate(templateDir: string) {
+    const saved = JSON.parse(readFileSync(path.join(this.dataDir, SESSION_FILE), 'utf8')) as Record<string, string>;
+    const page = await this.portalBrowser();
+    for (const [name, value] of Object.entries(saved)) page.jar.set(name, value);
+    if ((await page.get('/api/profile')).ok) return page;
+    rmSync(templateDir, { recursive: true, force: true });
+    return this.portal(ADMIN.username, ADMIN.password);
+  }
+
   async portal(username: string, password: string) {
     const page = await this.portalBrowser();
     await this.expectOk(page.post('/auth/login', { username, password }), `sign in as ${username}`);
