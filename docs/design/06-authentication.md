@@ -62,10 +62,10 @@ The Admin listener (port 8081) has its own sign-in.
 
 **Brute-force protection.**
 
-- Five failed sign-ins for a user name in 15 minutes lock that user name for 15 minutes.
+- Five failed sign-ins for a user name in 15 minutes lock that user name. The lock lasts 15 minutes from the fifth failure.
 - Core counts failures for each surface. Failures on the MCP listener sign-in lock the user name there only, never in the admin portal.
-- A per-IP budget applies to `/auth/*` and to `/api/instances/:id/connection/test`.
-- Core audits sign-in failures as `auth` events.
+- A per-IP budget applies to `/auth/*`, to `/api/instances/:id/connection/test` and to the MCP listener sign-in and its code step.
+- Core audits sign-in failures and wrong codes as `auth` events, on both surfaces.
 
 ## 6.2 MCP client authentication
 
