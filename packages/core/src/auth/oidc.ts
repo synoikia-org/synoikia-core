@@ -33,15 +33,23 @@ const AllowPolicySchema = z
   })
   .prefault({});
 
-const OidcSettingsSchema = z.object({
-  enabled: z.boolean().default(false),
-  issuer: z.url(),
-  clientId: z.string().min(1),
-  scopes: z.string().default('openid email profile'),
-  label: z.string().default('SSO'),
-  allowPolicy: AllowPolicySchema,
-  autoProvision: z.boolean().default(false),
-});
+// The issuer and the client count only while single sign-on is on, so it saves as off without them.
+const OidcSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: z.string().default(''),
+    clientId: z.string().default(''),
+    scopes: z.string().default('openid email profile'),
+    label: z.string().default('SSO'),
+    allowPolicy: AllowPolicySchema,
+    autoProvision: z.boolean().default(false),
+  })
+  .superRefine((s, ctx) => {
+    if (!s.enabled) return;
+    if (!z.url().safeParse(s.issuer).success)
+      ctx.addIssue({ code: 'custom', path: ['issuer'], message: 'Invalid URL' });
+    if (!s.clientId) ctx.addIssue({ code: 'custom', path: ['clientId'], message: 'Required while it is on' });
+  });
 export type OidcSettings = z.infer<typeof OidcSettingsSchema>;
 
 // The state key also signs other payloads, so a verified token must still have this shape.
