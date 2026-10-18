@@ -60,6 +60,11 @@ export async function askPluginOptions(root: string, flags: PluginFlags): Promis
     if (problem) throw new Error(problem);
   };
 
+  const idProblem = (value: string) => {
+    const problem = validateId(value, root);
+    return problem && `Plugin id: ${problem}`;
+  };
+
   let id = flags.id;
   if (id === undefined) {
     if (!ask) need('id');
@@ -67,11 +72,11 @@ export async function askPluginOptions(root: string, flags: PluginFlags): Promis
       await p.text({
         message: 'Plugin id (lowercase, the directory name)',
         placeholder: 'acme',
-        validate: (v) => validateId(v ?? '', root),
+        validate: (v) => idProblem(v ?? ''),
       }),
     );
   }
-  check(validateId(id!, root));
+  check(idProblem(id!));
 
   let name = flags.name;
   if (name === undefined) {
