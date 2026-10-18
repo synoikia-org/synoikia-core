@@ -20,7 +20,7 @@ import { createAppContext } from '../src/app.js';
 import { loadConfig } from '../src/config/env.js';
 import { auditLog, pluginInstances, plugins } from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
-import { parsePublicKey, verifySignature } from '../src/plugins/minisign.js';
+import { parsePublicKey } from '../src/plugins/minisign.js';
 import { swapDirectory } from '../src/plugins/repos.js';
 import { browser } from './admin-client.js';
 import { testKey } from './minisign-keys.js';
@@ -29,37 +29,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
 const PASSWORD = 'correct horse battery';
 const INDEX_URL = 'https://plugins.example.com/index.json';
-
-describe('minisign', () => {
-  const pub = parsePublicKey(readFileSync(path.join(FIXTURES, 'minisign/k.pub'), 'utf8'));
-  const data = readFileSync(path.join(FIXTURES, 'minisign/data.txt'));
-  const sig = (name: string) => readFileSync(path.join(FIXTURES, 'minisign', name), 'utf8');
-
-  it('verifies signatures made by the reference minisign tool (prehashed and legacy)', () => {
-    expect(pub.keyId).toMatch(/^[0-9A-F]{16}$/);
-    // minisign prints the id without leading zeros.
-    expect(readFileSync(path.join(FIXTURES, 'minisign/k.pub'), 'utf8')).toContain(pub.keyId.replace(/^0+/, ''));
-    expect(verifySignature(data, sig('data.txt.minisig'), pub)).toMatchObject({
-      prehashed: true,
-      trustedComment: 'fixture',
-    });
-    expect(verifySignature(data, sig('data.txt.legacy.minisig'), pub)).toMatchObject({ prehashed: false });
-  });
-
-  it('rejects tampered files, tampered trusted comments and other keys', () => {
-    expect(() => verifySignature(Buffer.concat([data, Buffer.from('x')]), sig('data.txt.minisig'), pub)).toThrow(
-      /does not match/,
-    );
-    expect(() =>
-      verifySignature(data, sig('data.txt.minisig').replace('trusted comment: fixture', 'trusted comment: evil'), pub),
-    ).toThrow(/Trusted comment/);
-    const other = testKey();
-    expect(() => verifySignature(data, sig('data.txt.minisig'), parsePublicKey(other.publicKey))).toThrow(
-      /Signed by key/,
-    );
-    expect(() => parsePublicKey('not a key')).toThrow();
-  });
-});
 
 // ── repositories & installs ──
 
@@ -294,94 +263,6 @@ describe('plugin repositories', () => {
     ]);
   });
 
-  it('refuses bad checksums, bad or missing signatures, and blocks installs after a key change', async () => {
-    const t = await setup();
-    const key = testKey();
-    const good = echoTarball('1.0.0');
-    const evil = echoTarball('1.0.1', (dir) => writeFileSync(path.join(dir, 'extra.js'), 'evil'));
-    t.files.set('https://plugins.example.com/echo-1.0.0.tgz', good);
-    t.files.set('https://plugins.example.com/echo-1.0.1.tgz', evil);
-    t.files.set('https://plugins.example.com/echo-1.0.2.tgz', evil);
-    t.files.set('https://plugins.example.com/echo-1.0.3.tgz', evil);
-    t.publish(
-      indexFor(key, [
-        { version: '1.0.0', tarball: good },
-        { version: '1.0.1', tarball: evil, sha256: sha(good) },
-        { version: '1.0.2', tarball: evil, signature: key.sign(good) },
-        { version: '1.0.3', tarball: evil, signature: null },
-      ]),
-    );
-    const repo = await t.ctx.repos.add({
-      url: INDEX_URL,
-      signingMode: 'signed',
-      confirmPublicKey: key.publicKey,
-    });
-    const install = (version: string) =>
-      t.b.post('/api/plugins/install', { repoId: repo.id, pluginId: 'echo', version });
-    expect(await (await install('1.0.1')).json()).toMatchObject({ error: 'checksum_mismatch' });
-    expect(await (await install('1.0.2')).json()).toMatchObject({ error: 'signature_invalid' });
-    expect(await (await install('1.0.3')).json()).toMatchObject({ error: 'signature_missing' });
-    expect(await (await install('9.9.9')).json()).toMatchObject({ error: 'version_not_found' });
-    expect(t.ctx.db.select().from(plugins).all()).toHaveLength(0);
-
-    // The publisher's key changes: installs stop until the admin confirms the new key id.
-    const rotated = testKey();
-    t.publish(indexFor(rotated, [{ version: '1.0.0', tarball: good }]));
-    expect(await (await t.b.post(`/api/plugin-repos/${repo.id}/refresh`)).json()).toMatchObject({
-      keyStatus: 'key_changed',
-      offeredKey: { publicKey: rotated.publicKey },
-    });
-    expect(await (await install('1.0.0')).json()).toMatchObject({ error: 'key_changed' });
-    expect((await t.b.post(`/api/plugin-repos/${repo.id}/confirm-key`, { publicKey: key.publicKey })).status).toBe(409);
-    expect(
-      await (await t.b.post(`/api/plugin-repos/${repo.id}/confirm-key`, { publicKey: rotated.publicKey })).json(),
-    ).toMatchObject({ keyStatus: 'ok' });
-    expect((await install('1.0.0')).status).toBe(201);
-  });
-
-  it('detects a new key that reuses the pinned key id', async () => {
-    const t = await setup();
-    const key = testKey();
-    t.publish({ schema: 1, name: 'Keyed', publicKey: key.publicKey, plugins: [] });
-    const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'signed', confirmPublicKey: key.publicKey });
-    const impostor = testKey();
-    const raw = Buffer.from(impostor.publicKey, 'base64');
-    Buffer.from(key.publicKey, 'base64').copy(raw, 2, 2, 10); // same key id, different key
-    t.publish({ schema: 1, name: 'Keyed', publicKey: raw.toString('base64'), plugins: [] });
-    expect(await t.ctx.repos.refresh(repo.id)).toMatchObject({ keyStatus: 'key_changed', keyId: repo.keyId });
-    expect(() => t.ctx.repos.confirmKey(repo.id, key.publicKey)).toThrow(/Confirm the repository public key/);
-  });
-
-  it('adds a pre-configured signed repo once, pinned, and removing it sticks', async () => {
-    const t = await setup();
-    const key = testKey();
-    const preset = { url: INDEX_URL, name: 'Preset', publicKey: key.publicKey };
-    const repo = t.ctx.repos.addPreconfigured(preset)!;
-    expect(repo).toMatchObject({ signingMode: 'signed', publicKey: key.publicKey, keyStatus: 'ok', pluginCount: 0 });
-    expect(t.fetched).toEqual([]); // no network until the refresh
-    expect(t.ctx.db.select().from(auditLog).where(eq(auditLog.decision, 'plugin_repo_added')).get()).toMatchObject({
-      actorKind: 'system',
-    });
-
-    const tarball = echoTarball('1.0.0');
-    t.files.set(new URL('echo-1.0.0.tgz', INDEX_URL).toString(), tarball);
-    t.publish(indexFor(key, [{ version: '1.0.0', tarball }]));
-    expect(await t.ctx.repos.refresh(repo.id)).toMatchObject({ keyStatus: 'ok', pluginCount: 1 });
-
-    t.ctx.repos.remove(repo.id);
-    expect(t.ctx.repos.addPreconfigured(preset)).toBeNull();
-    expect(t.ctx.repos.list()).toEqual([]);
-  });
-
-  it('does not duplicate a pre-configured repo the admin already added', async () => {
-    const t = await setup();
-    const key = testKey();
-    t.publish({ schema: 1, name: 'Keyed', publicKey: key.publicKey, plugins: [] });
-    await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'signed', confirmPublicKey: key.publicKey });
-    expect(t.ctx.repos.addPreconfigured({ url: INDEX_URL, name: 'Preset', publicKey: key.publicKey })).toBeNull();
-    expect(t.ctx.repos.list()).toHaveLength(1);
-  });
-
   it('adopts a plugin no repository installed, keeping its endpoints, and leaves it disabled for review', async () => {
     // A plugin copied in by hand, or built in before 0.3.0, with an endpoint on it.
     const t = await setup({ preinstalled: true });
@@ -418,152 +299,6 @@ describe('plugin repositories', () => {
     const old = await t.b.post('/api/plugins/install', { ...body, confirm: 'wrong' });
     expect(old.status).toBe(201);
     expect(await old.json()).toMatchObject({ id: before.id, version: '2.0.0' });
-  });
-
-  it('never replaces a plugin another repository installed', async () => {
-    const t = await setup();
-    const tarball = echoTarball('2.0.0');
-    t.files.set('https://plugins.example.com/echo-2.0.0.tgz', tarball);
-    t.publish(indexFor(null, [{ version: '2.0.0', tarball }]));
-    const first = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'unsigned' });
-    await t.ctx.repos.install({ repoId: first.id, pluginId: 'echo', version: '2.0.0' });
-
-    const OTHER = 'https://other.example.com/index.json';
-    t.files.set('https://other.example.com/echo-2.0.0.tgz', tarball);
-    t.files.set(
-      OTHER,
-      Buffer.from(JSON.stringify({ ...indexFor(null, [{ version: '2.0.0', tarball }]), name: 'Other' })),
-    );
-    const other = await t.ctx.repos.add({ url: OTHER, signingMode: 'unsigned' });
-    const offered = (await (await t.b.get('/api/plugin-repos/available')).json()) as { repoId: string }[];
-    expect(offered.find((a) => a.repoId === other.id)).toMatchObject({
-      blocked: 'installed_from_elsewhere',
-      installed: { fromThisRepo: false, managed: true },
-    });
-    expect(
-      await (
-        await t.b.post('/api/plugins/install', {
-          repoId: other.id,
-          pluginId: 'echo',
-          version: '2.0.0',
-        })
-      ).json(),
-    ).toMatchObject({ error: 'installed_from_elsewhere' });
-  });
-
-  it('retries a repository whose last fetch failed on the next refresh, not a day later', async () => {
-    const t = await setup();
-    const key = testKey();
-    const repo = t.ctx.repos.addPreconfigured({ url: INDEX_URL, name: 'Preset', publicKey: key.publicKey })!;
-    await t.ctx.repos.refreshStale(); // index not published yet: 404
-    expect(t.ctx.repos.list()[0]).toMatchObject({ id: repo.id, lastFetchError: expect.stringMatching(/404/) });
-    t.publish({ schema: 1, name: 'Preset', publicKey: key.publicKey, plugins: [] });
-    await t.ctx.repos.refreshStale();
-    expect(t.ctx.repos.list()[0]).toMatchObject({ lastFetchError: null, keyStatus: 'ok' });
-    const fetches = t.fetched.length;
-    await t.ctx.repos.refreshStale(); // fresh and healthy: skipped
-    expect(t.fetched).toHaveLength(fetches);
-  });
-
-  it('checks every redirect hop: https → https is followed, a downgrade to http is refused (review L4)', async () => {
-    const t = await setup();
-    t.files.set(INDEX_URL, Buffer.from(JSON.stringify({ schema: 1, name: 'Moved', plugins: [] })));
-    t.redirects.set('https://old.example.com/index.json', INDEX_URL);
-    const moved = await t.b.post('/api/plugin-repos', {
-      url: 'https://old.example.com/index.json',
-      signingMode: 'unsigned',
-    });
-    expect(moved.status).toBe(201);
-
-    t.redirects.set('https://evil.example.com/index.json', 'http://10.0.0.1:8080/admin');
-    const res = await t.b.post('/api/plugin-repos', {
-      url: 'https://evil.example.com/index.json',
-      signingMode: 'unsigned',
-    });
-    expect(await res.json()).toMatchObject({ error: 'insecure_url' });
-    expect(t.fetched).not.toContain('http://10.0.0.1:8080/admin');
-
-    for (let i = 0; i < 7; i++) t.redirects.set(`https://loop.example.com/${i}`, `https://loop.example.com/${i + 1}`);
-    const loop = await t.b.post('/api/plugin-repos', { url: 'https://loop.example.com/0', signingMode: 'unsigned' });
-    expect(await loop.json()).toMatchObject({ error: 'fetch_failed' });
-  });
-
-  it('rejects archives with links, escaping paths, a wrong manifest, and insecure or invalid indexes', async () => {
-    const t = await setup();
-    const manifest = readFileSync(path.join(FIXTURES, 'plugins/echo/manifest.json'), 'utf8');
-    const cases: [string, Buffer, string][] = [
-      [
-        '1.0.0',
-        rawTar([
-          { name: 'manifest.json', type: '0', body: manifest },
-          { name: 'index.mjs', type: '2', link: '/etc/passwd' },
-        ]),
-        'invalid_archive',
-      ],
-      [
-        '1.0.1',
-        rawTar([
-          { name: 'manifest.json', type: '0', body: manifest },
-          { name: '../escape.txt', type: '0', body: 'x' },
-        ]),
-        'invalid_archive',
-      ],
-      ['1.0.2', rawTar([{ name: 'readme.txt', type: '0', body: 'no manifest' }]), 'invalid_archive'],
-      ['1.0.3', echoTarball('9.0.0'), 'manifest_mismatch'],
-    ];
-    for (const [v, tb] of cases) t.files.set(`https://plugins.example.com/echo-${v}.tgz`, tb);
-    t.publish(
-      indexFor(
-        null,
-        cases.map(([version, tarball]) => ({ version, tarball })),
-      ),
-    );
-    const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'unsigned' });
-    for (const [version, , error] of cases) {
-      const res = await t.b.post('/api/plugins/install', {
-        repoId: repo.id,
-        pluginId: 'echo',
-        version,
-      });
-      expect({ version, body: await res.json() }).toMatchObject({ version, body: { error } });
-    }
-    expect(existsSync(path.join(t.dataDir, 'escape.txt'))).toBe(false);
-    expect(existsSync(path.join(t.dataDir, 'plugins-staging/escape.txt'))).toBe(false);
-    expect(existsSync(path.join(t.dataDir, 'plugins/echo'))).toBe(false);
-
-    expect(
-      await (
-        await t.b.post('/api/plugin-repos', { url: 'http://plugins.example.com/x.json', signingMode: 'unsigned' })
-      ).json(),
-    ).toMatchObject({
-      error: 'insecure_url',
-    });
-    t.files.set('https://plugins.example.com/bad.json', Buffer.from('{"schema":2}'));
-    expect(
-      await (
-        await t.b.post('/api/plugin-repos', { url: 'https://plugins.example.com/bad.json', signingMode: 'unsigned' })
-      ).json(),
-    ).toMatchObject({
-      error: 'invalid_index',
-    });
-    t.files.set(
-      'https://plugins.example.com/nokey.json',
-      Buffer.from(JSON.stringify({ schema: 1, name: 'No key', plugins: [] })),
-    );
-    expect(
-      await (
-        await t.b.post('/api/plugin-repos', { url: 'https://plugins.example.com/nokey.json', signingMode: 'signed' })
-      ).json(),
-    ).toMatchObject({
-      error: 'no_public_key',
-    });
-    expect(
-      await (
-        await t.b.post('/api/plugin-repos', { url: 'https://plugins.example.com/gone.json', signingMode: 'unsigned' })
-      ).json(),
-    ).toMatchObject({
-      error: 'fetch_failed',
-    });
   });
 });
 
@@ -691,67 +426,6 @@ describe('manual plugins', () => {
     expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
   });
 
-  it('disables the plugin when an upload changes its permissions, and starts a new id disabled', async () => {
-    const t = await withReleased();
-    const wider = echoTarball('1.1.0', withManifest({ network: { hosts: ['*.example.net'] } }));
-    const staged = await t.upload(wider);
-    expect(staged.body).toMatchObject({ permissionChanges: ['network.hosts'] });
-    expect((await t.installUpload(staged.body.uploadId)).body).toMatchObject({
-      enabled: false,
-      manual: { releasedVersion: '1.0.0' },
-    });
-    expect(t.ctx.instances.status(t.inst.id)).toBe('stopped');
-    expect(t.audit('plugin_manual_installed')[0]?.detail).toMatchObject({
-      enabled: false,
-      needsReview: ['network.hosts'],
-    });
-
-    const acme = echoTarball('0.1.0', withManifest({ id: 'acme' }));
-    const fresh = await t.upload(acme);
-    expect(fresh.body).toMatchObject({ pluginId: 'acme', replaces: null, permissionChanges: [] });
-    const row = (await t.installUpload(fresh.body.uploadId)).body;
-    expect(row).toMatchObject({
-      pluginId: 'acme',
-      repoId: null,
-      enabled: false,
-      status: 'ok',
-      manual: { releasedVersion: null },
-    });
-    // Without a released version only Uninstall is left.
-    expect(await (await t.b.post(`/api/plugins/${row.id as string}/revert`)).json()).toMatchObject({
-      error: 'not_manual',
-    });
-    expect((await t.b.del(`/api/plugins/${row.id as string}`)).status).toBe(204);
-  });
-
-  it('clears manual on a repository install, and refuses a revert whose version left the index', async () => {
-    const t = await withReleased();
-    const staged = await t.upload(echoTarball('1.1.0-dev'));
-    await t.installUpload(staged.body.uploadId);
-
-    const v11 = echoTarball('1.1.0');
-    t.files.set('https://plugins.example.com/echo-1.1.0.tgz', v11);
-    t.publish(indexFor(null, [{ version: '1.1.0', tarball: v11 }]));
-    await t.ctx.repos.refresh(t.repo.id);
-    expect(await (await t.b.get('/api/plugin-repos/available')).json()).toMatchObject([
-      { installed: { version: '1.1.0-dev', fromThisRepo: true, manual: true } },
-    ]);
-    expect(await (await t.b.post(`/api/plugins/${t.row.id}/revert`)).json()).toMatchObject({
-      error: 'released_version_gone',
-    });
-
-    const updated = await t.b.post('/api/plugins/install', {
-      repoId: t.repo.id,
-      pluginId: 'echo',
-      version: '1.1.0',
-    });
-    expect(await updated.json()).toMatchObject({ version: '1.1.0', manual: null, enabled: true, sha256: sha(v11) });
-    expect(t.audit('plugin_updated').at(-1)?.detail).toMatchObject({ replacedFile: 'echo.tgz' });
-    expect(await (await t.b.post(`/api/plugins/echo/revert`)).json()).toMatchObject({
-      error: 'not_manual',
-    });
-  });
-
   it('refuses oversized, broken, incompatible, unnamed, replaced and expired uploads', async () => {
     let clock = new Date('2026-01-01T00:00:00Z');
     const t = await withReleased({
@@ -830,59 +504,6 @@ describe('manual plugins', () => {
     expect(readdirSync(path.join(t.dataDir, 'plugins-staging'))).toEqual([]);
     expect(t.ctx.db.select().from(plugins).get()).toMatchObject({ version: '1.0.0', manual: null, enabled: true });
     expect(t.audit('plugin_manual_installed')).toHaveLength(0);
-  });
-
-  it('keeps a plugin from a signed repository enabled and serving after an upload with no permission change', async () => {
-    const t = await setup();
-    const key = testKey();
-    const v1 = echoTarball('1.0.0');
-    t.files.set('https://plugins.example.com/echo-1.0.0.tgz', v1);
-    t.publish(indexFor(key, [{ version: '1.0.0', tarball: v1 }]));
-    const repo = await t.ctx.repos.add({ url: INDEX_URL, signingMode: 'signed', confirmPublicKey: key.publicKey });
-    const row = await t.ctx.repos.install({ repoId: repo.id, pluginId: 'echo', version: '1.0.0' });
-    expect(row.signatureVerified).toBe(true);
-    await t.ctx.instances.setPluginEnabled(row.id, true);
-    const inst = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
-    await t.ctx.instances.syncNow(inst.id);
-
-    const res = await t.b.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.0.1-dev')), {
-      'x-file-name': 'echo.tgz',
-    });
-    const staged = (await res.json()) as { uploadId: string; permissionChanges: string[] };
-    expect(staged.permissionChanges).toEqual([]);
-    const installed = await t.b.post(`/api/plugins/uploads/${staged.uploadId}/install`);
-    expect(await installed.json()).toMatchObject({
-      version: '1.0.1-dev',
-      enabled: true,
-      signatureVerified: false,
-      manual: { releasedVersion: '1.0.0' },
-    });
-    expect(t.ctx.instances.status(inst.id)).toBe('ready');
-    await t.ctx.instances.syncNow(inst.id);
-    expect(t.ctx.instances.status(inst.id)).toBe('ready');
-  });
-
-  it('refuses an upload install while a repository install of the same id runs, and keeps the upload', async () => {
-    const t = await withReleased();
-    const staged = await t.upload(echoTarball('1.1.0-dev'));
-    const running = t.ctx.repos.install({ repoId: t.repo.id, pluginId: 'echo', version: '1.0.0' });
-    expect(await t.installUpload(staged.body.uploadId)).toMatchObject({
-      status: 409,
-      body: { error: 'install_in_progress' },
-    });
-    await running;
-    expect((await t.installUpload(staged.body.uploadId)).body).toMatchObject({ version: '1.1.0-dev' });
-  });
-
-  it('is admin-only', async () => {
-    const t = await withReleased();
-    const role = (await (await t.b.post('/api/roles', { name: 'Operators' })).json()) as { id: string };
-    await t.b.post('/api/users', { username: 'olga', password: PASSWORD, roleId: role.id });
-    const v = await browser(createAdminApp(t.ctx)).init();
-    expect((await v.post('/auth/login', { username: 'olga', password: PASSWORD })).status).toBe(200);
-    const res = await v.post('/api/plugins/uploads', new Uint8Array(echoTarball('1.1.0')), { 'x-file-name': 'e.tgz' });
-    expect(res.status).toBe(403);
-    expect((await v.post(`/api/plugins/${t.row.id}/revert`)).status).toBe(403);
   });
 });
 

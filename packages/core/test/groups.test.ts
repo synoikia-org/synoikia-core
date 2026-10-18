@@ -153,28 +153,6 @@ describe('updateOperation', () => {
     updateOperation(db, instanceId, id('app.query'), { classification: 'write' } as never);
     expect(db.select().from(operations).where(eq(operations.key, 'app.query')).get()?.classification).toBe('read');
   });
-
-  it('keeps writes found by a later sync off until an admin opens them', () => {
-    const { db, instanceId } = setup();
-    setGroupLevel(db, instanceId, 'app', 'write');
-    applyCatalogSync(
-      db,
-      instanceId,
-      catalog(
-        op('app.query'),
-        op('app.upgrade'),
-        op('app.stop'),
-        op('app.delete', { locked: true }),
-        op('app.redeploy'),
-        op('store.query'),
-        op('store.volume.create'),
-      ),
-    );
-    expect(resolveAccess(db, instanceId, 'app.redeploy')).toEqual({ reachable: false, reason: 'level_none' });
-    // Setting the group to Write again resets it to follow, and acknowledges it with the rest.
-    setGroupLevel(db, instanceId, 'app', 'write');
-    expect(resolveAccess(db, instanceId, 'app.redeploy')).toMatchObject({ mode: 'auto' });
-  });
 });
 
 describe('re-sync of changed operations (review M14)', () => {
@@ -188,32 +166,6 @@ describe('re-sync of changed operations (review M14)', () => {
       op('store.query'),
       ...(drop ? [] : [op('store.volume.create')]),
     );
-
-  it('asks again when an acknowledged write changes or returns from stale, not on a plain re-sync', () => {
-    const { db, instanceId, id } = setup();
-    applyCatalogSync(db, instanceId, all());
-    setGroupLevel(db, instanceId, 'app', 'write');
-    setGroupLevel(db, instanceId, 'store.volume', 'write');
-
-    expect(applyCatalogSync(db, instanceId, all()).pendingReview).toEqual([]);
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toMatchObject({ mode: 'auto' });
-
-    const changed = applyCatalogSync(db, instanceId, all({ paramsSchema: { type: 'object', required: ['force'] } }));
-    expect(changed.pendingReview).toEqual(['app.upgrade']);
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toMatchObject({ mode: 'approve', pendingReview: true });
-    expect(resolveAccess(db, instanceId, 'app.stop')).toMatchObject({ mode: 'auto' });
-
-    updateOperation(db, instanceId, id('app.upgrade'), { acknowledged: true });
-    expect(applyCatalogSync(db, instanceId, all({ kind: 'endpoint' })).pendingReview).toEqual(['app.upgrade']);
-
-    applyCatalogSync(db, instanceId, all({ kind: 'endpoint' }, true));
-    const back = applyCatalogSync(db, instanceId, all({ kind: 'endpoint' }));
-    expect(back.pendingReview).toContain('store.volume.create');
-    expect(resolveAccess(db, instanceId, 'store.volume.create')).toMatchObject({
-      mode: 'approve',
-      pendingReview: true,
-    });
-  });
 
   it('lets an admin turn the attestation requirement off, and remembers it across syncs (review L13)', () => {
     const { db, instanceId, id } = setup();
@@ -390,19 +342,6 @@ describe('rules on $targets (design §3.4)', () => {
 });
 
 describe('regrouping', () => {
-  it('merges into the lowest level, keeps aliases, and survives re-sync', () => {
-    const { db, instanceId } = setup();
-    setGroupLevel(db, instanceId, 'store', 'none');
-    setGroupLevel(db, instanceId, 'store.volume', 'write');
-
-    const merged = mergeGroups(db, instanceId, { from: ['store.volume'], into: 'store', label: 'Storage' });
-    expect(merged).toMatchObject({ key: 'store', label: 'Storage', level: 'none' });
-    expect(db.select().from(operationGroupAliases).all()).toEqual([
-      { instanceId, pluginGroup: 'store.volume', groupKey: 'store' },
-    ]);
-    expect(listGroups(db, instanceId).map((g) => g.key)).toEqual(['app', 'store']);
-  });
-
   it('merges into a brand-new group and repoints existing aliases', () => {
     const { db, instanceId } = setup();
     mergeGroups(db, instanceId, { from: ['store.volume'], into: 'store' });

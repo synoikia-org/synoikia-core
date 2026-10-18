@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidSlug, RESERVED_SLUGS } from '../src/endpoints/slug.js';
+import { isValidSlug, RESERVED_SLUGS } from '../../src/endpoints/slug.js';
 
 describe('isValidSlug', () => {
   it.each(['acme', 'acme-cabin', 'widgets', 'acme2'])('accepts %s', (slug) => {
