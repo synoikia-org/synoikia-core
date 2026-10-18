@@ -14,7 +14,8 @@ const floor = (lines: number, functions: number, branches: number, statements: n
 export default mergeConfig(
   shared,
   defineConfig({
-    plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'] })],
+    // A step may take 10 s: three scenarios of a file share the CPU. A @long-running step gets 20 s (the World).
+    plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'], stepTimeout: 10_000 })],
     test: {
       // Four test files at once: the fastest on a 4-core machine (178 s at 3, 154 s at 4, no gain above).
       maxWorkers: 4,
