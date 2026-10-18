@@ -19,7 +19,10 @@ import { startServers } from '../../src/server.js';
 import type { RunningServers } from '../../src/server.js';
 import { startFakeHttp } from '../../src/testing/index.js';
 import type { FakeHttp, FakeRequest } from '../../src/testing/index.js';
+import { DEFAULT_PLUGIN_REPO } from '../../src/plugins/default-repo.js';
 import { browser } from '../../test/admin-client.js';
+import { testKey } from '../../test/minisign-keys.js';
+import { sha256, tasksArchive } from './plugin-archives.js';
 
 const PLUGINS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../test/fixtures/world');
 const ADMIN = { username: 'admin', password: 'world admin passphrase' };
@@ -176,6 +179,49 @@ export async function eventually(check: () => boolean | Promise<boolean>, what: 
   }
 }
 
+/** The repository that core adds on its first start, with the key it pins. */
+export const DEFAULT_REPOSITORY = DEFAULT_PLUGIN_REPO;
+
+type SigningKey = ReturnType<typeof testKey>;
+
+/** One build of "Acme Tasks" in a repository's index. */
+export interface OfferedBuild {
+  version: string;
+  archive: Buffer;
+  /** The checksum the index gives, when it is not the archive's own. */
+  sha256?: string;
+  /** The signature the index gives; null leaves it out, undefined signs the archive with the repository's key. */
+  signature?: string | null;
+  minCoreVersion?: string;
+}
+
+/** A plugin repository the World serves to core: its index address, its key and the builds it offers. */
+export interface FakeRepository {
+  name: string;
+  url: string;
+  /** The key that signs its builds; null for an unsigned repository. */
+  key: SigningKey | null;
+  /** The key its index publishes, when it is not `key`; null publishes none. */
+  publishedKey?: string | null;
+  format?: number;
+  builds: OfferedBuild[];
+  /** Its id in core, once the admin added it. */
+  id?: string;
+}
+
+const archives = new Map<string, Buffer>();
+/** A build of "Acme Tasks", made once per process: 1.2.0 asks for one more network host. */
+export function tasksBuild(version: string) {
+  let archive = archives.get(version);
+  if (!archive) {
+    archive = tasksArchive(version, (m) => {
+      if (version === '1.2.0') m.network = { hosts: ['127.0.0.1', 'sync.acme.example'] };
+    });
+    archives.set(version, archive);
+  }
+  return archive;
+}
+
 interface Person {
   id: string;
   username: string;
@@ -239,6 +285,15 @@ export class SynoikiaWorld extends QuickPickleWorld {
   serverLog: string[] = [];
   /** Why the last start of core failed, when it did. */
   startError?: string;
+  /** The plugin repositories the World publishes, by name. */
+  repositories = new Map<string, FakeRepository>();
+  /** What the repository hosts serve, by address, and where an address moved to. */
+  repoFiles = new Map<string, Buffer>();
+  repoMoves = new Map<string, string>();
+  /** Every address core fetched from a repository host, in order. */
+  repoFetched: string[] = [];
+  /** How long a repository host takes to send an archive. */
+  repoDelayMs = 0;
   /** Lets go of the data directory, as a stopping server does. */
   private releaseLock?: () => void;
 
@@ -280,6 +335,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
           notifyRetryDelaysMs: [200, 400],
           now: () => new Date(realNow() + this.clockMs),
           oidcAllowInsecure: true,
+          repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
           ...opts,
         },
@@ -548,6 +604,164 @@ export class SynoikiaWorld extends QuickPickleWorld {
     this.pluginFlag('restart', String(Date.now()));
     await eventually(async () => (await status()) !== 'ready', 'the plugin to stop');
     await eventually(async () => (await status()) === 'ready', 'the plugin to be ready');
+  }
+
+  // ── plugin repositories ──
+
+  /** What a repository host answers core: a move, a published file, or "not found". A host outside the World
+   * does not answer. */
+  private async repositoryHost(url: string) {
+    this.repoFetched.push(url);
+    const to = this.repoMoves.get(url);
+    if (to) return new Response(null, { status: 302, headers: { location: to } });
+    const body = this.repoFiles.get(url);
+    if (!body) {
+      const known = new URL(url).hostname.endsWith('.acme.example') || url === DEFAULT_PLUGIN_REPO.url;
+      if (known) return new Response('missing', { status: 404 });
+      throw new TypeError('connection refused');
+    }
+    if (this.repoDelayMs && url.endsWith('.tgz')) await sleep(this.repoDelayMs);
+    return new Response(new Uint8Array(body));
+  }
+
+  /** The World's repository `name`: "Acme plugins" signs with its own key, "Acme mirror" is unsigned. */
+  repository(name: string) {
+    const known: Record<string, { url: string; signed: boolean }> = {
+      'Acme plugins': { url: 'https://plugins.acme.example/index.json', signed: true },
+      'Acme mirror': { url: 'https://mirror.acme.example/index.json', signed: false },
+    };
+    let repo = this.repositories.get(name);
+    if (!repo) {
+      const k = known[name];
+      if (!k) throw new Error(`The World has no repository "${name}"`);
+      repo = { name, url: k.url, key: k.signed ? testKey() : null, builds: [] };
+      this.repositories.set(name, repo);
+    }
+    return repo;
+  }
+
+  /** Writes the index of `repo` and its archives where its host serves them. */
+  publish(repo: FakeRepository) {
+    const publicKey = repo.publishedKey !== undefined ? repo.publishedKey : repo.key?.publicKey;
+    const versions = repo.builds.map((b) => {
+      const file = `tasks-${b.version}.tgz`;
+      this.repoFiles.set(new URL(file, repo.url).toString(), b.archive);
+      const signature = b.signature === undefined ? repo.key?.sign(b.archive) : b.signature;
+      return {
+        version: b.version,
+        sdk: '^0.2.0',
+        url: file,
+        sha256: b.sha256 ?? sha256(b.archive),
+        ...(signature ? { signature } : {}),
+        ...(b.minCoreVersion ? { minCoreVersion: b.minCoreVersion } : {}),
+      };
+    });
+    const index = {
+      schema: repo.format ?? 1,
+      name: repo.name,
+      ...(publicKey ? { publicKey } : {}),
+      plugins: versions.length ? [{ id: 'tasks', name: 'Acme Tasks', versions }] : [],
+    };
+    this.repoFiles.set(repo.url, Buffer.from(JSON.stringify(index)));
+  }
+
+  /** `name` offers this build of "Acme Tasks" from now on; core sees it at its next refresh. */
+  offer(name: string, version: string, build: Partial<OfferedBuild> = {}) {
+    const repo = this.repository(name);
+    repo.builds = repo.builds.filter((b) => b.version !== version);
+    repo.builds.push({ version, archive: tasksBuild(version), ...build });
+    this.publish(repo);
+    return repo;
+  }
+
+  /** The admin adds `name`, and confirms its key when it is signed. */
+  async addRepository(name: string) {
+    const repo = this.repository(name);
+    if (!this.repoFiles.has(repo.url)) this.publish(repo);
+    const added = await this.expectOk(
+      this.admin.post('/api/plugin-repos', {
+        url: repo.url,
+        signingMode: repo.key ? 'signed' : 'unsigned',
+        ...(repo.key ? { confirmPublicKey: repo.key.publicKey } : {}),
+      }),
+      'add repository',
+    );
+    repo.id = added.id as string;
+    return repo;
+  }
+
+  /** The admin refreshes the index of `name`. */
+  refreshRepository(name: string) {
+    return this.admin.post(`/api/plugin-repos/${this.repository(name).id!}/refresh`);
+  }
+
+  /** The admin installs this version of "Acme Tasks" from `name`. */
+  installFrom(name: string, version: string) {
+    return this.admin.post('/api/plugins/install', { repoId: this.repository(name).id!, pluginId: 'tasks', version });
+  }
+
+  /** The admin uninstalls the "Acme Tasks" copied into the World's data directory by hand. */
+  async withoutHandCopiedTasks() {
+    await this.expectOk(this.admin.del('/api/plugins/tasks'), 'uninstall the hand-copied plugin');
+  }
+
+  /** The admin installs this version of "Acme Tasks" from `name`, in place of the hand-copied one, and adds or
+   * refreshes the repository first. */
+  async installedFrom(name: string, version: string) {
+    const current = await this.plugin();
+    if (current && !current.repoId) await this.withoutHandCopiedTasks();
+    const repo = this.offer(name, version);
+    if (repo.id) await this.expectOk(this.refreshRepository(name), 'refresh repository');
+    else await this.addRepository(name);
+    await this.expectOk(this.installFrom(name, version), 'install Acme Tasks');
+  }
+
+  /** The admin keeps what a portal change answered, whether it went through or not. */
+  async answerOf(res: Promise<Response>) {
+    const r = await res;
+    this.portalAnswer = { status: r.status, body: (await r.json().catch(() => ({}))) as Record<string, unknown> };
+    return this.portalAnswer;
+  }
+
+  /** The admin's plugin list, or one plugin of it by its id. */
+  async plugins() {
+    return (await this.expectOk(this.admin.get('/api/plugins'), 'list plugins')) as unknown as {
+      id: string;
+      pluginId: string;
+      version: string;
+      repoId: string | null;
+      status: string;
+      statusError: string | null;
+      enabled: boolean;
+      signatureVerified: boolean;
+      sha256: string | null;
+      instructions: string | null;
+      manifest: Record<string, unknown>;
+      path: string;
+      manual: { fileName: string; releasedVersion: string | null } | null;
+      instances: number;
+    }[];
+  }
+
+  async plugin(pluginId = 'tasks') {
+    return (await this.plugins()).find((p) => p.pluginId === pluginId);
+  }
+
+  /** The admin's plugin repositories. */
+  async repositoryList() {
+    return (await this.expectOk(this.admin.get('/api/plugin-repos'), 'list repositories')) as unknown as {
+      id: string;
+      url: string;
+      name: string;
+      signingMode: string;
+      publicKey: string | null;
+      keyId: string | null;
+      keyStatus: string;
+      offeredKey: { publicKey: string; keyId: string } | null;
+      pluginCount: number;
+      lastFetchedAt: string | null;
+      lastFetchError: string | null;
+    }[];
   }
 
   // ── the admin portal and the Admin API ──
@@ -1275,6 +1489,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
 setWorldConstructor(SynoikiaWorld);
 
+// Quickpickle gives the After hook the 3 s step limit. A stop under load may take longer, so it ends in the
+// background: each scenario has its own ports and data directory.
 After(async (world: SynoikiaWorld) => {
-  await world.stop();
+  await Promise.race([world.stop(), sleep(2500)]);
 });
