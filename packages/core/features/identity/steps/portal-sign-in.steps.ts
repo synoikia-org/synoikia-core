@@ -501,3 +501,61 @@ Then(
     expect(await codeSignsIn(world, user, appOf(world, person(user)).recoveryCodes[0]!)).toBe(true);
   },
 );
+
+// ── wrong codes in the profile ──
+
+const PROFILE_CODE_ROUTES: Record<string, string> = {
+  'for new recovery codes': '/api/profile/totp/recovery-codes',
+  'to turn off the app': '/api/profile/totp/disable',
+};
+
+async function profileCode(world: SynoikiaWorld, user: number, forWhat: string, code: string) {
+  await keep(world, world.person(person(user)).portal!.post(PROFILE_CODE_ROUTES[forWhat]!, { code }));
+}
+
+async function wrongProfileCodes(world: SynoikiaWorld, user: number, forWhat: string, times: number) {
+  for (let i = 0; i < times; i++) {
+    await profileCode(world, user, forWhat, wrongCode(world, person(user)));
+    expect(identity(world).answer.status).toBe(401);
+  }
+}
+
+Given(
+  /^user (\d+) gave a wrong code (for new recovery codes|to turn off the app) (\d+) times$/,
+  async (world: SynoikiaWorld, user: string, forWhat: string, times: string) => {
+    await wrongProfileCodes(world, Number(user), forWhat, Number(times));
+  },
+);
+
+When(
+  /^user (\d+) gives the current code (for new recovery codes|to turn off the app)$/,
+  async (world: SynoikiaWorld, user: string, forWhat: string) => {
+    await profileCode(world, Number(user), forWhat, world.totpCode(appOf(world, person(Number(user))).secret));
+  },
+);
+
+When(
+  'user {int} gives a wrong code {int} times for new recovery codes and {int} times to turn off the app',
+  async (world: SynoikiaWorld, user: number, forCodes: number, forOff: number) => {
+    await wrongProfileCodes(world, user, 'for new recovery codes', forCodes);
+    await wrongProfileCodes(world, user, 'to turn off the app', forOff);
+  },
+);
+
+Then('the first recovery code signs user {int} in after the lock ends', async (world: SynoikiaWorld, user: number) => {
+  world.passTime(15 * 60_000);
+  expect(await codeSignsIn(world, user, appOf(world, person(user)).recoveryCodes[0]!)).toBe(true);
+});
+
+Then(
+  'the audit log shows {int} failed codes of user {int} for new recovery codes and {int} to turn off the app',
+  async (world: SynoikiaWorld, forCodes: number, user: number, forOff: number) => {
+    const { username } = world.person(person(user));
+    const rows = (await authRows(world)).filter((r) => r.decision === 'totp_failed');
+    const count = (forWhat: string) =>
+      rows.filter((r) => JSON.stringify(r.detail) === JSON.stringify({ username, route: PROFILE_CODE_ROUTES[forWhat] }))
+        .length;
+    expect(rows).toHaveLength(forCodes + forOff);
+    expect([count('for new recovery codes'), count('to turn off the app')]).toEqual([forCodes, forOff]);
+  },
+);

@@ -20,6 +20,16 @@ Given(
   },
 );
 
+Given(
+  'the plugin of {string} now asks to type a confirmation for {string}, and the admin syncs {string}',
+  async (world: SynoikiaWorld, _plugin: string, name: string, slug: string) => {
+    world.changeCatalog({ change: { [name]: { typedConfirmation: true } } });
+    await world.sync(slug);
+    const op = (await world.operation(world.lastInstance, name)) as unknown as { typedConfirmation: boolean };
+    expect(op.typedConfirmation).toBe(true);
+  },
+);
+
 Then(
   'agent {word} is told that {string} changed while it waited for approval',
   (world: SynoikiaWorld, _agent: string, name: string) => {
