@@ -435,6 +435,17 @@ export function createGateBindings(
               new BindingError('OPERATION_DISABLED', `${operation.key} was disabled while waiting for approval`),
             );
           }
+          // The human approved one classification; a sync during the wait may have changed it (§5.3).
+          const opNow = deps.db.select().from(operations).where(eq(operations.id, operation.id)).get();
+          if (!opNow || (opNow.locked ? 'locked' : opNow.classification) !== audit.classification) {
+            reject(
+              'rejected:operation_changed',
+              new BindingError(
+                'OPERATION_CHANGED',
+                `${operation.key} changed while it waited for approval; call it again`,
+              ),
+            );
+          }
           decision = 'human-approved';
           const maxHours = rt.settings.sessionGrantMaxHours;
           if (
