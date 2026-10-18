@@ -106,7 +106,7 @@ export class SessionService {
       .run();
   }
 
-  /** A user's unexpired sessions of one kind (the Profile page lists approval browsers, design §5.3). */
+  /** A user's unexpired sessions of one kind (the Profile page lists approval browsers, @id:approval-browsers). */
   listKind(userId: string, kind: SessionKind) {
     return this.db
       .select({ createdAt: sessions.createdAt, lastSeenAt: sessions.lastSeenAt, userAgent: sessions.userAgent })
@@ -122,7 +122,7 @@ export class SessionService {
       .run().changes;
   }
 
-  /** The user signs out every approval browser at once (Profile page, design §5.3). */
+  /** The user signs out every approval browser at once (Profile page, @id:approval-browsers). */
   revokeApprovalBrowsers(userId: string): number {
     return this.db.transaction((tx) => {
       const count = tx
