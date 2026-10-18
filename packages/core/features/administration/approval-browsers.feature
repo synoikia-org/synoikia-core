@@ -30,6 +30,7 @@ Feature: Approval browsers
       When user 12 opens the next approval of agent 9 after 11 idle hours, and the one after that 13 idle hours later
       Then the first approval opens, and the second asks user 12 to sign in
 
+    @long-running
     Scenario: An approval browser that is used every 11 hours stays signed in for 7 days
       Given agent 9 belongs to user 12, whose role "family" may ask for the group "tasks" of "tasks"
       And user 12 signed in on the approval page of a call of agent 9
