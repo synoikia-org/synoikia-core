@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeHosts } from '../src/format';
+import { describeHosts } from '../../src/format';
 
 describe('describeHosts', () => {
   const schema = { properties: { baseUrl: { type: 'string', title: 'Base URL' }, region: { type: 'string' } } };

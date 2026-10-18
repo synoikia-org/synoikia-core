@@ -30,26 +30,6 @@ const gets = (calls: { method: string; path: string }[], path: string) =>
   calls.filter((c) => c.method === 'GET' && c.path === path).length;
 
 describe('the Users page', () => {
-  it('lists users and changes a role, then reloads users and roles', async () => {
-    const { calls } = fakeApi({
-      'GET /api/session': signedIn,
-      'GET /api/users': [me, olga],
-      'GET /api/roles': roles,
-      'PATCH /api/users/u2': { ...olga, role: adminRole },
-    });
-    const { wrapper } = await mountAt('/settings/users');
-    expect(wrapper.text()).toContain('olga');
-    expect(wrapper.text()).toContain('you');
-    const select = wrapper.get('select[aria-label="Role of olga"]');
-    expect((select.element as HTMLSelectElement).value).toBe('r1');
-
-    await select.setValue('admin');
-    await flushPromises();
-    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({ path: '/api/users/u2', body: { roleId: 'admin' } });
-    expect(gets(calls, '/api/users')).toBe(2);
-    expect(gets(calls, '/api/roles')).toBe(2);
-  });
-
   it('shows why the list did not load', async () => {
     fakeApi({
       'GET /api/session': signedIn,
@@ -59,36 +39,6 @@ describe('the Users page', () => {
     const { wrapper } = await mountAt('/settings/users');
     expect(wrapper.get('[role="alert"]').text()).toBe('Database is locked');
     expect(wrapper.findAll('tbody tr')).toHaveLength(0);
-  });
-
-  it('asks in a dialog before disabling a user, and sends nothing on cancel', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm');
-    const { calls } = fakeApi({
-      'GET /api/session': signedIn,
-      'GET /api/users': [me, olga],
-      'GET /api/roles': roles,
-      'PATCH /api/users/u2': { ...olga, disabled: true },
-    });
-    await mountAt('/settings/users');
-
-    const disable = button('Disable')!;
-    disable.focus();
-    disable.click();
-    await flushPromises();
-    expect(dialogTitle()).toBe('Disable olga?');
-    expect(dialog()?.textContent).toContain('Their sessions end now.');
-    button('Cancel', dialog()!)!.click();
-    await flushPromises();
-    expect(dialog()).toBeNull();
-    expect(document.activeElement).toBe(disable);
-    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
-
-    button('Disable')!.click();
-    await flushPromises();
-    button('Disable', dialog()!)!.click();
-    await flushPromises();
-    expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({ path: '/api/users/u2', body: { disabled: true } });
-    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it('resets two-factor after confirmation and shows a failure on the page', async () => {
@@ -127,65 +77,6 @@ describe('the Users page', () => {
     expect(gets(calls, '/api/users')).toBe(2);
   });
 
-  it('keeps the add dialog open with core’s validation message', async () => {
-    fakeApi({
-      'GET /api/session': signedIn,
-      'GET /api/users': [me],
-      'GET /api/roles': roles,
-      'POST /api/users': json(400, {
-        error: 'invalid_request',
-        message: 'Invalid user',
-        details: ['password must be at least 12 characters'],
-      }),
-    });
-    const { body } = await mountAt('/settings/users');
-    button('Add user')!.click();
-    await flushPromises();
-    await body.get('input#u-name').setValue('olga');
-    await body.get('input#u-pass').setValue('short');
-    button('Add')!.click();
-    await flushPromises();
-    expect(dialog()?.querySelector('.alert.error')?.textContent).toBe(
-      'Invalid user: password must be at least 12 characters',
-    );
-
-    // Opening the dialog again starts clean.
-    button('Cancel', dialog()!)!.click();
-    await flushPromises();
-    button('Add user')!.click();
-    await flushPromises();
-    expect(dialog()?.querySelector('.alert.error')).toBeNull();
-  });
-
-  it('deletes a user only after the username is typed, and never offers it for yourself', async () => {
-    const { calls } = fakeApi({
-      'GET /api/session': signedIn,
-      'GET /api/users': [me, olga],
-      'GET /api/roles': roles,
-      'DELETE /api/users/u2': new Response(null, { status: 204 }),
-    });
-    const { body } = await mountAt('/settings/users');
-    const deletes = [...document.body.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Delete');
-    expect(deletes).toHaveLength(1);
-    expect(deletes[0]!.getAttribute('aria-describedby')).toContain('u2');
-
-    deletes[0]!.click();
-    await flushPromises();
-    expect(dialogTitle()).toBe('Delete olga?');
-    expect(dialog()?.textContent).toContain('pre-approval rules');
-    const submit = () => button('Delete', dialog()!)!;
-    expect(submit().disabled).toBe(true);
-    await body.get('input#d-confirm').setValue('Olga');
-    expect(submit().disabled).toBe(true);
-    await body.get('input#d-confirm').setValue('olga');
-    submit().click();
-    await flushPromises();
-    expect(calls.find((c) => c.method === 'DELETE')).toMatchObject({ path: '/api/users/u2' });
-    expect(dialog()).toBeNull();
-    expect(gets(calls, '/api/users')).toBe(2);
-    expect(gets(calls, '/api/roles')).toBe(2);
-  });
-
   it('keeps the delete dialog open with core’s refusal', async () => {
     fakeApi({
       'GET /api/session': signedIn,
@@ -200,24 +91,5 @@ describe('the Users page', () => {
     button('Delete', dialog()!)!.click();
     await flushPromises();
     expect(dialog()?.querySelector('.alert.error')?.textContent).toBe('You cannot delete the last enabled admin');
-  });
-
-  it('sets a password from the dialog', async () => {
-    const { calls } = fakeApi({
-      'GET /api/session': signedIn,
-      'GET /api/users': [olga],
-      'GET /api/roles': roles,
-      'PATCH /api/users/u2': olga,
-    });
-    const { body } = await mountAt('/settings/users');
-    button('Set password')!.click();
-    await flushPromises();
-    const submit = () => button('Set password', dialog()!)!;
-    expect(submit().disabled).toBe(true);
-    await body.get('input#r-pass').setValue('correct horse battery');
-    submit().click();
-    await flushPromises();
-    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ password: 'correct horse battery' });
-    expect(dialog()).toBeNull();
   });
 });

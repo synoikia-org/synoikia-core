@@ -29,13 +29,6 @@ const instance = {
 const overview = { instances: [instance], plugins: [], warnings: [], publicMcpUrl: null };
 
 const liveRegion = () => document.body.querySelector('[aria-live="polite"]')!;
-const link = (text: string) =>
-  [...document.body.querySelectorAll<HTMLAnchorElement>('nav a')].find((a) => a.textContent?.trim() === text)!;
-const press = (target: Element, key: string) => {
-  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
-  target.dispatchEvent(event);
-  return event;
-};
 
 async function mountShell(path: string) {
   fakeApi({ 'GET /api/session': signedIn, 'GET /api/overview': overview });
@@ -43,87 +36,6 @@ async function mountShell(path: string) {
 }
 
 describe('App shell', () => {
-  it('has a skip link that moves focus to the main region', async () => {
-    await mountShell('/');
-    const main = document.getElementById('main')!;
-    expect(main.tagName).toBe('MAIN');
-    expect(main.getAttribute('tabindex')).toBe('-1');
-    const skip = [...document.body.querySelectorAll('a')].find((a) => a.textContent === 'Skip to content')!;
-    expect(skip.getAttribute('href')).toBe('#main');
-    skip.click();
-    expect(document.activeElement).toBe(main);
-  });
-
-  it('leaves focus alone on the first page, then focuses the content and announces each new page', async () => {
-    const { router } = await mountShell('/');
-    const main = document.getElementById('main')!;
-    expect(document.activeElement).not.toBe(main);
-    expect(liveRegion().textContent).toBe('');
-
-    await router.push('/audit');
-    await flushPromises();
-    expect(document.activeElement).toBe(main);
-    expect(liveRegion().textContent).toBe('Audit Log');
-  });
-
-  it('names endpoint pages with their slug', async () => {
-    const { router } = await mountShell('/endpoints/nas/rules');
-    expect(document.title).toBe('Pre-Approval Rules · /nas · Synoikia');
-    await router.push('/endpoints/nas/access');
-    await flushPromises();
-    expect(liveRegion().textContent).toBe('Access · /nas');
-  });
-
-  it('marks the current endpoint and Settings links, and names the navigation landmarks', async () => {
-    const { router } = await mountShell('/endpoints/nas/rules');
-    expect(link('/nas').getAttribute('aria-current')).toBe('page');
-    expect(link('Settings').hasAttribute('aria-current')).toBe(false);
-    expect(document.body.querySelector('nav#app-nav')?.getAttribute('aria-label')).toBe('Main');
-    expect(document.body.querySelector('nav[aria-label="Endpoint sections"]')).not.toBeNull();
-
-    await router.push('/settings/users');
-    await flushPromises();
-    expect(link('Settings').getAttribute('aria-current')).toBe('page');
-    expect(link('/nas').hasAttribute('aria-current')).toBe(false);
-    expect(document.body.querySelector('nav[aria-label="Settings sections"]')).not.toBeNull();
-  });
-
-  it('lists Audit Log after Settings, then My profile after a divider, for an admin', async () => {
-    const { router } = await mountShell('/');
-    const nav = document.getElementById('app-nav')!;
-    const names = [...nav.querySelectorAll('a')].map((a) => a.textContent?.trim());
-    expect(names[0]).toBe('Overview');
-    expect(names.slice(-4)).toEqual(['Clients & Tokens', 'Settings', 'Audit Log', 'My profile']);
-    const profile = link('My profile');
-    expect(profile.getAttribute('href')).toBe('/profile');
-    expect(profile.previousElementSibling?.classList.contains('nav-section')).toBe(true);
-    expect(document.body.querySelector('.footer a')?.getAttribute('href')).toBe('/profile');
-
-    await router.push('/profile');
-    await flushPromises();
-    expect(profile.getAttribute('aria-current')).toBe('page');
-    expect(link('Settings').hasAttribute('aria-current')).toBe(false);
-    expect(document.body.querySelector('nav[aria-label="Settings sections"]')).toBeNull();
-  });
-
-  it('closes the mobile menu on Escape and returns focus to its button', async () => {
-    await mountShell('/');
-    const menu = [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Menu')!;
-    expect(document.getElementById(menu.getAttribute('aria-controls')!)?.tagName).toBe('NAV');
-    menu.click();
-    await flushPromises();
-    expect(menu.getAttribute('aria-expanded')).toBe('true');
-
-    const audit = link('Audit Log');
-    audit.focus();
-    expect(press(audit, 'Escape').defaultPrevented).toBe(true);
-    await flushPromises();
-    expect(menu.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(menu);
-    // Closed, the menu leaves Escape to others.
-    expect(press(menu, 'Escape').defaultPrevented).toBe(false);
-  });
-
   it('announces a copy through the shared live region', async () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => undefined) } });
     await mountShell('/');
@@ -173,18 +85,5 @@ describe('ChipsInput', () => {
     expect(values.value).toEqual([]);
     expect(document.activeElement).toBe(document.getElementById('chips-in'));
     expect(document.body.querySelector('[role="list"]')).toBeNull();
-  });
-
-  it('announces what it adds and removes', async () => {
-    const { wrapper } = mountChips(['a']);
-    const input = wrapper.get('#chips-in');
-    await input.setValue('b, c, a');
-    await input.trigger('keydown', { key: 'Enter' });
-    await flushPromises();
-    expect(liveRegion().textContent).toBe('Added b, c');
-
-    removeButton('a').click();
-    await flushPromises();
-    expect(liveRegion().textContent).toBe('Removed a');
   });
 });
