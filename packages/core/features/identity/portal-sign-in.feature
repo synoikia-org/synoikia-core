@@ -49,7 +49,6 @@ Feature: Portal sign-in
 
   Rule: The lock starts at the fifth failure
 
-    @backlog
     Scenario: Failures spread over 14 minutes lock the name for 15 minutes from the fifth
       Given user 12 gave a wrong password once, and 4 times more 14 minutes later
       And 10 minutes go by
@@ -82,7 +81,6 @@ Feature: Portal sign-in
       When sign-up, client registration, the consent page and the connection test are each tried
       Then each one is refused as too many attempts
 
-    @backlog
     Scenario: The code step counts toward the budget too
       Given user 12 has an authenticator app
       And people sign in from the address "203.0.113.7"
@@ -104,7 +102,6 @@ Feature: Portal sign-in
       Then the audit log shows that the fifth failure locked user 15
       And the admin got one notification "Sign-in locked"
 
-    @backlog
     Scenario: A wrong code on the consent page is in the audit log
       Given user 12 has an authenticator app
       And user 12 gave their password on the consent page
