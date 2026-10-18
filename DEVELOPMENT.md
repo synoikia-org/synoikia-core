@@ -37,7 +37,7 @@ pnpm build
 pnpm test           # all packages; workspace deps resolve to TS sources, no build needed
 ```
 
-The whole core suite takes about five minutes. While you work, run only the feature folders you change. Run the whole suite before you push, or let CI run it.
+The whole core suite takes about three minutes. While you work, run only the feature folders you change. Run the whole suite before you push, or let CI run it.
 
 ```sh
 pnpm --filter @synoikia/core test:features features/identity                 # one folder
