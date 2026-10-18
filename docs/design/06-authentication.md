@@ -61,7 +61,8 @@ Scenarios: [`@id:user-deletion`](../../packages/core/features/administration/use
 - Five failed sign-ins for a user name in 15 minutes lock that user name. The lock lasts 15 minutes from the fifth failure.
 - Core counts failures for each surface. Failures on the MCP listener sign-in lock the user name there only, never in the admin portal.
 - A budget of 60 attempts in 5 minutes applies to each client IP. It covers password sign-in, its code step and the sign-up form on both listeners. It also covers client registration and the connection test.
-- Core audits sign-in failures and wrong codes as `auth` events, on both surfaces.
+- Wrong codes on the Profile page count toward the lock of the admin portal. This covers new recovery codes and turning off TOTP. While the user name is locked, core answers `429 locked` there and does not check the code.
+- Core audits sign-in failures and wrong codes as `auth` events, on both surfaces. A wrong code is `totp_failed`. On the Profile page, its detail also names the route.
 
 Scenarios: [`@id:first-account`](../../packages/core/features/identity/first-account.feature), [`@id:portal-sign-in`](../../packages/core/features/identity/portal-sign-in.feature), [`@id:portal-sessions`](../../packages/core/features/identity/portal-sessions.feature), [`@id:single-sign-on`](../../packages/core/features/identity/single-sign-on.feature), [`@id:local-sign-in-off`](../../packages/core/features/identity/local-sign-in-off.feature).
 

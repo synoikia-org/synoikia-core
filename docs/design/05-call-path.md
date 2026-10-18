@@ -42,7 +42,7 @@ binding(args)
   │     mode approve: session grant (§5.8) → invoke (auto-approved:grant:<id>)
   │     mode approve: pre-approval rule (never locked) → invoke (auto-approved:rule:<id>)
   ├─ 7. human approval (§5.3), then access checked again            | PERMISSION_DENIED / OPERATION_DISABLED
-  │      classification checked again                               | OPERATION_CHANGED
+  │      operation checked again                                    | OPERATION_CHANGED
   ├─ 8. targets resolved again                                      | TARGETS_CHANGED
   ├─ 9. catalog version checked again, write counted                | PLUGIN_UNAVAILABLE / RATE_LIMITED
   ├─ 10. invoke (plugin)                                            | UPSTREAM_* / PLUGIN_* / INVALID_PARAMS / TIMEOUT
@@ -59,7 +59,7 @@ binding(args)
 | `OPERATION_DISABLED`       | Level `none` (also a write in a group at `read`), a read-only principal, a locked operation without its own `ask`, or a level change while the approval was open. The message gives the reason. |
 | `TARGET_RESOLUTION_FAILED` | The plugin cannot resolve a target.                                                                                                                                                             |
 | `TARGETS_CHANGED`          | The targets are not the targets that the approver saw. The call must be made again.                                                                                                             |
-| `OPERATION_CHANGED`        | The classification of the operation is not the classification that the approver saw. The call must be made again.                                                                               |
+| `OPERATION_CHANGED`        | The operation is not the operation that the approver saw (§5.3, approval rule 12). The call must be made again.                                                                                 |
 | `CONFIG_CONFLICT`          | The object changed after it was read (`prepareWrite`).                                                                                                                                          |
 | `INVALID_PARAMS`           | The plugin refused the parameters of the call.                                                                                                                                                  |
 | `PERMISSION_DENIED`        | A human denied the call, the client declined, the approval timed out or was cancelled, the client cannot show an approval and cannot park, or the client has too many parked executions.        |
@@ -221,7 +221,7 @@ An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`
 9. **Tool annotations.** `search` has `readOnlyHint: true`. `execute` has `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. The gate does not depend on them.
 10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403, also an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides.
 11. **Redacted values.** The approval page shows the same redacted parameters as the audit log. It must not show secrets.
-12. **Classification checked again.** A sync can change an operation from read to write while its approval is open. If the classification or the lock changed, core refuses the call (`OPERATION_CHANGED`). Scenario: [`@id:read-to-write-approval`](../../packages/core/features/approvals/read-to-write-approval.feature).
+12. **Operation checked again.** A sync can change an operation while its approval is open. Core refuses the call (`OPERATION_CHANGED`) if one of these changed: the classification, the lock, the typed confirmation, `sensitiveParams` or `sensitiveResult`. Core redacts the result with the operation as it reads it after the approval. Scenario: [`@id:read-to-write-approval`](../../packages/core/features/approvals/read-to-write-approval.feature).
 13. **Reason in the audit.** An approval that ends without approval gives its reason, for example `user_deleted`, in the audit `detail.reason` of the call.
 
 **Approval states.**
