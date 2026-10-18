@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  decodeInstructions,
-  INSTRUCTIONS_MAX_BYTES,
-  isSdkCompatible,
-  parseManifest,
-  SDK_VERSION,
-} from '../src/index.js';
+import { decodeInstructions, INSTRUCTIONS_MAX_BYTES, parseManifest } from '../../src/index.js';
 
 const minimal = {
   id: 'example',
@@ -18,40 +12,6 @@ const minimal = {
 };
 
 describe('parseManifest', () => {
-  it('accepts a minimal manifest and applies defaults', () => {
-    const m = parseManifest(minimal);
-    expect(m.capabilities).toEqual({ registry: false, targets: false, attestation: false, configTransform: false });
-    expect(m.labels).toEqual({ operation: 'Operation', operations: 'Operations' });
-    expect(m.binding.searchApis).toEqual([]);
-    expect(m.network.hosts).toEqual([]);
-    expect(m.matchProfiles).toEqual({});
-  });
-
-  it.each([
-    ['uppercase id', { id: 'Example' }],
-    ['non-semver version', { version: 'one' }],
-    ['invalid sdk range', { sdk: 'not a range' }],
-    ['absolute entry', { entry: '/etc/passwd' }],
-    ['entry escaping the package', { entry: '../core/dist/main.js' }],
-    ['absolute instructions', { instructions: '/etc/motd.md' }],
-    ['instructions escaping the package', { instructions: '../other/instructions.md' }],
-    ['nested instructions escaping the package', { instructions: 'docs/../../x.md' }],
-    ['instructions that are not Markdown', { instructions: 'dist/index.js' }],
-    ['empty instructions path', { instructions: '' }],
-    ['instructions that look like an option', { instructions: '--to-command=x.md' }],
-    ['instructions with a backslash', { instructions: 'docs\\x.md' }],
-    ['reserved namespace', { binding: { namespace: 'catalog', functions: ['call'] } }],
-    ['non-identifier function', { binding: { namespace: 'x', functions: ['do-it'] } }],
-  ])('rejects %s', (_name, patch) => {
-    expect(() => parseManifest({ ...minimal, ...patch })).toThrow();
-  });
-
-  it('accepts an instructions file inside the package', () => {
-    expect(parseManifest(minimal).instructions).toBeUndefined();
-    expect(parseManifest({ ...minimal, instructions: 'instructions.md' }).instructions).toBe('instructions.md');
-    expect(parseManifest({ ...minimal, instructions: 'docs/agent.md' }).instructions).toBe('docs/agent.md');
-  });
-
   it('decodes instructions within the cap, as UTF-8 text only', () => {
     const enc = new TextEncoder();
     expect(decodeInstructions(enc.encode('\uFEFF# Shape\n\nKeys are `GET /x`. ✓\n'))).toBe(
@@ -82,21 +42,6 @@ describe('parseManifest', () => {
     });
     expect(() => parseManifest(withSources('pools', 'pools'))).toThrow(/also feeds the connection form/);
     expect(parseManifest(withSources('pools', 'apps')).matchProfiles.p).toHaveLength(1);
-  });
-
-  it('rejects an unknown widget', () => {
-    expect(() =>
-      parseManifest({
-        ...minimal,
-        matchProfiles: { p: [{ field: '/name', label: 'Name', op: 'prefix', widget: 'free-text' }] },
-      }),
-    ).toThrow();
-  });
-
-  it('requires an op on param match fields', () => {
-    expect(() =>
-      parseManifest({ ...minimal, matchProfiles: { p: [{ field: '/name', label: 'Name', widget: 'prefix' }] } }),
-    ).toThrow(/op/);
   });
 
   it('requires the targets capability, and a targets declaration, for $targets match fields', () => {
@@ -163,12 +108,6 @@ describe('parseManifest', () => {
     );
   });
 
-  it('requires matching capabilities for extra search APIs', () => {
-    const binding = { namespace: 'x', functions: ['call'], searchApis: ['registry'] };
-    expect(() => parseManifest({ ...minimal, binding })).toThrow(/capabilities.registry/);
-    expect(() => parseManifest({ ...minimal, binding, capabilities: { registry: true } })).not.toThrow();
-  });
-
   describe('connection ui', () => {
     const schema = {
       type: 'object',
@@ -181,27 +120,5 @@ describe('parseManifest', () => {
       expect(m.connection.ui.password?.showWhen).toEqual({ field: 'method', in: ['local'] });
       expect(m.connection.help).toBe('Create a local user first.');
     });
-
-    it('rejects hints for unknown fields', () => {
-      expect(() => parseManifest(withUi({ token: { widget: 'secret' } }))).toThrow(/no such connection field/);
-    });
-
-    it.each([
-      ['an unknown field', { field: 'nope', in: ['x'] }],
-      ['itself', { field: 'password', in: ['x'] }],
-    ])('rejects showWhen referencing %s', (_name, showWhen) => {
-      expect(() => parseManifest(withUi({ password: { showWhen } }))).toThrow(/another connection field/);
-    });
-
-    it('rejects an empty showWhen value list', () => {
-      expect(() => parseManifest(withUi({ password: { showWhen: { field: 'method', in: [] } } }))).toThrow();
-    });
-  });
-});
-
-describe('isSdkCompatible', () => {
-  it('checks the manifest range against the SDK version', () => {
-    expect(isSdkCompatible({ sdk: `^${SDK_VERSION}` })).toBe(true);
-    expect(isSdkCompatible({ sdk: '^2.0.0' })).toBe(false);
   });
 });

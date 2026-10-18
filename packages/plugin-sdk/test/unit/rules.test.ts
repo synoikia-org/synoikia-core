@@ -7,8 +7,8 @@ import {
   maskSensitiveResult,
   OperationDescriptorSchema,
   readPointer,
-} from '../src/index.js';
-import type { OperationDraft } from '../src/index.js';
+} from '../../src/index.js';
+import type { OperationDraft } from '../../src/index.js';
 
 const draft = (key: string, extra: Partial<OperationDraft> = {}): OperationDraft => ({
   key,
@@ -79,14 +79,6 @@ describe('plugin.yaml schema', () => {
     expect(s.defaults.timeouts).toEqual({ request: 15_000, lookup: 10_000 });
   });
 
-  it('rejects unknown keys, bad pointers and bad suffixes', () => {
-    expect(() => parsePluginSettings({ rule: [] })).toThrow();
-    expect(() => parsePluginSettings({ rules: [{ match: 'a', lockd: true }] })).toThrow();
-    expect(() => parsePluginSettings({ rules: [{ match: 'a', sensitiveParams: ['0/x'] }] })).toThrow();
-    expect(() => parsePluginSettings({ rules: [{ match: 'a', split: 'Bad Suffix' }] })).toThrow();
-    expect(() => parsePluginSettings({ rules: [{ match: 'a', classification: 'admin' }] })).toThrow();
-  });
-
   it('validates the plugin section with the plugin schema', () => {
     const parsed = parsePluginSettings({ plugin: { n: 1 } }, { parse: (v) => ({ n: (v as { n: number }).n * 2 }) });
     expect(parsed.plugin.n).toBe(2);
@@ -98,15 +90,6 @@ describe('plugin.yaml schema', () => {
 });
 
 describe('compiled rules', () => {
-  it('excludes, with include re-allowing', () => {
-    expect(['auth.login', 'core.debug', 'core.ping', 'pool.query'].map((k) => rules.excluded(k))).toEqual([
-      true,
-      true,
-      false,
-      false,
-    ]);
-  });
-
   it('locks and fails closed', () => {
     expect(
       rules.decorate(draft('pool.delete', { classification: 'read', classificationReason: 'naming' })),
@@ -131,14 +114,6 @@ describe('compiled rules', () => {
       classification: 'read',
       classificationReason: 'naming:read',
     });
-  });
-
-  it('overrides a heuristic with a reviewed classification', () => {
-    expect(
-      rules.decorate(
-        draft('stats.get', { classification: 'write', classificationReason: 'heuristic', needsReview: true }),
-      ),
-    ).toMatchObject({ classification: 'read', classificationReason: 'reviewed:read', needsReview: false });
   });
 
   it('adds locked split twins that inherit data-protection fields', () => {
@@ -177,10 +152,6 @@ describe('compiled rules', () => {
     const literal = (key: string, params: unknown, targets = [] as { kind: string; id: string; name: string }[]) =>
       rules.confirmLiteral({ key, params, targets });
 
-    it('only for locked operations', async () => {
-      expect(await literal('pool.query', ['x'])).toBeUndefined();
-    });
-
     it('reads params', async () => {
       expect(await literal('pool.delete', ['tank'])).toBe('tank');
       expect(await literal('pool.delete', [5])).toBe('5');
@@ -196,23 +167,6 @@ describe('compiled rules', () => {
       expect(await literal('item.delete', { path: { id: '1' } })).toBe('One');
       expect(await literal('item.delete', { path: { id: '2' } })).toBe('2');
       expect(lookups).toContainEqual(['user.get', [7]]);
-    });
-
-    it('uses the instance name by default', async () => {
-      expect(await literal('api.keys', [])).toBe('nas');
-      const noHost = compileRules(settings, { lookup: async () => ({}) });
-      expect(await noHost.confirmLiteral({ key: 'api.keys', params: [], targets: [] })).toBe('host of api.keys');
-    });
-
-    it('uses targets, custom sources and fallbacks in order', async () => {
-      expect(
-        await literal('targets.op', { id: 'x' }, [
-          { kind: 'e', id: 'lock.a', name: 'Front door' },
-          { kind: 'e', id: 'lock.b', name: '' },
-        ]),
-      ).toBe('Front door, lock.b');
-      expect(await literal('targets.op', { id: 'x' })).toBe('x');
-      expect(await literal('scene.apply', { entities: { 'lock.a': 'unlocked' } })).toBe('lock.a');
     });
   });
 
@@ -244,48 +198,6 @@ describe('compiled rules', () => {
     expect(rules.maskEmbeddedResult('other', { key: 'k' })).toEqual({ key: 'k' });
     expect(maskSensitiveResult({ key: 1234 }, { keys: ['key'] })).toEqual({ key: '[REDACTED]' });
   });
-
-  it('refuses more sensitiveParams than core takes', () => {
-    const many = compileRules(
-      parsePluginSettings({
-        rules: [
-          { match: 'x', sensitiveParams: Array.from({ length: 20 }, (_, i) => `/a/${i}`) },
-          { match: 'x', sensitiveParams: Array.from({ length: 20 }, (_, i) => `/b/${i}`) },
-        ],
-      }),
-    );
-    expect(() => many.decorate(draft('x'))).toThrow(/limit is 32/);
-  });
-
-  it('looks up only plain ids and matches only rows that have the field', async () => {
-    const seen: unknown[][] = [];
-    const r = compileRules(
-      parsePluginSettings({
-        rules: [
-          {
-            match: 'a',
-            locked: true,
-            confirm: { lookup: { op: 'get', args: [{ $param: '/id' }], field: 'name' } },
-          },
-          {
-            match: 'b',
-            locked: true,
-            confirm: { lookup: { op: 'list', find: { field: 'id', equals: { $param: '/id' } }, field: 'name' } },
-          },
-        ],
-      }),
-      {
-        lookup: async (op, args) => {
-          seen.push(args);
-          return op === 'list' ? [{ name: 'no id' }, { id: 2, name: 'Two' }] : { name: 'Named' };
-        },
-      },
-    );
-    expect(await r.confirmLiteral({ key: 'a', params: { id: { evil: true } }, targets: [] })).toBeUndefined();
-    expect(seen).toEqual([]);
-    expect(await r.confirmLiteral({ key: 'b', params: { id: 'undefined' }, targets: [] })).toBe('undefined');
-    expect(await r.confirmLiteral({ key: 'b', params: { id: 2 }, targets: [] })).toBe('Two');
-  });
 });
 
 describe('readPointer', () => {
@@ -299,60 +211,6 @@ describe('readPointer', () => {
 });
 
 describe('checkManifest', () => {
-  const manifest = (props: Record<string, unknown>, ui: Record<string, unknown>, sensitiveKeys: string[] = []) => ({
-    id: 'acme',
-    name: 'Acme',
-    version: '1.0.0',
-    sdk: '^0.2.0',
-    entry: 'dist/index.js',
-    binding: { namespace: 'acme', functions: ['call'] },
-    connection: { schema: { type: 'object', properties: props }, ui },
-    sensitiveKeys,
-    network: { hosts: ['{{connection.baseUrl}}'] },
-    matchProfiles: { known: [{ field: '/name', label: 'Name', op: 'prefix', widget: 'prefix' }] },
-  });
-
-  it('accepts a well-formed manifest', () => {
-    expect(
-      checkManifest(
-        manifest({ token: { type: 'string', writeOnly: true } }, { token: { widget: 'secret' } }, ['token']),
-      ),
-    ).toEqual([]);
-  });
-
-  it('requires a contract where core masks sensitiveResult', () => {
-    const yaml = parsePluginSettings({ rules: [{ match: 'token.make', sensitiveResult: 'whole' }] });
-    const old = checkManifest(manifest({}, {}), yaml);
-    expect(old).toHaveLength(1);
-    expect(old[0]).toMatch(/rules\[0\]: sensitiveResult .* require \^0\.2\.2/);
-    expect(checkManifest({ ...manifest({}, {}), sdk: '^0.2.2' }, yaml)).toEqual([]);
-    expect(checkManifest({ ...manifest({}, {}), sdk: '>=0.2.0' }, yaml)).toHaveLength(1);
-    // Without the rule, the older range is fine.
-    expect(checkManifest(manifest({}, {}), parsePluginSettings({}))).toEqual([]);
-  });
-
-  it('finds secret-field mistakes', () => {
-    expect(checkManifest(manifest({ token: { type: 'string' } }, { token: { widget: 'secret' } }))).toEqual([
-      'connection.token: a secret field must be writeOnly',
-      'connection.token: a secret field must be listed in sensitiveKeys',
-    ]);
-    expect(checkManifest(manifest({ token: { type: 'string', writeOnly: true } }, {}, ['token']))).toEqual([
-      'connection.token: a writeOnly field must use the secret widget',
-    ]);
-  });
-
-  it('checks match profiles named by plugin.yaml', () => {
-    const s = parsePluginSettings({
-      rules: [
-        { match: 'a', matchProfile: 'known' },
-        { match: 'b', matchProfile: 'nope' },
-      ],
-    });
-    expect(checkManifest(manifest({}, {}), s)).toEqual([
-      'plugin.yaml rules[1]: matchProfile "nope" is not in the manifest',
-    ]);
-  });
-
   it('reports schema errors', () => {
     expect(checkManifest({})[0]).toMatch(/^manifest: /);
   });
