@@ -15,11 +15,11 @@ import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
 import { pendingApprovals, pluginInstances, plugins } from '../db/schema.js';
 import { isValidSlug } from '../endpoints/slug.js';
-import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
+import { BadGatewayError, ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import type { CoreEvents } from '../events.js';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../gate/redact.js';
 import type { InstanceRuntime } from '../gate/pipeline.js';
-import { PluginProcess, PluginUnavailableError } from '../plugins/process.js';
+import { PluginProcess, PluginTimeoutError, PluginUnavailableError } from '../plugins/process.js';
 import { getSettings } from '../settings.js';
 import { PluginSupervisor } from '../plugins/supervisor.js';
 import type { InstanceStatus } from '../plugins/supervisor.js';
@@ -743,11 +743,8 @@ export class InstanceManager {
         return summary;
       } catch (err) {
         const message = this.scrubError(instanceId, err instanceof Error ? err.message : String(err));
-        this.db
-          .update(pluginInstances)
-          .set({ lastSyncStatus: `error: ${message}`.slice(0, 500) })
-          .where(eq(pluginInstances.id, instanceId))
-          .run();
+        const lastSyncStatus = `error: ${message}`.slice(0, 500);
+        this.db.update(pluginInstances).set({ lastSyncStatus }).where(eq(pluginInstances.id, instanceId)).run();
         writeAudit(this.db, {
           kind: 'plugin',
           instanceId,
@@ -759,7 +756,8 @@ export class InstanceManager {
         // Without any catalog the endpoint can't serve at all: show that, not a misleading "ready".
         if (!row.lastSyncedAt && live.supervisor.status === 'ready')
           this.setStatus(instanceId, 'error', `First catalog sync failed: ${message}`.slice(0, 500));
-        throw err;
+        if (err instanceof PluginUnavailableError || err instanceof PluginTimeoutError) throw err;
+        throw new BadGatewayError('sync_failed', lastSyncStatus.slice('error: '.length));
       } finally {
         live.syncing = undefined;
       }
