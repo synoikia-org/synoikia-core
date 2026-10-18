@@ -6,7 +6,7 @@ import { writeAudit } from '../../audit.js';
 import type { SessionLimits } from '../../auth/sessions.js';
 import { randomToken, safeEqual, signPayload, verifyPayload } from '../../auth/tokens.js';
 import type { UserRow } from '../../auth/users.js';
-import { ConflictError } from '../../errors.js';
+import { ConflictError, ServiceError } from '../../errors.js';
 import { getSettings } from '../../settings.js';
 import { clientIp, isSecure, readJson, requestOrigin } from '../common.js';
 
@@ -143,7 +143,7 @@ async function withProfileCode<T>(
   verify: (user: UserRow, code: string) => T | null | false,
   done: (result: T) => Response,
 ): Promise<Response> {
-  const { code } = await readJson(c, z.object({ code: z.string() }));
+  const { code } = await readJson(c, z.object({ code: z.string().max(32) }));
   const user = c.get('user');
   const lockedFor = ctx.throttle.lockedFor(user.username);
   if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
@@ -382,10 +382,27 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/profile/password', async (c) => {
     const body = await readJson(c, z.object({ currentPassword: z.string().optional(), newPassword: z.string() }));
     const user = c.get('user');
-    await ctx.users.setPassword(user.id, body.newPassword, {
-      currentPassword: body.currentPassword ?? '',
-      actorId: user.id,
-    });
+    // The current password is a guess like a sign-in: it counts toward the name's lock (§6.1).
+    const lockedFor = ctx.throttle.lockedFor(user.username);
+    if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
+    try {
+      await ctx.users.setPassword(user.id, body.newPassword, {
+        currentPassword: body.currentPassword ?? '',
+        actorId: user.id,
+      });
+    } catch (err) {
+      if (err instanceof ServiceError && err.code === 'wrong_password') {
+        if (ctx.throttle.fail(user.username)) ctx.events.emit('auth.lockout', { username: user.username });
+        writeAudit(ctx.db, {
+          kind: 'auth',
+          decision: 'password_failed',
+          actorKind: 'system',
+          detail: { username: user.username, route: c.req.path },
+        });
+      }
+      throw err;
+    }
+    ctx.throttle.succeed(user.username);
     ctx.sessions.revokeUser(user.id, c.get('sessionRaw'));
     ctx.oauth.revokeUserGrants(user.id, 'password_changed', { userId: user.id });
     return c.json({ status: 'ok' });
