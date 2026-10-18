@@ -102,6 +102,7 @@ Feature: Parked executions
       Then the app of agent 7 showed two forms
       And the list "Groceries" holds the open tasks "milk", "bread", "eggs" and "jam"
 
+    @long-running
     Scenario: The eleventh approval of one run is refused at once
       Given the admin gives "count the tasks" its own level ask
       When the code of agent 7 counts "Groceries" eleven times, and the admin approves each count
