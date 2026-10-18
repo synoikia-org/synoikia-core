@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,6 +104,31 @@ export type PageBrowser = ReturnType<SynoikiaWorld['pageBrowser']>;
 export const csrfOf = (html: string) => /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// A data directory with the migrated database, the World's admin and the key file, built once per process and
+// copied for each scenario: a fresh core costs migrations and a password hash otherwise.
+const TEMPLATE = path.join(tmpdir(), `synoikia-world-template-${process.pid}`);
+let template: Promise<string> | undefined;
+
+async function buildTemplate(): Promise<string> {
+  if (existsSync(path.join(TEMPLATE, '.ready'))) return TEMPLATE;
+  const dir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-build-'));
+  cpSync(PLUGINS, path.join(dir, 'plugins'), { recursive: true });
+  const ctx = await createAppContext(
+    loadConfig({
+      DATA_DIR: dir,
+      ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
+      ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
+    }),
+    { log: createLogger('error', () => undefined) },
+  );
+  await ctx.stop();
+  writeFileSync(path.join(dir, '.ready'), '');
+  rmSync(TEMPLATE, { recursive: true, force: true });
+  renameSync(dir, TEMPLATE);
+  process.once('exit', () => rmSync(TEMPLATE, { recursive: true, force: true }));
+  return TEMPLATE;
+}
 
 // The process clock: `passTime` moves it with core's clock, for the parts of core that read the wall time.
 const realNow = Date.now.bind(Date);
@@ -224,7 +249,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
     if (info.tags.includes('@long-running')) info.config.stepTimeout = 20_000;
     this.upstream = await startFakeHttp({ routes: this.upstreamRoutes(), guard: (req) => this.guardUpstream(req) });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
-    cpSync(PLUGINS, path.join(this.dataDir, 'plugins'), { recursive: true });
+    cpSync(await (template ??= buildTemplate()), this.dataDir, { recursive: true });
+    rmSync(path.join(this.dataDir, '.ready'));
+    // The template holds the admin already.
+    this.bootstrapAdmin = false;
     await this.startCore();
     this.admin = await this.portal(ADMIN.username, ADMIN.password);
     const me = await this.expectOk(this.admin.get('/api/profile'), 'read profile');
