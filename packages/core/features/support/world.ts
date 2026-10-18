@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createServer } from 'node:net';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -87,13 +88,55 @@ export interface PageResponse {
   csp: string;
   /** The cookies the page set. */
   cookies: string[];
+  /** Where the page sends the browser next, if anywhere. */
+  location?: string | null;
   html: string;
 }
+
+/** A browser on the MCP listener, from `pageBrowser`. */
+export type PageBrowser = ReturnType<SynoikiaWorld['pageBrowser']>;
 
 /** The form token of a page of the MCP listener. */
 export const csrfOf = (html: string) => /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The process clock: `passTime` moves it with core's clock, for the parts of core that read the wall time.
+const realNow = Date.now.bind(Date);
+let wallShiftMs = 0;
+Date.now = () => realNow() + wallShiftMs;
+
+/** The RFC 6238 code (SHA-1, 6 digits, 30 s) of an authenticator app with this base32 secret, `steps` periods from now. */
+export function totpCode(secret: string, steps = 0) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const ch of secret.replace(/=+$/, '')) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');
+  const key = Buffer.from(bits.match(/.{8}/g)!.map((b) => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + steps));
+  const mac = createHmac('sha1', key).update(counter).digest();
+  const offset = mac[mac.length - 1]! & 0x0f;
+  return String((mac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0');
+}
+
+/** What "Acme ID" says about the person who signs in there next. */
+export interface AcmeIdentity {
+  sub: string;
+  email?: string;
+  email_verified?: boolean;
+  groups?: string[];
+  preferred_username?: string;
+}
+
+/** The fake identity provider "Acme ID": discovery, keys, sign-in and a token service with signed ID tokens. */
+export interface AcmeId {
+  issuer: string;
+  clientId: string;
+  /** Who signs in at Acme ID next. */
+  next: AcmeIdentity;
+  /** When set, Acme ID refuses every code with this reason. */
+  refuse?: string;
+}
 
 /** Polls `check` until it holds, for at most `ms`. */
 export async function eventually(check: () => boolean | Promise<boolean>, what: string, ms = 5000) {
@@ -158,6 +201,11 @@ export class SynoikiaWorld extends QuickPickleWorld {
   clockMs = 0;
   /** What the last refused portal change answered. */
   portalAnswer: { status: number; body: Record<string, unknown> } = { status: 0, body: {} };
+  /** Start-up settings core gets on top of the World's own, kept across restarts. */
+  coreEnv: Record<string, string> = {};
+  /** Whether core starts with the World's admin from its start-up settings. */
+  bootstrapAdmin = true;
+  acme?: AcmeId;
 
   async init() {
     await super.init();
@@ -181,10 +229,17 @@ export class SynoikiaWorld extends QuickPickleWorld {
         MCP_PORT: '0',
         ADMIN_HOST: '127.0.0.1',
         ADMIN_PORT: '0',
-        ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
-        ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
+        ...(this.bootstrapAdmin
+          ? { ADMIN_BOOTSTRAP_USERNAME: ADMIN.username, ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password }
+          : {}),
+        ...this.coreEnv,
       }),
-      { formFallbackMs: FORM_WAIT_MS, now: () => new Date(Date.now() + this.clockMs), ...opts },
+      {
+        formFallbackMs: FORM_WAIT_MS,
+        now: () => new Date(realNow() + this.clockMs),
+        oidcAllowInsecure: true,
+        ...opts,
+      },
     );
     await this.ctx.start();
     this.servers = await startServers(this.ctx);
@@ -202,8 +257,15 @@ export class SynoikiaWorld extends QuickPickleWorld {
       );
   }
 
-  /** Stops core and starts it again on the same data; agents open new sessions, portal sign-ins stay. */
-  async restartCore() {
+  /** Moves core's clock and the process clock ahead; nobody signs in again. */
+  passTime(ms: number) {
+    this.clockMs += ms;
+    wallShiftMs += ms;
+  }
+
+  /** Stops core and starts it again on the same data, with `env` added to its start-up settings; agents open new
+   * sessions, portal sign-ins stay. */
+  async restartCore(env: Record<string, string> = {}) {
     for (const agent of this.agents.values()) {
       await agent.client?.close().catch(() => undefined);
       agent.client = undefined;
@@ -211,10 +273,38 @@ export class SynoikiaWorld extends QuickPickleWorld {
     }
     await this.servers?.close();
     await this.ctx?.stop();
+    Object.assign(this.coreEnv, env);
     await this.startCore();
   }
 
+  /** A new server: core on an empty data directory, without the World's admin or anyone else. */
+  async freshCore() {
+    await this.servers?.close();
+    await this.ctx?.stop();
+    rmSync(this.dataDir, { recursive: true, force: true });
+    this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
+    cpSync(PLUGINS, path.join(this.dataDir, 'plugins'), { recursive: true });
+    this.people.clear();
+    this.roles.clear();
+    this.instances.clear();
+    this.bootstrapAdmin = false;
+    await this.startCore();
+  }
+
+  /** Restarts core with a public address for its MCP listener, which OAuth and the consent page need. */
+  async publicMcpAddress() {
+    if (this.coreEnv.PUBLIC_MCP_URL) return;
+    const port = await new Promise<number>((resolve) => {
+      const probe = createServer().listen(0, '127.0.0.1', () => {
+        const { port } = probe.address() as { port: number };
+        probe.close(() => resolve(port));
+      });
+    });
+    await this.restartCore({ MCP_PORT: String(port), PUBLIC_MCP_URL: `http://127.0.0.1:${port}` });
+  }
+
   async stop() {
+    wallShiftMs = 0;
     for (const undo of this.cleanups.splice(0).reverse()) await undo().catch(() => undefined);
     for (const agent of this.agents.values()) await agent.client?.close().catch(() => undefined);
     for (const client of this.oldClients) await client.close().catch(() => undefined);
@@ -382,10 +472,153 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
   /** A portal session in its own browser, signed in with a password. */
   async portal(username: string, password: string) {
-    const page = browser({ request: (p, init) => fetch(`${this.adminBase}${String(p)}`, init) });
-    await page.init();
+    const page = await this.portalBrowser();
     await this.expectOk(page.post('/auth/login', { username, password }), `sign in as ${username}`);
     return page;
+  }
+
+  /** A fresh browser on the portal, with nobody signed in; `headers` go with every request. */
+  async portalBrowser(headers: Record<string, string> = {}) {
+    const page = browser({
+      request: (p, init) =>
+        fetch(`${this.adminBase}${String(p)}`, {
+          ...init,
+          redirect: 'manual',
+          headers: { ...headers, ...(init?.headers as Record<string, string>) },
+        }),
+    });
+    await page.init();
+    return page;
+  }
+
+  /** A webhook inbox of the admin that gets the notifications of `events`; the World keeps what arrives. */
+  async notificationInbox(events: string[]) {
+    const inbox: { title: string; message: string; event: string }[] = [];
+    const hook = await startFakeHttp({
+      routes: {
+        'POST /inbox': (req) => {
+          inbox.push(req.body as (typeof inbox)[number]);
+          return { body: {} };
+        },
+      },
+    });
+    this.cleanups.push(() => hook.close());
+    await this.expectOk(
+      this.admin.post('/api/notifiers', {
+        kind: 'webhook',
+        name: 'Admin inbox',
+        config: { url: `${hook.url}/inbox` },
+        events,
+      }),
+      'add notification channel',
+    );
+    return inbox;
+  }
+
+  // ── the identity provider "Acme ID" ──
+
+  /** Starts Acme ID once for the scenario; core does not use it until the admin sets it up. */
+  async acmeId() {
+    if (this.acme) return this.acme;
+    const { publicKey, privateKey } = await generateKeyPair('RS256');
+    const jwk = { ...(await exportJWK(publicKey)), kid: 'acme-id-1', alg: 'RS256', use: 'sig' };
+    const codes = new Map<string, { nonce: string; who: AcmeIdentity; redirectUri: string }>();
+    const acme: AcmeId = { issuer: '', clientId: 'synoikia', next: { sub: 'nobody' } };
+    const idp = await startFakeHttp({
+      routes: {
+        'GET /.well-known/openid-configuration': () => ({
+          body: {
+            issuer: acme.issuer,
+            authorization_endpoint: `${acme.issuer}/authorize`,
+            token_endpoint: `${acme.issuer}/token`,
+            jwks_uri: `${acme.issuer}/jwks`,
+            response_types_supported: ['code'],
+            subject_types_supported: ['public'],
+            id_token_signing_alg_values_supported: ['RS256'],
+            code_challenge_methods_supported: ['S256'],
+          },
+        }),
+        'GET /jwks': () => ({ body: { keys: [jwk] } }),
+        'GET /authorize': (req) => {
+          const code = randomBytes(12).toString('hex');
+          const redirectUri = req.query.get('redirect_uri')!;
+          codes.set(code, { nonce: req.query.get('nonce')!, who: { ...acme.next }, redirectUri });
+          const back = new URL(redirectUri);
+          back.searchParams.set('code', code);
+          back.searchParams.set('state', req.query.get('state')!);
+          back.searchParams.set('iss', acme.issuer);
+          return { status: 302, headers: { location: back.toString() } };
+        },
+        'POST /token': async (req) => {
+          const form = new URLSearchParams(String(req.body));
+          const grant = codes.get(form.get('code') ?? '');
+          codes.delete(form.get('code') ?? '');
+          if (acme.refuse) return { status: 400, body: { error: 'invalid_grant', error_description: acme.refuse } };
+          if (!grant || !form.get('code_verifier') || form.get('redirect_uri') !== grant.redirectUri)
+            return { status: 400, body: { error: 'invalid_grant' } };
+          const { sub, ...claims } = grant.who;
+          const idToken = await new SignJWT({ nonce: grant.nonce, ...claims })
+            .setProtectedHeader({ alg: 'RS256', kid: 'acme-id-1' })
+            .setIssuer(acme.issuer)
+            .setSubject(sub)
+            .setAudience(acme.clientId)
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(privateKey);
+          return { body: { access_token: 'acme-at', token_type: 'Bearer', id_token: idToken, expires_in: 300 } };
+        },
+      },
+    });
+    acme.issuer = idp.url;
+    this.cleanups.push(() => idp.close());
+    return (this.acme = acme);
+  }
+
+  /** The admin points core's single sign-on at Acme ID; `settings` adds to or changes what is saved. */
+  async setUpAcmeId(settings: Record<string, unknown> = {}) {
+    const acme = await this.acmeId();
+    await this.expectOk(
+      this.admin.put('/api/settings/oidc', {
+        enabled: true,
+        issuer: acme.issuer,
+        clientId: acme.clientId,
+        label: 'Acme ID',
+        ...settings,
+      }),
+      'set up Acme ID',
+    );
+  }
+
+  /** The identity Acme ID keeps for a person of the World: subject `acme-12` and a verified address for user 12. */
+  acmeIdentityOf(person: string): AcmeIdentity {
+    const known = this.people.get(person);
+    const username = known?.username ?? `${person.replace(/\s+/g, '')}@acme.example`;
+    return { sub: `acme-${person.replace(/\D+/g, '') || person}`, email: username, email_verified: true, groups: [] };
+  }
+
+  /** A browser that follows redirects by hand from `start`, through core and Acme ID, keeping its cookies for core.
+   * It stops on a page of the portal app, on a page without a redirect, or where `stop` says. */
+  async follow(on: Portal | PageBrowser, start: string, stop: (at: URL) => boolean = () => false) {
+    const portal = 'jar' in on && 'req' in on;
+    const base = portal ? this.adminBase : this.mcpBase;
+    let at = new URL(start, base);
+    for (let hop = 0; hop < 10; hop++) {
+      const own = at.origin === base;
+      if (stop(at) || (own && portal && !at.pathname.startsWith('/auth/'))) return { status: 0, url: at, html: '' };
+      let got: { status: number; location?: string | null; html: string };
+      if (!own) {
+        const res = await fetch(at, { redirect: 'manual' });
+        got = { status: res.status, location: res.headers.get('location'), html: await res.text() };
+      } else if (portal) {
+        const res = await on.get(at.pathname + at.search);
+        got = { status: res.status, location: res.headers.get('location'), html: await res.text() };
+      } else got = await on.send(at.pathname + at.search);
+      const next =
+        got.location ?? /http-equiv="refresh" content="0;url=([^"]+)"/.exec(got.html)?.[1]?.replace(/&amp;/g, '&');
+      if (!next) return { status: got.status, url: at, html: got.html };
+      at = new URL(next, at);
+    }
+    throw new Error(`too many redirects from ${start}`);
   }
 
   /** The instance "slug" of the World's "Acme Tasks" plugin, created and synced through the Admin API. */
@@ -811,6 +1044,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         status: res.status,
         csp: res.headers.get('content-security-policy') ?? '',
         cookies: res.headers.getSetCookie(),
+        location: res.headers.get('location'),
         html: await res.text(),
       };
       return page;

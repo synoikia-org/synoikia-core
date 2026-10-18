@@ -16,3 +16,8 @@ import '../approvals/steps/session-grants.steps.js';
 import '../approvals/steps/read-to-write-approval.steps.js';
 import '../sandbox/steps/sandbox.steps.js';
 import '../redaction/steps/redaction.steps.js';
+import '../identity/steps/first-account.steps.js';
+import '../identity/steps/portal-sign-in.steps.js';
+import '../identity/steps/portal-sessions.steps.js';
+import '../identity/steps/single-sign-on.steps.js';
+import '../identity/steps/local-sign-in-off.steps.js';
