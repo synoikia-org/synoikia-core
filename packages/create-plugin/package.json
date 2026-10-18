@@ -32,7 +32,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --project unit",
+    "test:features": "vitest run --project features"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
@@ -53,6 +54,7 @@
   "devDependencies": {
     "@synoikia/core": "workspace:^",
     "@types/ws": "^8.18.1",
+    "quickpickle": "1.11.2",
     "ws": "^8.22.0"
   }
 }
