@@ -27,7 +27,7 @@ Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @syno
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across six runners. The `test` job runs every other test. Locally, run them in this order:
+CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across six runners. The `e2e-ui` job runs the portal's scenarios in Chromium. The `test` job runs every other test. Locally, run them in this order:
 
 ```sh
 pnpm lint
@@ -42,6 +42,7 @@ The whole core suite takes about five minutes. While you work, run only the feat
 ```sh
 pnpm --filter @synoikia/core test:features features/identity                 # one folder
 pnpm --filter @synoikia/core test:features features/identity features/approvals   # several folders
+pnpm --filter @synoikia/admin-ui test:features                              # the portal in Chromium, against a real core
 ```
 
 The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
@@ -62,6 +63,8 @@ pnpm --filter @synoikia/core test:coverage                        # enforces the
 ## Feature files
 
 Core's feature files are in `packages/core/features/`. Quickpickle runs them in vitest, in the `features` project of `packages/core/vitest.config.ts`. `features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
+
+The portal's feature files are in `packages/admin-ui/features/`. Their World builds the portal once and starts core with it for each scenario. Steps drive the portal in Chromium through Playwright, by roles, labels and visible text. CI installs Chromium with `pnpm --filter @synoikia/admin-ui exec playwright install --with-deps chromium`.
 
 ## Architecture model
 
