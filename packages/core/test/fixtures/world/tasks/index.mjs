@@ -5,10 +5,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation`, `count-is-write` (the count
-// syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON) and `diff-path` (`dot` or `bare`)
-// change what the plugin answers, and a new `restart` value restarts the child once.
+// syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON), `diff-path` (`dot` or `bare`)
+// and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
+// restarts the child once.
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
+const upstreamVersion = () => flagValue('upstream-version') || '1.0';
 
 const op = (key, displayName, group, classification, extra = {}) => ({
   key,
@@ -178,9 +180,9 @@ const handlers = {
     secrets = params.secrets ?? {};
     reply(id);
   },
-  testConnection: (id) => reply(id, { ok: true, upstreamVersion: '1.0' }),
-  getUpstreamVersion: (id) => reply(id, '1.0'),
-  syncCatalog: async (id) => reply(id, { upstreamVersion: '1.0', operations: await catalog() }),
+  testConnection: (id) => reply(id, { ok: true, upstreamVersion: upstreamVersion() }),
+  getUpstreamVersion: (id) => reply(id, upstreamVersion()),
+  syncCatalog: async (id) => reply(id, { upstreamVersion: upstreamVersion(), operations: await catalog() }),
   syncRegistry: async (id) => reply(id, await registry()),
   resolveOperation(id, { args }) {
     const [key, params = {}] = args;

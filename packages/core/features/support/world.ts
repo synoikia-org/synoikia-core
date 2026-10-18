@@ -13,6 +13,7 @@ import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { createAppContext } from '../../src/app.js';
 import type { AppContext, AppOptions } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
+import { acquireServerLock } from '../../src/lock.js';
 import { createLogger } from '../../src/log.js';
 import { startServers } from '../../src/server.js';
 import type { RunningServers } from '../../src/server.js';
@@ -211,6 +212,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
   acme?: AcmeId;
   /** The lines core wrote to its server log, at every level, across restarts. */
   serverLog: string[] = [];
+  /** Why the last start of core failed, when it did. */
+  startError?: string;
+  /** Lets go of the data directory, as a stopping server does. */
+  private releaseLock?: () => void;
 
   async init() {
     await super.init();
@@ -227,40 +232,85 @@ export class SynoikiaWorld extends QuickPickleWorld {
   }
 
   private async startCore(opts: AppOptions = {}) {
-    this.ctx = await createAppContext(
-      loadConfig({
-        DATA_DIR: this.dataDir,
-        MCP_HOST: '127.0.0.1',
-        MCP_PORT: '0',
-        ADMIN_HOST: '127.0.0.1',
-        ADMIN_PORT: '0',
-        ...(this.bootstrapAdmin
-          ? { ADMIN_BOOTSTRAP_USERNAME: ADMIN.username, ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password }
-          : {}),
-        ...this.coreEnv,
-      }),
-      {
-        formFallbackMs: FORM_WAIT_MS,
-        now: () => new Date(realNow() + this.clockMs),
-        oidcAllowInsecure: true,
-        log: createLogger('debug', (line) => this.serverLog.push(line)),
-        ...opts,
-      },
-    );
+    // Like main.ts: the server holds the data directory and writes its start-up warnings to the log.
+    this.releaseLock = acquireServerLock(this.dataDir, (m) => this.serverLog.push(`WARN ${m}`));
+    try {
+      this.ctx = await createAppContext(
+        loadConfig({
+          DATA_DIR: this.dataDir,
+          MCP_HOST: '127.0.0.1',
+          MCP_PORT: '0',
+          ADMIN_HOST: '127.0.0.1',
+          ADMIN_PORT: '0',
+          ...(this.bootstrapAdmin
+            ? { ADMIN_BOOTSTRAP_USERNAME: ADMIN.username, ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password }
+            : {}),
+          ...this.coreEnv,
+        }),
+        {
+          formFallbackMs: FORM_WAIT_MS,
+          notifyRetryDelaysMs: [200, 400],
+          now: () => new Date(realNow() + this.clockMs),
+          oidcAllowInsecure: true,
+          log: createLogger('debug', (line) => this.serverLog.push(line)),
+          ...opts,
+        },
+      );
+    } catch (err) {
+      this.releaseLock();
+      this.releaseLock = undefined;
+      throw err;
+    }
+    for (const warning of this.ctx.warnings) this.serverLog.push(`WARN ${warning}`);
     await this.ctx.start();
     this.servers = await startServers(this.ctx);
     this.adminBase = `http://127.0.0.1:${this.servers.admin.port}`;
     this.mcpBase = `http://127.0.0.1:${this.servers.mcp.port}`;
   }
 
-  /** Moves core's clock ahead; the portals sign in again, as their sessions time out. */
-  async advanceClock(ms: number) {
-    this.clockMs += ms;
+  /** Stops core the way main.ts does on a signal: drain, close the listeners, stop. Agents lose their sessions. */
+  async stopCore() {
+    await this.ctx?.drain();
+    await this.servers?.close(2000);
+    await this.ctx?.stop();
+    for (const agent of this.agents.values()) {
+      await agent.client?.close().catch(() => undefined);
+      agent.client = undefined;
+      agent.transport = undefined;
+    }
+    this.releaseLock?.();
+    this.releaseLock = undefined;
+    this.servers = undefined;
+    this.ctx = undefined;
+  }
+
+  /** Starts a stopped core again on the same data, with `env` added to its start-up settings; a start that
+   * fails leaves core stopped and keeps the reason in `startError`. */
+  async startAgain(env: Record<string, string> = {}) {
+    Object.assign(this.coreEnv, env);
+    this.startError = undefined;
+    try {
+      await this.startCore();
+    } catch (err) {
+      this.startError = err instanceof Error ? err.message : String(err);
+      this.ctx = undefined;
+      this.servers = undefined;
+    }
+  }
+
+  /** Every person of the World signs in to the portal again in their own browser. */
+  async signInAgain() {
     for (const p of this.people.values())
       await this.expectOk(
         p.portal!.post('/auth/login', { username: p.username, password: p.password }),
         'sign in again',
       );
+  }
+
+  /** Moves core's clock ahead; the portals sign in again, as their sessions time out. */
+  async advanceClock(ms: number) {
+    this.clockMs += ms;
+    await this.signInAgain();
   }
 
   /** Moves core's clock and the process clock ahead; nobody signs in again. */
@@ -279,6 +329,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
     }
     await this.servers?.close();
     await this.ctx?.stop();
+    this.releaseLock?.();
     Object.assign(this.coreEnv, env);
     await this.startCore();
   }
@@ -287,6 +338,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
   async freshCore() {
     await this.servers?.close();
     await this.ctx?.stop();
+    this.releaseLock?.();
     rmSync(this.dataDir, { recursive: true, force: true });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
     cpSync(PLUGINS, path.join(this.dataDir, 'plugins'), { recursive: true });
@@ -316,6 +368,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
     for (const client of this.oldClients) await client.close().catch(() => undefined);
     await this.servers?.close();
     await this.ctx?.stop();
+    this.releaseLock?.();
     await this.upstream?.close();
     if (this.dataDir) rmSync(this.dataDir, { recursive: true, force: true });
   }
@@ -436,7 +489,15 @@ export class SynoikiaWorld extends QuickPickleWorld {
 
   /** Drops a flag file the fixture plugin reads (see its index.mjs for what each one changes). */
   pluginFlag(
-    name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation' | 'count-is-write' | 'secret-result' | 'diff-path',
+    name:
+      | 'down'
+      | 'restart'
+      | 'catalog-broken'
+      | 'no-confirmation'
+      | 'count-is-write'
+      | 'secret-result'
+      | 'diff-path'
+      | 'upstream-version',
     value = '',
   ) {
     writeFileSync(this.pluginFile(name), value);
@@ -495,6 +556,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
     });
     await page.init();
     return page;
+  }
+
+  /** A fake outside service, such as a webhook receiver or a phone push server; it stops with the scenario. */
+  async fakeService(routes: Record<string, (req: FakeRequest) => { status?: number; body?: unknown }>) {
+    const fake = await startFakeHttp({ routes });
+    this.cleanups.push(() => fake.close());
+    return fake;
   }
 
   /** A webhook inbox of the admin that gets the notifications of `events`; the World keeps what arrives. */
