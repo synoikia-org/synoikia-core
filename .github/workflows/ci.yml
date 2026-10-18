@@ -73,6 +73,7 @@ jobs:
       - run: pnpm build
       - run: pnpm --filter @synoikia/core exec vitest run --project unit
       - run: pnpm --filter @synoikia/plugin-sdk --filter @synoikia/create-plugin --filter @synoikia/admin-ui test
+      - run: pnpm --filter @synoikia/plugin-sdk test:features
 
   docker:
     runs-on: ubuntu-latest
