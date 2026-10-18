@@ -26,6 +26,8 @@ export default mergeConfig(
             include: ['features/**/*.feature'],
             exclude: ['test/**'],
             setupFiles: ['features/support/index.ts'],
+            // A @long-running scenario waits for real timers of core, such as the shortest approval expiry.
+            testTimeout: 30_000,
           },
         },
       ],
