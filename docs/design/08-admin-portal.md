@@ -54,7 +54,7 @@ Each page reads and changes data only through the Admin API (§8.4). The Admin A
 | **Plugins**            | Installed plugins, install from file (§4.6), available plugins and repositories (§4.2).                                                         | [`@id:portal-plugins`](../../packages/admin-ui/features/plugins/portal-plugins.feature)                                                                                                                                                                          |
 | **Clients & Tokens**   | Bearer tokens, OAuth clients and OAuth grants (§6.2).                                                                                           | [`@id:portal-tokens`](../../packages/admin-ui/features/clients/portal-tokens.feature)                                                                                                                                                                            |
 | **Settings**           | Admin only. Six tabs: Client auth, User auth, Users, Roles, Notifications and Server settings.                                                  | [`@id:portal-settings`](../../packages/admin-ui/features/settings/portal-settings.feature), [`@id:portal-users`](../../packages/admin-ui/features/users/portal-users.feature), [`@id:portal-roles`](../../packages/admin-ui/features/roles/portal-roles.feature) |
-| **My profile**         | Every user, at `/profile`. Own bearer tokens and OAuth grants, password, TOTP, OIDC link, theme, and approval browsers.                         | [`@id:portal-profile`](../../packages/admin-ui/features/profile/portal-profile.feature)                                                                                                                                                                          |
+| **My profile**         | Every user, at `/profile`. Own bearer tokens and OAuth grants, password, TOTP and new recovery codes, OIDC link, theme, and approval browsers.  | [`@id:portal-profile`](../../packages/admin-ui/features/profile/portal-profile.feature)                                                                                                                                                                          |
 
 Keyboard and screen reader use: [`@id:portal-accessibility`](../../packages/admin-ui/features/accessibility/portal-accessibility.feature).
 
@@ -92,6 +92,7 @@ GET    /auth/oidc/start | /auth/oidc/callback | /auth/oidc/link
 GET    /api/session              POST /api/setup (only while there are no users)
 GET    /api/overview             GET  /api/events (SSE: instance status, sync progress, lockouts)
 GET    /api/profile              POST /api/profile/password | /totp/begin | /totp/confirm | /totp/disable | /oidc/unlink
+POST   /api/profile/totp/recovery-codes {code}   (new recovery codes, §6.1)
 GET/POST /api/users              PATCH /api/users/:id         POST /api/users/:id/reset-totp
 GET    /api/settings             PUT  /api/settings/:section   PUT /api/settings/oidc
 GET    /api/settings/mcp/clients-seen (client names seen at initialize, §6.6)

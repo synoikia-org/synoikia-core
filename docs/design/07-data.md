@@ -95,6 +95,7 @@ Scenarios: [`@id:stored-settings-upgrade`](../../packages/core/features/data/sto
 - `PUT` with a secret field replaces it. If the field is not in the request, core keeps the old value.
 - Exception: the request changes where the upstream is. This is a non-secret field with a `uri`, `hostname` or IP format, or with a name like `url`, `host`, `server`, `endpoint` or `address`. Core then does not use the stored secrets, for a save and for "Test connection". The request must give them again (`400 secrets_required`). A changed URL thus never gets the stored key.
 - Stored secrets that the current master key cannot decrypt give `409 secrets_unreadable` for `GET`, `PUT` and "Test connection". A request that gives each secret field, with a value or `null`, replaces them.
+- The same applies to a notification channel (§9.1): its test and a save without each secret field give `409 secrets_unreadable`. The channel list marks the channel with `secretsUnreadable`, and a notification to it fails with that reason as its last error.
 
 **Key rotation.** `node dist/cli.js rotate-master-key` changes the master key.
 

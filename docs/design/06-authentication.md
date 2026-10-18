@@ -17,7 +17,8 @@ The Admin listener (port 8081) has its own sign-in.
 
 - RFC 6238. The user enrolls on the Profile page with a QR code.
 - Core encrypts the secret with the master key.
-- Core makes ten single-use recovery codes and stores them as hashes.
+- Core makes ten single-use recovery codes and stores them as hashes. The profile shows how many are left.
+- The user can replace all recovery codes on the Profile page (`POST /api/profile/totp/recovery-codes`). This needs a current code from the app, with the same replay guard as the code step. Core refuses a recovery code. A wrong code gives `401 invalid_code`, and without TOTP core answers `409 totp_disabled`. Core audits `totp_recovery_rotated`.
 - With `security.requireTotp`, each user must enroll at the next sign-in.
 
 **OIDC (optional).** The admin configures it on Settings → User auth:
@@ -183,8 +184,8 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 
 - Their profile, their own bearer tokens and their own OAuth grants.
 - A read-only list of the endpoints of their role, the operations that they can call, and the level in force for each.
-- Also the operations that only their personal level closes, with the reason `own_level`, so that they can open them again.
-- With "See endpoint status" on an endpoint, also the operations that they cannot call. These show as off, with no level to set.
+- Also the operations that only their personal level closes, with the reason `own_level`. The portal shows them as "Off: your own level" and keeps their level controls, so that the user can open them again.
+- With "See endpoint status" on an endpoint, also the operations that they cannot call for another reason. These show as off, with no level to set.
 - With "See other endpoints", a list of the other endpoints. Each shows only its slug, display name, plugin name and plugin description, and the name of their role. An admin has no other endpoints.
 - On each endpoint, the parts that the switches of their role on that endpoint allow. Core refuses the other parts with 403.
 - An approval page for their own calls only (§5.3).
