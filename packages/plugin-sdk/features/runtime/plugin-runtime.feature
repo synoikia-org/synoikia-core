@@ -32,7 +32,7 @@ Feature: Plugin runtime
       Given core connected the plugin to Acme Tasks
       And Acme Tasks gives an OpenAPI 2 description
       When core syncs the catalog
-      Then core gets an upstream error "The Acme Tasks API description is not valid: The Acme Tasks API spec is not OpenAPI 3"
+      Then core gets an upstream error "The Acme Tasks API spec is not OpenAPI 3"
 
   Rule: On an old core the plugin protects result secrets itself
 

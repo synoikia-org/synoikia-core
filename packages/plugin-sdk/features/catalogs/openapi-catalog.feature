@@ -17,10 +17,10 @@ Feature: OpenAPI catalog
 
       Examples:
         | description                              | reason                                                                                 |
-        | an OpenAPI 2 description                 | The Acme Tasks API description is not valid: The Acme Tasks API spec is not OpenAPI 3   |
-        | a description that is not YAML           | The Acme Tasks API description is not valid: The Acme Tasks API spec is not valid YAML  |
-        | an empty description                     | The Acme Tasks API description is not valid: The Acme Tasks API spec is empty           |
-        | an OpenAPI 3.0 description with no paths | The Acme Tasks API description is not valid: The Acme Tasks API spec has no paths       |
+        | an OpenAPI 2 description                 | The Acme Tasks API spec is not OpenAPI 3   |
+        | a description that is not YAML           | The Acme Tasks API spec is not valid YAML  |
+        | an empty description                     | The Acme Tasks API spec is empty           |
+        | an OpenAPI 3.0 description with no paths | The Acme Tasks API spec has no paths       |
 
     Scenario: An OpenAPI 3.1 description is read
       Given Acme Tasks gives its description as OpenAPI 3.1
