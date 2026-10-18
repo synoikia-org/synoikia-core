@@ -42,7 +42,7 @@ Feature: Sandbox
     Scenario: A slow answer from Acme uses the time limit
       Given a run on "tasks" may take 1 second, and Acme takes 2 seconds to answer
       When agent 7 asks for the open tasks of "Groceries"
-      Then agent 7 is told that the run went over its time limit
+      Then agent 7 is told that Acme did not answer in time
 
   Rule: Large results and logs are cut
 

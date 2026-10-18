@@ -40,7 +40,6 @@ Feature: User deletion
       When user 15 is deleted while the approval still waits
       Then the delete is refused, because approvals are pending
 
-    @backlog
     Scenario: The audit log says why the waiting add of agent 15 ended
       Given agent 15 belongs to user 15, whose role "family" may ask for the group "tasks" of "tasks"
       And agent 15 waits for user 15 to approve the add of "butter" to "Groceries"

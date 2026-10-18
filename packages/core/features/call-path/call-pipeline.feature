@@ -107,7 +107,6 @@ Feature: Call pipeline
 
   Rule: A slow upstream gives an unknown result
 
-    @backlog
     Scenario: Acme does not answer in time
       Given the admin sets the group "tasks" of "tasks" to write
       And a run on "tasks" may take 1 second, and Acme takes 3 seconds to answer
