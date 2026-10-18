@@ -76,6 +76,8 @@ export type FetchLike = (
 
 export class NotifierService {
   private readonly lastStatus = new Map<string, string>();
+  /** Instances that went to `error` and have not been `ready` or stopped since: a crash restart passes `starting`. */
+  private readonly down = new Set<string>();
 
   constructor(
     private readonly db: Db,
@@ -237,7 +239,10 @@ export class NotifierService {
           message: s.error ?? 'Plugin error',
           data: { error: s.error ?? null },
         });
-      } else if (s.status === 'ready' && prev === 'error') {
+      }
+      if (s.status === 'error') this.down.add(s.instanceId);
+      else if (s.status === 'stopped') this.down.delete(s.instanceId);
+      else if (s.status === 'ready' && this.down.delete(s.instanceId)) {
         void this.dispatch({
           event: 'instance.recovered',
           instance: { id: s.instanceId, slug: s.slug },
