@@ -3,7 +3,6 @@ import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, renameSync,
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
@@ -15,34 +14,67 @@ import { loadConfig } from '../../../core/src/config/env.js';
 import { createLogger } from '../../../core/src/log.js';
 import { startServers } from '../../../core/src/server.js';
 import type { RunningServers } from '../../../core/src/server.js';
+import type { FakeHttp } from '@synoikia/core/testing';
 import { browser as apiClient } from '../../../core/test/admin-client.js';
+import {
+  acmeGuard,
+  acmeRoutes,
+  API_TOKEN,
+  CORE,
+  CORE_FIXTURES,
+  newRepository,
+  publishedFiles,
+  tasksArchive,
+} from './acme.js';
+import type { FakeRepository } from './acme.js';
 
-const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../core');
-/** The upstream fake and the fixture plugin of core's World, for scenarios that need an instance. */
-export const CORE_FIXTURES = path.join(CORE, 'test/fixtures/world');
+export { API_TOKEN, CORE_FIXTURES } from './acme.js';
+
 export const ADMIN = { username: 'admin', password: 'world admin passphrase' };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const quiet = () => createLogger('error', () => undefined);
 
-// A data directory with the migrated database and the admin, built once and copied for each scenario, as in
-// core's World. Its name holds a fingerprint of the migrations, so test processes share it until they change.
+// A data directory with the migrated database, the admin, the "Acme Tasks" plugin and the admin's signed-in
+// session, built once and copied for each scenario, as in core's World. Its name holds a fingerprint of the
+// migrations and the plugin, so test processes share it until they change.
+/** A cheap password hash, as in core's World: the real cost is pinned in core's unit tests. */
+const TEST_HASH_COST = { memoryCost: 1024, timeCost: 1, parallelism: 1 };
 let template: Promise<string> | undefined;
+const SESSION_FILE = '.admin-session.json';
 
 async function buildTemplate(): Promise<string> {
-  const migrations = path.join(CORE, 'drizzle');
-  const hash = createHash('sha256');
-  for (const file of (readdirSync(migrations, { recursive: true }) as string[]).sort())
-    if (statSync(path.join(migrations, file)).isFile())
-      hash.update(file).update(readFileSync(path.join(migrations, file)));
+  const hash = createHash('sha256').update(JSON.stringify(TEST_HASH_COST));
+  for (const root of [path.join(CORE, 'drizzle'), CORE_FIXTURES])
+    for (const file of (readdirSync(root, { recursive: true }) as string[]).sort())
+      if (statSync(path.join(root, file)).isFile()) hash.update(file).update(readFileSync(path.join(root, file)));
   const name = `synoikia-portal-template-${hash.digest('hex').slice(0, 16)}`;
   const target = path.join(tmpdir(), name);
   if (existsSync(path.join(target, '.ready'))) return target;
   const dir = mkdtempSync(path.join(tmpdir(), 'synoikia-portal-template-build-'));
+  cpSync(CORE_FIXTURES, path.join(dir, 'plugins'), { recursive: true });
   const ctx = await createAppContext(
-    loadConfig({ DATA_DIR: dir, ADMIN_BOOTSTRAP_USERNAME: ADMIN.username, ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password }),
-    { log: quiet() },
+    loadConfig({
+      DATA_DIR: dir,
+      ADMIN_HOST: '127.0.0.1',
+      ADMIN_PORT: '0',
+      MCP_HOST: '127.0.0.1',
+      MCP_PORT: '0',
+      ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
+      ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
+    }),
+    { log: quiet(), passwordHashCost: TEST_HASH_COST },
   );
+  await ctx.start();
+  const servers = await startServers(ctx);
+  const client = apiClient({
+    request: (p, init) => fetch(`http://127.0.0.1:${servers.admin.port}${String(p)}`, { ...init, redirect: 'manual' }),
+  });
+  await client.init();
+  const signIn = await client.post('/auth/login', ADMIN);
+  if (!signIn.ok) throw new Error(`The template's admin sign-in failed: ${signIn.status}`);
+  writeFileSync(path.join(dir, SESSION_FILE), JSON.stringify(Object.fromEntries(client.jar)));
+  await servers.close();
   await ctx.stop();
   writeFileSync(path.join(dir, '.ready'), '');
   try {
@@ -50,6 +82,9 @@ async function buildTemplate(): Promise<string> {
   } catch {
     rmSync(dir, { recursive: true, force: true });
   }
+  for (const old of readdirSync(tmpdir()))
+    if (old.startsWith('synoikia-portal-template-') && old !== name && !old.includes('-build-'))
+      rmSync(path.join(tmpdir(), old), { recursive: true, force: true });
   return target;
 }
 
@@ -83,9 +118,10 @@ export interface Person {
   totpSecret?: string;
 }
 
-/** A fresh core for each scenario, with the built portal, and a person's browser on it. */
+/** A fresh core for each scenario, with the built portal, the "Acme Tasks" service, and a person's browser on it. */
 export class PortalWorld extends QuickPickleWorld {
   dataDir = '';
+  templateDir = '';
   ctx?: AppContext;
   servers?: RunningServers;
   base = '';
@@ -96,19 +132,44 @@ export class PortalWorld extends QuickPickleWorld {
   people = new Map<string, Person>();
   roles = new Map<string, string>();
   cleanups: (() => Promise<unknown>)[] = [];
+  /** The fake "Acme Tasks" service and its lists, by name. */
+  upstream?: FakeHttp;
+  lists = new Map<string, string[]>([['Groceries', ['milk', 'eggs']]]);
+  /** The instances made so far, by path, with their ids. */
+  instances = new Map<string, string>();
+  /** How far the World moved core's clock ahead of the real time. */
+  clockMs = 0;
+  /** Start-up settings core gets on top of the World's own, kept across restarts. */
+  coreEnv: Record<string, string> = {};
+  /** The plugin repositories the World publishes, by name, and what their hosts serve. */
+  repositories = new Map<string, FakeRepository>();
+  repoFiles = new Map<string, Buffer>();
+  /** What the last question in the portal said, and how many fields it had. */
+  question = { text: '', fields: 0 };
+  /** The last plugin file the admin uploaded or installed. */
+  lastFile?: Buffer;
+  /** What a step saw for a later step to check, by name. */
+  noted: Record<string, string> = {};
+  /** The paths of every request the browser made, in order. */
+  requests: string[] = [];
+  /** Whether the browser carries the admin's session from the template. */
+  private signedIn = false;
 
   async init() {
     await super.init();
     const { info } = this as unknown as { info: { config: { stepTimeout: number } } };
     info.config.stepTimeout = 15_000;
+    this.upstream = await startFakeHttp({ routes: acmeRoutes(this.lists), guard: acmeGuard });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-portal-'));
-    cpSync(await (template ??= buildTemplate()), this.dataDir, { recursive: true });
+    this.templateDir = await (template ??= buildTemplate());
+    cpSync(this.templateDir, this.dataDir, { recursive: true });
     rmSync(path.join(this.dataDir, '.ready'));
     this.people.set('admin', { ...ADMIN });
     await this.startCore();
     const shared = await (chromiumOnce ??= chromium.launch());
-    this.context = await shared.newContext({ baseURL: this.base });
+    this.context = await shared.newContext();
     this.page = await this.context.newPage();
+    this.page.on('request', (r) => this.requests.push(new URL(r.url()).pathname));
   }
 
   private async startCore() {
@@ -120,8 +181,15 @@ export class PortalWorld extends QuickPickleWorld {
         ADMIN_HOST: '127.0.0.1',
         ADMIN_PORT: '0',
         ADMIN_UI_DIR: inject('portalDir'),
+        ...this.coreEnv,
       }),
-      { log: quiet(), oidcAllowInsecure: true },
+      {
+        log: quiet(),
+        passwordHashCost: TEST_HASH_COST,
+        oidcAllowInsecure: true,
+        now: () => new Date(Date.now() + this.clockMs),
+        repoFetch: (url) => this.repositoryHost(url),
+      },
     );
     await this.ctx.start();
     this.servers = await startServers(this.ctx);
@@ -135,7 +203,14 @@ export class PortalWorld extends QuickPickleWorld {
     this.ctx = undefined;
   }
 
-  /** A new server: core on an empty data directory, without any account. The browser stays on the old address. */
+  /** Stops core and starts it again on the same data, with `env` added to its start-up settings. Sign-ins stay. */
+  async restartCore(env: Record<string, string>) {
+    await this.stopCore();
+    Object.assign(this.coreEnv, env);
+    await this.startCore();
+  }
+
+  /** A new server: core on an empty data directory, without any account. */
   async freshCore() {
     await this.stopCore();
     rmSync(this.dataDir, { recursive: true, force: true });
@@ -144,7 +219,7 @@ export class PortalWorld extends QuickPickleWorld {
     this.admin = undefined;
     await this.startCore();
     await this.context.close();
-    this.context = await (await chromiumOnce!).newContext({ baseURL: this.base });
+    this.context = await (await chromiumOnce!).newContext();
     this.page = await this.context.newPage();
   }
 
@@ -152,6 +227,7 @@ export class PortalWorld extends QuickPickleWorld {
     for (const undo of this.cleanups.splice(0).reverse()) await undo().catch(() => undefined);
     await this.context?.close().catch(() => undefined);
     await this.stopCore();
+    await this.upstream?.close();
     if (this.dataDir) rmSync(this.dataDir, { recursive: true, force: true });
   }
 
@@ -182,8 +258,16 @@ export class PortalWorld extends QuickPickleWorld {
     return client;
   }
 
+  /** The admin's Admin API session: the template's sign-in, or a new one once that session has expired. */
   async adminApi() {
-    return (this.admin ??= await this.apiAs('admin'));
+    if (this.admin) return this.admin;
+    const client = await this.apiSession();
+    const saved = JSON.parse(readFileSync(path.join(this.dataDir, SESSION_FILE), 'utf8')) as Record<string, string>;
+    for (const [name, value] of Object.entries(saved)) client.jar.set(name, value);
+    if ((await client.get('/api/profile')).ok) return (this.admin = client);
+    // A template past its session limits is built again by the next test file.
+    rmSync(this.templateDir, { recursive: true, force: true });
+    return (this.admin = await this.apiAs('admin'));
   }
 
   person(name: string) {
@@ -230,6 +314,119 @@ export class PortalWorld extends QuickPickleWorld {
     const fake = await startFakeHttp({ routes });
     this.cleanups.push(() => fake.close());
     return fake;
+  }
+
+  // ── "Acme Tasks": the plugin, its instances and its repositories ──
+
+  /** The admin's row of the plugin "tasks", if it is installed. */
+  async tasksPlugin() {
+    const list = (await this.expectOk((await this.adminApi()).get('/api/plugins'), 'list plugins')) as unknown as {
+      id: string;
+      pluginId: string;
+      enabled: boolean;
+      repoId: string | null;
+    }[];
+    return list.find((p) => p.pluginId === 'tasks');
+  }
+
+  async enableTasks() {
+    const plugin = (await this.tasksPlugin())!;
+    if (!plugin.enabled)
+      await this.expectOk((await this.adminApi()).patch(`/api/plugins/${plugin.id}`, { enabled: true }), 'enable');
+  }
+
+  /** The instance at /`slug` of "Acme Tasks", made and synced through the Admin API. */
+  async tasksInstance(slug: string, extra: Record<string, unknown> = {}) {
+    const known = this.instances.get(slug);
+    if (known) return known;
+    await this.enableTasks();
+    const created = await this.expectOk(
+      (await this.adminApi()).post('/api/instances', {
+        pluginId: 'tasks',
+        slug,
+        connection: { url: this.upstream!.url, token: API_TOKEN },
+        ...extra,
+      }),
+      'create instance',
+    );
+    const id = created.id as string;
+    await this.expectOk((await this.adminApi()).post(`/api/instances/${id}/sync`), 'sync instance');
+    this.instances.set(slug, id);
+    return id;
+  }
+
+  /** The instance as the admin's overview shows it. */
+  async instance(slug: string) {
+    const overview = await this.expectOk((await this.adminApi()).get('/api/overview'), 'read overview');
+    return (overview.instances as { slug: string; [k: string]: unknown }[]).find((i) => i.slug === slug);
+  }
+
+  /** Changes the manifest of the plugin "tasks" in its folder, and has core read it again. */
+  async editTasksManifest(change: (m: Record<string, unknown>) => void) {
+    const file = path.join(this.dataDir, 'plugins', 'tasks', 'manifest.json');
+    const manifest = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    change(manifest);
+    writeFileSync(file, JSON.stringify(manifest, null, 2));
+    await this.expectOk((await this.adminApi()).post('/api/plugins/rescan'), 'rescan plugins');
+  }
+
+  /** Flag files the fixture plugin reads, such as `catalog-changes` (see its index.mjs). */
+  pluginFlag(name: string, value: string) {
+    writeFileSync(path.join(this.dataDir, 'plugins', 'tasks', name), value);
+  }
+
+  repository(name: string) {
+    let repo = this.repositories.get(name);
+    if (!repo) this.repositories.set(name, (repo = newRepository(name)));
+    return repo;
+  }
+
+  /** `name` offers exactly these versions of "Acme Tasks" from now on. */
+  offer(name: string, versions: string[]) {
+    const repo = this.repository(name);
+    repo.builds = versions.map((version) => ({ version, archive: tasksArchive(version) }));
+    for (const [url, body] of publishedFiles(repo)) this.repoFiles.set(url, body);
+    return repo;
+  }
+
+  /** The admin installs "Acme Tasks" `version` from `name` in place of the hand-copied one, and enables it. */
+  async installedFrom(name: string, version: string) {
+    const admin = await this.adminApi();
+    const current = await this.tasksPlugin();
+    if (current && !current.repoId) await this.expectOk(admin.del(`/api/plugins/${current.id}`), 'uninstall');
+    const repo = this.offer(name, [version]);
+    const added = await this.expectOk(
+      admin.post('/api/plugin-repos', {
+        url: repo.url,
+        signingMode: repo.key ? 'signed' : 'unsigned',
+        ...(repo.key ? { confirmPublicKey: repo.key.publicKey } : {}),
+      }),
+      'add repository',
+    );
+    repo.id = added.id as string;
+    await this.expectOk(admin.post('/api/plugins/install', { repoId: repo.id, pluginId: 'tasks', version }), 'install');
+    await this.enableTasks();
+  }
+
+  /** The admin uploads a file and installs it through the Admin API. */
+  async installedFile(fileName: string, archive: Buffer) {
+    const admin = await this.adminApi();
+    const staged = await this.expectOk(
+      admin.req('POST', '/api/plugins/uploads', new Uint8Array(archive), {
+        'x-file-name': encodeURIComponent(fileName),
+      }),
+      'upload',
+    );
+    await this.expectOk(admin.post(`/api/plugins/uploads/${String(staged.uploadId)}/install`), 'install upload');
+  }
+
+  /** What a repository host answers core; a host outside the World does not answer. */
+  private repositoryHost(url: string) {
+    const body = this.repoFiles.get(url);
+    if (body) return Promise.resolve(new Response(new Uint8Array(body)));
+    if (new URL(url).hostname.endsWith('.acme.example'))
+      return Promise.resolve(new Response('missing', { status: 404 }));
+    return Promise.reject(new TypeError('connection refused'));
   }
 
   // ── the identity provider "Acme ID" ──
@@ -308,7 +505,27 @@ export class PortalWorld extends QuickPickleWorld {
   // ── the browser ──
 
   async open(where: string) {
-    await this.page.goto(where);
+    await this.page.goto(`${this.base}${where}`);
+  }
+
+  /** The admin's browser with the admin's session, open at `where`. */
+  async openAsAdmin(where: string) {
+    if (!this.signedIn) {
+      const admin = await this.adminApi();
+      await this.context.addCookies(
+        [...admin.jar].map(([name, value]) => ({ name, value, domain: '127.0.0.1', path: '/' })),
+      );
+      this.signedIn = true;
+    }
+    await this.open(where);
+  }
+
+  /** The open question in the portal: its text and fields are kept, then the person picks `action`. */
+  async answerQuestion(action: string) {
+    const dialog = this.page.getByRole('dialog');
+    await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+    this.question = { text: (await dialog.textContent()) ?? '', fields: await dialog.getByRole('textbox').count() };
+    await dialog.getByRole('button', { name: action, exact: true }).click();
   }
 
   /** The person fills in the sign-in form in the browser and sends it. */
