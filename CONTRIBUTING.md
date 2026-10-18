@@ -20,7 +20,7 @@ Pull requests merge by rebase, so keep each commit in its phase. The `Workflow` 
 
 ## Before opening a pull request
 
-CI (`.github/workflows/ci.yml`) runs `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build` and `pnpm test`, plus a Docker build. Run the same commands locally first:
+CI (`.github/workflows/ci.yml`) runs `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build` and `pnpm test`, plus a Docker build. It splits core's scenarios across three runners. Run the same commands locally first:
 
 ```sh
 pnpm install --frozen-lockfile

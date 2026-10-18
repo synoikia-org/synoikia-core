@@ -27,7 +27,7 @@ Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @syno
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs these, in this order, plus a Docker build:
+CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across three runners. The `test` job runs every other test. Locally, run them in this order:
 
 ```sh
 pnpm lint
