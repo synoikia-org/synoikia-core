@@ -22,8 +22,8 @@ import type { SlidingWindowLimiter } from './rate-limit.js';
 import { redactDiff, redactPaths, redactResult } from './redact.js';
 import type { Redactor } from './redact.js';
 
-/** The permission gate (design §5.2), the only path from sandboxed code to `invoke`: resolve → attest →
- * access → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
+/** The permission gate (design §5.2), the only path from sandboxed code to `invoke`: resolve → access →
+ * attest → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
 
 export interface GateDeps {
   db: Db;
@@ -216,29 +216,7 @@ export function createGateBindings(
       const redactParams = <T>(p: T): T => redactPaths(rt.redact(p), op?.sensitiveParams);
       audit.params = redactParams(resolved.params);
 
-      // 1. Attestation, before anything else about the op is revealed.
-      if (op && !op.stale && op.attestationRequired) {
-        const presented = (resolved.params as { best_practice_key?: unknown } | null)?.best_practice_key;
-        if (
-          !verifyAttestationKey(deps.db, deps.attestationKey, {
-            instanceId: rt.instanceId,
-            operationId: op.id,
-            opKey: op.key,
-            mcpSessionId: caller.mcpSessionId,
-            presented,
-          })
-        ) {
-          reject(
-            'rejected:attestation_required',
-            new BindingError(
-              'ATTESTATION_REQUIRED',
-              `Call search() for the ${op.key} guide first and pass its best_practice_key`,
-            ),
-          );
-        }
-      }
-
-      // 2. Access level (operation's own, else its group's) under the principal's ceiling. Unknown or
+      // 1. Access level (operation's own, else its group's) under the principal's ceiling. Unknown or
       //    stale ops fail here too.
       const access = resolveAccess(deps.db, rt.instanceId, resolved.key, caller.principal);
       if (!access.reachable || !op) {
@@ -255,6 +233,29 @@ export function createGateBindings(
         );
       }
       const operation = op!;
+
+      // 2. Attestation (design §5.2), for an operation this caller can reach.
+      if (operation.attestationRequired) {
+        const presented = (resolved.params as { best_practice_key?: unknown } | null)?.best_practice_key;
+        if (
+          !verifyAttestationKey(deps.db, deps.attestationKey, {
+            instanceId: rt.instanceId,
+            operationId: operation.id,
+            opKey: operation.key,
+            mcpSessionId: caller.mcpSessionId,
+            presented,
+          })
+        ) {
+          reject(
+            'rejected:attestation_required',
+            new BindingError(
+              'ATTESTATION_REQUIRED',
+              `Call search() for the ${operation.key} guide first and pass its best_practice_key`,
+            ),
+          );
+        }
+      }
+
       const mode = access.reachable ? access.mode : 'run';
       // A read at its own Ask needs a decision too, but only writes use the write budget or prepareWrite.
       const needsDecision = mode !== 'run';
