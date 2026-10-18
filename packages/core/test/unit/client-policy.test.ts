@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientAllowed, SeenClients } from '../src/auth/client-policy.js';
+import { clientAllowed, SeenClients } from '../../src/auth/client-policy.js';
 
 describe('client policy matching', () => {
   const long = 'c'.repeat(150);

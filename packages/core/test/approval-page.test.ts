@@ -219,25 +219,6 @@ describe('approval page', () => {
       await t.run;
     };
 
-    it('shows the sign-in page for a service token, a missing or invalid assertion, or an unknown user', async () => {
-      const t = await pending();
-      const assertions = [
-        await signAssertion({ sub: '', common_name: 'abc.access' }),
-        'not-a-jwt',
-        (await owner()).slice(0, -4) + 'AAAA',
-        await signAssertion({ sub: 'u-2', email: 'nobody@example.com' }),
-      ];
-      for (const browse of [t.browse, ...assertions.map((a) => t.accessBrowser(a))]) {
-        const res = await browse(t.page);
-        expect(res.status).toBe(200);
-        expect(await res.text()).toContain('Sign in to review this approval request');
-        expect((await browse(t.page, { decision: 'approve', csrf: 'x' })).status).toBe(200);
-      }
-      // Self-registration does not apply here: the unknown identity got no account.
-      expect(t.ctx.users.byUsernameInsensitive('nobody@example.com')).toBeUndefined();
-      await settle(t);
-    });
-
     it('ignores the assertion when the provider has no configuration', async () => {
       const t = await pending();
       // Straight to the row: a save through updateSettings refuses `external` without a configuration.

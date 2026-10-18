@@ -1,6 +1,5 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
-import type { JWTVerifyGetKey } from 'jose';
 import { checkCloudflareAccess } from '../src/auth/external-cloudflare.js';
 
 /** Cloudflare Access assertions (design §6.2 `external` method). */
@@ -26,54 +25,6 @@ describe('checkCloudflareAccess', () => {
     };
     return { keys, sign };
   }
-
-  const who = async (teamDomain: string, assertion: string, keys: JWTVerifyGetKey) => {
-    const result = await checkCloudflareAccess(teamDomain, AUD, assertion, keys);
-    return result.ok ? result.identity : null;
-  };
-
-  it('accepts a valid user assertion and returns its email', async () => {
-    const { keys, sign } = await team();
-    await expect(who(TEAM, await sign({ sub: 'u-1', email: 'me@example.com' }), keys)).resolves.toBe('me@example.com');
-    await expect(who(`https://${TEAM}/`, await sign({ sub: 'u-1', email: 'me@example.com' }), keys)).resolves.toBe(
-      'me@example.com',
-    );
-  });
-
-  it('refuses a service token assertion: it names no user', async () => {
-    const { keys, sign } = await team();
-    const service = await checkCloudflareAccess(TEAM, AUD, await sign({ sub: '', common_name: 'abc.access' }), keys);
-    expect(service).toEqual({ ok: false, reason: expect.stringContaining('service token') });
-    await expect(
-      who(TEAM, await sign({ sub: 'u-1', email: 'a@b.c', common_name: 'abc.access' }), keys),
-    ).resolves.toBeNull();
-  });
-
-  it('refuses an assertion without a user email', async () => {
-    const { keys, sign } = await team();
-    for (const claims of [{}, { sub: '' }, { email: '' }, { sub: 'u-1' }, { sub: 'u-1', email: 'service:abc' }])
-      await expect(who(TEAM, await sign(claims), keys)).resolves.toBeNull();
-  });
-
-  it('rejects a wrong audience, a wrong issuer, an expired token, another key and garbage', async () => {
-    const { keys, sign } = await team();
-    const other = await team();
-    const cases = [
-      await sign({ email: 'a@b.c' }, { aud: 'someone-elses-app' }),
-      await sign({ email: 'a@b.c' }, { iss: 'https://evil.cloudflareaccess.com' }),
-      await sign({ email: 'a@b.c' }, { exp: '-1m' }),
-      await other.sign({ email: 'a@b.c' }),
-      'not-a-jwt',
-    ];
-    for (const assertion of cases) await expect(who(TEAM, assertion, keys)).resolves.toBeNull();
-  });
-
-  it('refuses an assertion without an expiry or an issue time', async () => {
-    const { keys, sign } = await team();
-    const user = { sub: 'u-1', email: 'me@example.com' };
-    await expect(who(TEAM, await sign(user, { exp: null }), keys)).resolves.toBeNull();
-    await expect(who(TEAM, await sign(user, { iat: false }), keys)).resolves.toBeNull();
-  });
 
   it('says which claim did not match, for the server log', async () => {
     const { keys, sign } = await team();

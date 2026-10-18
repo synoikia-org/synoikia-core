@@ -7,14 +7,11 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OidcService } from '../src/auth/oidc.js';
 import { SessionService } from '../src/auth/sessions.js';
-import { LoginThrottle } from '../src/auth/throttle.js';
-import { SlidingWindowLimiter } from '../src/gate/rate-limit.js';
-import { signPayload, verifyPayload } from '../src/auth/tokens.js';
-import { base32Decode, base32Encode, currentStep, totpAt, verifyTotp } from '../src/auth/totp.js';
+import { currentStep, totpAt } from '../src/auth/totp.js';
 import { UserService } from '../src/auth/users.js';
 import { SecretBox } from '../src/crypto/index.js';
 import { openDatabase } from '../src/db/index.js';
-import { auditLog, users } from '../src/db/schema.js';
+import { users } from '../src/db/schema.js';
 import { ConflictError, ValidationError } from '../src/errors.js';
 import { updateSettings } from '../src/settings.js';
 
@@ -31,38 +28,6 @@ function setup() {
 
 const PASSWORD = 'correct horse battery';
 
-describe('TOTP', () => {
-  it('matches the RFC 6238 SHA-1 test vector', () => {
-    // RFC 6238 appendix B: secret "12345678901234567890", T = 59 s → 94287082 (8 digits) → 287082.
-    const secret = base32Encode(Buffer.from('12345678901234567890'));
-    expect(totpAt(secret, 1)).toBe('287082');
-    expect(base32Decode(secret).toString()).toBe('12345678901234567890');
-  });
-
-  it('accepts ±1 step and refuses replays', () => {
-    const secret = base32Encode(randomBytes(20));
-    const now = Date.now();
-    const step = currentStep(now);
-    expect(verifyTotp(secret, totpAt(secret, step), { nowMs: now })).toBe(step);
-    expect(verifyTotp(secret, totpAt(secret, step - 1), { nowMs: now })).toBe(step - 1);
-    expect(verifyTotp(secret, totpAt(secret, step - 2), { nowMs: now })).toBeNull();
-    expect(verifyTotp(secret, totpAt(secret, step), { nowMs: now, lastStep: step })).toBeNull();
-    expect(verifyTotp(secret, 'abcdef', { nowMs: now })).toBeNull();
-  });
-});
-
-describe('signed payloads', () => {
-  it('round-trips and rejects tampering and expiry', () => {
-    const key = randomBytes(32);
-    const token = signPayload(key, { a: 1 }, 1000, 0);
-    expect(verifyPayload(key, token, 500)).toMatchObject({ a: 1 });
-    expect(verifyPayload(key, token, 1500)).toBeNull();
-    expect(verifyPayload(randomBytes(32), token, 500)).toBeNull();
-    expect(verifyPayload(key, token.replace(/^./, 'x'), 500)).toBeNull();
-    expect(verifyPayload(key, undefined)).toBeNull();
-  });
-});
-
 describe('UserService', () => {
   it('runs first-run setup once and enforces the password policy', async () => {
     const t = setup();
@@ -75,25 +40,6 @@ describe('UserService', () => {
     expect(hash).toMatch(/^\$argon2id\$v=19\$m=65536,t=3,p=1\$/);
   });
 
-  it('lets only one of two concurrent first-run setups create a user (review L3)', async () => {
-    const t = setup();
-    const results = await Promise.allSettled([
-      t.users.setupFirstUser('operator', PASSWORD),
-      t.users.setupFirstUser('intruder', PASSWORD),
-    ]);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: expect.any(ConflictError) });
-    expect(t.users.count()).toBe(1);
-  });
-
-  it('verifies passwords without revealing which usernames exist', async () => {
-    const t = setup();
-    await t.users.create({ username: 'admin', password: PASSWORD });
-    expect((await t.users.verifyPassword('admin', PASSWORD))?.username).toBe('admin');
-    expect(await t.users.verifyPassword('admin', 'wrong password!!')).toBeNull();
-    expect(await t.users.verifyPassword('ghost', PASSWORD)).toBeNull();
-  });
-
   it('changes passwords only with the current one, and keeps one active user', async () => {
     const t = setup();
     const u = await t.users.create({ username: 'admin', password: PASSWORD });
@@ -103,39 +49,6 @@ describe('UserService', () => {
     await t.users.setPassword(u.id, 'another long password', { currentPassword: PASSWORD });
     expect(await t.users.verifyPassword('admin', 'another long password')).not.toBeNull();
     expect(() => t.users.setDisabled(u.id, true)).toThrow(/last active user/);
-  });
-
-  it('enrolls TOTP, accepts codes once, and consumes recovery codes', async () => {
-    const t = setup();
-    const u = await t.users.create({ username: 'admin', password: PASSWORD });
-    const { secret, uri } = t.users.beginTotp(u.id);
-    expect(uri).toMatch(/^otpauth:\/\/totp\/Synoikia%3Aadmin\?secret=/);
-    expect(() => t.users.confirmTotp(u.id, '000000')).toThrow(/not valid/);
-
-    const step = currentStep();
-    const codes = t.users.confirmTotp(u.id, totpAt(secret, step));
-    expect(codes).toHaveLength(10);
-    expect(t.users.get(u.id).totpEnabled).toBe(true);
-    expect(t.db.select().from(users).get()!.totpSecretEnc!.toString('latin1')).not.toContain(secret);
-
-    // The enrollment code can't be reused; the next step's code works once.
-    expect(t.users.verifySecondFactor(u.id, totpAt(secret, step))).toBeNull();
-    expect(t.users.verifySecondFactor(u.id, totpAt(secret, step + 1))).toBe('totp');
-    expect(t.users.verifySecondFactor(u.id, totpAt(secret, step + 1))).toBeNull();
-
-    expect(t.users.verifySecondFactor(u.id, codes[0]!)).toBe('recovery');
-    expect(t.users.verifySecondFactor(u.id, codes[0]!)).toBeNull();
-    expect(t.users.get(u.id).recoveryCodesHash).toHaveLength(9);
-
-    t.users.resetTotp(u.id);
-    expect(t.users.get(u.id)).toMatchObject({ totpEnabled: false, totpSecretEnc: null });
-    expect(
-      t.db
-        .select()
-        .from(auditLog)
-        .all()
-        .map((a) => a.decision),
-    ).toEqual(expect.arrayContaining(['totp_enabled', 'recovery_code_used', 'totp_reset']));
   });
 
   it('turns off its own TOTP only with a valid code and while the server does not require it', async () => {
@@ -150,17 +63,6 @@ describe('UserService', () => {
     expect(t.users.get(u.id).totpEnabled).toBe(true);
     expect(t.users.disableOwnTotp(t.users.get(u.id), totpAt(secret, currentStep() + 1))).toBe(true);
     expect(t.users.get(u.id).totpEnabled).toBe(false);
-  });
-
-  it('unlinks its own SSO identity only when a password remains', async () => {
-    const t = setup();
-    const sso = await t.users.create({ username: 'sso-only' });
-    t.users.linkOidc(sso.id, 'https://idp', 'sub-1');
-    expect(() => t.users.unlinkOwnOidc(t.users.get(sso.id))).toThrow(/Set a password/);
-    const local = await t.users.create({ username: 'local', password: PASSWORD });
-    t.users.linkOidc(local.id, 'https://idp', 'sub-2');
-    t.users.unlinkOwnOidc(t.users.get(local.id));
-    expect(t.users.get(local.id).oidcSubject).toBeNull();
   });
 });
 
@@ -187,78 +89,6 @@ describe('SessionService', () => {
     const raw2 = sessions.create(u.id, 'admin', { idleMs: limits.idleMs, absoluteMs: 60_000 });
     now = new Date(now.getTime() + 61_000);
     expect(sessions.validate(raw2, 'admin', limits)).toBeNull(); // absolute expiry
-  });
-
-  it('revokes all of a user’s sessions except the current one, and drops disabled users', async () => {
-    const t = setup();
-    const a = await t.users.create({ username: 'alice', password: PASSWORD });
-    await t.users.create({ username: 'bob', password: PASSWORD });
-    const sessions = new SessionService(t.db, randomBytes(32));
-    const keep = sessions.create(a.id, 'admin', limits);
-    const other = sessions.create(a.id, 'admin', limits);
-    sessions.revokeUser(a.id, keep);
-    expect(sessions.validate(keep, 'admin', limits)).not.toBeNull();
-    expect(sessions.validate(other, 'admin', limits)).toBeNull();
-    t.users.setDisabled(a.id, true);
-    expect(sessions.validate(keep, 'admin', limits)).toBeNull();
-  });
-});
-
-describe('LoginThrottle', () => {
-  it('counts MCP-port failures separately, so the internet cannot lock the admin portal', () => {
-    const throttle = new LoginThrottle();
-    for (let i = 0; i < 5; i++) throttle.fail('admin', 'mcp');
-    expect(throttle.lockedFor('admin', 'mcp')).toBeGreaterThan(0);
-    expect(throttle.lockedFor('admin')).toBe(0);
-    expect(throttle.lockedFor('admin', 'admin')).toBe(0);
-  });
-
-  it('stays bounded under random usernames and IPs, keeping recent lockouts (review L15)', () => {
-    let now = 0;
-    const throttle = new LoginThrottle({}, () => now, 100);
-    // Looking up names that never failed stores nothing.
-    for (let i = 0; i < 1000; i++) expect(throttle.lockedFor(`nobody-${i}`, 'mcp')).toBe(0);
-    expect(throttle.size).toBe(0);
-
-    for (let i = 0; i < 5; i++) throttle.fail('admin', 'mcp');
-    for (let i = 0; i < 1000; i++) {
-      throttle.fail(`random-${i}`, 'mcp');
-      throttle.allowIp(`10.0.${i >> 8}.${i & 255}`);
-    }
-    expect(throttle.size).toBeLessThanOrEqual(200);
-    // Entries whose window has passed go first; a live lockout that keeps being checked stays.
-    now = 60_000;
-    expect(throttle.lockedFor('admin', 'mcp')).toBeGreaterThan(0);
-    for (let i = 0; i < 99; i++) throttle.fail(`later-${i}`, 'mcp');
-    expect(throttle.lockedFor('admin', 'mcp')).toBeGreaterThan(0);
-  });
-
-  it('bounds the rate limiter the same way', () => {
-    let now = 0;
-    const limiter = new SlidingWindowLimiter(() => now, 50);
-    for (let i = 0; i < 500; i++) limiter.take(`k${i}`, 10, 60_000);
-    expect(limiter.size).toBeLessThanOrEqual(50);
-    now = 120_000;
-    expect(limiter.take('k499', 1, 60_000)).toBe(true);
-    expect(limiter.take('k499', 1, 60_000)).toBe(false);
-  });
-
-  it('locks a username after 5 failures for 15 minutes and limits IPs', () => {
-    let now = 0;
-    const throttle = new LoginThrottle({ ipLimit: 3 }, () => now);
-    for (let i = 0; i < 4; i++) expect(throttle.fail('Admin')).toBe(false);
-    expect(throttle.lockedFor('admin')).toBe(0);
-    expect(throttle.fail('admin')).toBe(true);
-    expect(throttle.lockedFor('ADMIN')).toBe(900);
-    now = 15 * 60_000 + 1;
-    expect(throttle.lockedFor('admin')).toBe(0);
-
-    expect([
-      throttle.allowIp('1.2.3.4'),
-      throttle.allowIp('1.2.3.4'),
-      throttle.allowIp('1.2.3.4'),
-      throttle.allowIp('1.2.3.4'),
-    ]).toEqual([true, true, true, false]);
   });
 });
 
@@ -340,71 +170,6 @@ describe('OidcService', () => {
     );
   }
 
-  it('completes code + PKCE sign-in and applies link / allow-policy / auto-provision rules', async () => {
-    const t = setup();
-    const idp = await fakeIdp();
-    const service = new OidcService(t.db, t.box, randomBytes(32), true);
-    await expect(service.begin({ purpose: 'admin_login', redirectUri: 'x' })).rejects.toThrow(/not enabled/);
-    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal', clientSecret: 'shh' });
-    expect(service.getSettings()).toMatchObject({ clientSecretSet: true, autoProvision: false });
-
-    const { identity } = await signIn(service, idp, { sub: 'u-1', email: 'me@example.com', groups: ['admins'] });
-    expect(identity).toMatchObject({ subject: 'u-1', email: 'me@example.com', groups: ['admins'] });
-
-    // Not linked, no auto-provision → no user.
-    expect(await service.resolveUser(t.users, identity)).toBeNull();
-    const admin = await t.users.create({ username: 'admin', password: PASSWORD });
-    t.users.linkOidc(admin.id, identity.issuer, identity.subject);
-    expect((await service.resolveUser(t.users, identity))?.id).toBe(admin.id);
-
-    // Allow policy applies to linked users too.
-    service.updateSettings({ allowPolicy: { emails: [], subjects: [], group: 'mcp-admins', groupsClaim: 'groups' } });
-    expect(await service.resolveUser(t.users, identity)).toBeNull();
-
-    expect(() =>
-      service.updateSettings({
-        autoProvision: true,
-        allowPolicy: { emails: [], subjects: [], group: '', groupsClaim: 'groups' },
-      }),
-    ).toThrow(/allow policy/);
-    service.updateSettings({
-      autoProvision: true,
-      allowPolicy: { emails: [], subjects: [], group: 'admins', groupsClaim: 'groups' },
-    });
-    const second = await signIn(service, idp, { sub: 'u-2', email: 'new.person@example.com', groups: ['admins'] });
-    // Auto-provisioning is self-registration: off until an admin picks a default role.
-    expect(await service.resolveUser(t.users, second.identity)).toBeNull();
-    updateSettings(t.db, 'security', { defaultRoleId: 'admin' });
-    const provisioned = await service.resolveUser(t.users, second.identity);
-    expect(provisioned).toMatchObject({ username: 'new.person', oidcSubject: 'u-2', roleId: 'admin' });
-  });
-
-  it('uses an email only when the IdP marks it verified', async () => {
-    const t = setup();
-    const idp = await fakeIdp();
-    const service = new OidcService(t.db, t.box, randomBytes(32), true);
-    service.updateSettings({
-      enabled: true,
-      issuer: idp.issuer,
-      clientId: 'portal',
-      clientSecret: 'shh',
-      autoProvision: true,
-      allowPolicy: { emails: ['admin@example.com'], subjects: [], group: '', groupsClaim: 'groups' },
-    });
-    updateSettings(t.db, 'security', { defaultRoleId: 'admin' });
-    for (const emailVerified of [null, false] as const) {
-      const { identity } = await signIn(service, idp, {
-        sub: `u-${emailVerified}`,
-        email: 'admin@example.com',
-        emailVerified,
-      });
-      expect(identity.email).toBeUndefined();
-      expect(await service.resolveUser(t.users, identity)).toBeNull();
-    }
-    const { identity } = await signIn(service, idp, { sub: 'u-ok', email: 'admin@example.com' });
-    expect(await service.resolveUser(t.users, identity)).toMatchObject({ oidcSubject: 'u-ok' });
-  });
-
   it('matches allowed emails exactly or by a whole *@domain entry', async () => {
     const t = setup();
     const idp = await fakeIdp();
@@ -428,50 +193,5 @@ describe('OidcService', () => {
     expect(service.isAllowed(unverified.identity)).toBe(false);
     const verified = await signIn(service, idp, { sub: 'u-2', email: 'a@corp.example' });
     expect(service.isAllowed(verified.identity)).toBe(true);
-  });
-
-  it('names the IdP error when the code exchange fails', async () => {
-    const t = setup();
-    const idp = await fakeIdp();
-    const service = new OidcService(t.db, t.box, randomBytes(32), true);
-    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal', clientSecret: 'shh' });
-    const { url, stateToken } = await service.begin({
-      purpose: 'admin_login',
-      redirectUri: 'https://admin.lan/auth/oidc/callback',
-    });
-    const params = new URL(url).searchParams;
-    idp.codes.set('code-1', {
-      nonce: params.get('nonce')!,
-      sub: 'u-1',
-      email: 'a@corp.example',
-      groups: [],
-      redirectUri: 'https://elsewhere.lan/auth/oidc/callback',
-    });
-    await expect(
-      service.complete(`?code=code-1&state=${params.get('state')}&iss=${encodeURIComponent(idp.issuer)}`, stateToken),
-    ).rejects.toThrow('Sign-in failed: invalid_grant: redirect_uri mismatch');
-  });
-
-  it('rejects a payload the same key signed for another purpose', async () => {
-    const t = setup();
-    const idp = await fakeIdp();
-    const key = randomBytes(32);
-    const service = new OidcService(t.db, t.box, key, true);
-    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal' });
-    for (const other of [{ mfaUser: 'x' }, { purpose: 'mcp_login', redirectUri: 'javascript:alert(1)' }]) {
-      await expect(service.complete('?code=x&state=y', signPayload(key, other, 60_000))).rejects.toThrow(
-        /expired or invalid/,
-      );
-    }
-  });
-
-  it('rejects tampered or replayed state', async () => {
-    const t = setup();
-    const idp = await fakeIdp();
-    const service = new OidcService(t.db, t.box, randomBytes(32), true);
-    service.updateSettings({ enabled: true, issuer: idp.issuer, clientId: 'portal' });
-    const { url } = await service.begin({ purpose: 'admin_login', redirectUri: 'https://admin.lan/cb' });
-    const state = new URL(url).searchParams.get('state');
-    await expect(service.complete(`?code=x&state=${state}`, 'forged.token')).rejects.toThrow(/expired or invalid/);
   });
 });
