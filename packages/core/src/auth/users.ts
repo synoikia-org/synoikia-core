@@ -63,6 +63,9 @@ const toPublicUser = (u: UserRow, role: PublicRole): PublicUser => ({
   role,
 });
 
+const newRecoveryCodes = () =>
+  Array.from({ length: RECOVERY_CODES }, () => randomToken(8).replace(/[-_]/g, '').slice(0, 10).toLowerCase());
+
 function checkPasswordPolicy(password: string) {
   if (typeof password !== 'string' || password.length < 12) {
     throw new ValidationError('weak_password', 'Passwords must be at least 12 characters');
@@ -109,6 +112,12 @@ export class UserService {
 
   toPublic(u: UserRow): PublicUser {
     return toPublicUser(u, this.roleOf(u));
+  }
+
+  /** The signed-in user's own view: with two-factor on, it also counts the recovery codes left. */
+  profile(userId: string): PublicUser & { recoveryCodesLeft?: number } {
+    const u = this.get(userId);
+    return { ...this.toPublic(u), ...(u.totpEnabled ? { recoveryCodesLeft: u.recoveryCodesHash?.length ?? 0 } : {}) };
   }
 
   isAdmin(u: UserRow): boolean {
@@ -401,9 +410,7 @@ export class UserService {
     if (!secret || user.totpEnabled) throw new ConflictError('totp_not_pending', 'Start TOTP enrollment first');
     const step = verifyTotp(secret, code, { nowMs: this.now().getTime() });
     if (step === null) throw new ValidationError('invalid_code', 'That code is not valid');
-    const codes = Array.from({ length: RECOVERY_CODES }, () =>
-      randomToken(8).replace(/[-_]/g, '').slice(0, 10).toLowerCase(),
-    );
+    const codes = newRecoveryCodes();
     this.db.transaction((tx) => {
       tx.update(users)
         .set({ totpEnabled: true, totpLastStep: step, recoveryCodesHash: codes.map(sha256) })
@@ -412,6 +419,29 @@ export class UserService {
       writeAudit(tx, {
         kind: 'auth',
         decision: 'totp_enabled',
+        actorKind: 'user',
+        actorId: userId,
+        detail: { username: user.username },
+      });
+    });
+    return codes;
+  }
+
+  /** Replaces every recovery code. Needs a current code from the app, so a recovery code cannot renew the
+   * set. Null on a wrong code (design §6.1). */
+  rotateRecoveryCodes(userId: string, code: string): string[] | null {
+    const user = this.get(userId);
+    if (!user.totpEnabled) throw new ConflictError('totp_disabled', 'Two-factor authentication is off');
+    if (!this.verifyTotpCode(userId, code)) return null;
+    const codes = newRecoveryCodes();
+    this.db.transaction((tx) => {
+      tx.update(users)
+        .set({ recoveryCodesHash: codes.map(sha256) })
+        .where(eq(users.id, userId))
+        .run();
+      writeAudit(tx, {
+        kind: 'auth',
+        decision: 'totp_recovery_rotated',
         actorKind: 'user',
         actorId: userId,
         detail: { username: user.username },

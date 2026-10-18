@@ -357,7 +357,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
 }
 
 export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
-  app.get('/api/profile', (c) => c.json(ctx.users.toPublic(ctx.users.get(c.get('user').id))));
+  app.get('/api/profile', (c) => c.json(ctx.users.profile(c.get('user').id)));
 
   app.post('/api/profile/password', async (c) => {
     const body = await readJson(c, z.object({ currentPassword: z.string().optional(), newPassword: z.string() }));
@@ -394,6 +394,13 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!ctx.users.disableOwnTotp(user, code)) return c.json({ error: 'invalid_code', message: 'Invalid code' }, 401);
     ctx.sessions.revokeKind(user.id, 'approval_ui');
     return c.json({ status: 'ok' });
+  });
+
+  app.post('/api/profile/totp/recovery-codes', async (c) => {
+    const { code } = await readJson(c, z.object({ code: z.string() }));
+    const recoveryCodes = ctx.users.rotateRecoveryCodes(c.get('user').id, code);
+    if (!recoveryCodes) return c.json({ error: 'invalid_code', message: 'Invalid code' }, 401);
+    return c.json({ recoveryCodes });
   });
 
   app.post('/api/profile/oidc/unlink', (c) => {
