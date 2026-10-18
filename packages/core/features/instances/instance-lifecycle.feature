@@ -49,12 +49,12 @@ Feature: Instance lifecycle
 
   Rule: Switches start and stop the instance
 
-    Scenario: A disabled instance is stopped, and agents are told that it is disabled
+    Scenario: A disabled instance is stopped, and agents are told that it is unavailable
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
       And agent 7 belongs to the admin and may read and write
       And the admin disabled the instance "tasks"
       When agent 7 asks for the open tasks of "Groceries"
-      Then the admin sees that "tasks" is stopped, and agent 7 is told that "tasks" is disabled
+      Then the admin sees that "tasks" is stopped, and agent 7 is told that "tasks" is unavailable
 
     Scenario: An instance that the admin enables again is ready
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
@@ -68,7 +68,7 @@ Feature: Instance lifecycle
       And agent 7 belongs to the admin and may read and write
       And the admin disabled Acme Tasks
       When agent 7 asks for the open tasks of "Groceries"
-      Then the admin sees that "tasks" is stopped, and agent 7 is told that "tasks" is disabled
+      Then the admin sees that "tasks" is stopped, and agent 7 is told that "tasks" is unavailable
 
   Rule: A connection test runs apart from the live instance
 
