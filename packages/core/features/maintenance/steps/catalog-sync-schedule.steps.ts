@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { API_TOKEN, opKey } from '../../support/world.js';
+import { API_TOKEN, eventually, opKey } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
 import { identity } from '../../identity/steps/identity.js';
 
@@ -138,7 +138,11 @@ Then('the admin sees that {string} synced', async (world: SynoikiaWorld, slug: s
 Then(
   'the admin sees that {string} synced again, and {string} did not',
   async (world: SynoikiaWorld, again: string, not: string) => {
-    expect((await instance(world, again)).lastSyncedAt).not.toBe(of(world).synced.get(again));
+    // The daily sync runs in the background after the start.
+    await eventually(
+      async () => (await instance(world, again)).lastSyncedAt !== of(world).synced.get(again),
+      `the sync of ${again}`,
+    );
     expect((await instance(world, not)).lastSyncedAt).toBe(of(world).synced.get(not));
   },
 );
