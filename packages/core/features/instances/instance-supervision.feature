@@ -29,6 +29,7 @@ Feature: Instance supervision
       When the admin disables the instance "tasks"
       Then the admin sees that "tasks" is stopped, after the error "init failed: Plugin did not answer init within 1000 ms"
 
+    @exclusive
     Scenario: A start that crashes counts as a failure
       Given core starts a failed plugin again after 100 milliseconds, and gives a start 1 second
       And the plugin of "tasks" crashes during its start

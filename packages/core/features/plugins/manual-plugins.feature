@@ -127,6 +127,7 @@ Feature: Manual plugins
 
   Rule: One staged upload at a time
 
+    @exclusive
     Scenario: A second upload while the first one unpacks is refused
       When the admin uploads two builds of Acme Tasks at once
       Then the admin is told that another upload is being processed
