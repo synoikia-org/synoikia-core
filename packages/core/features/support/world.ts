@@ -65,6 +65,8 @@ interface Agent {
   tokenId: string;
   /** The user whose credential this is: "admin" or "user 12". */
   owner: string;
+  /** For an agent that signed in with OAuth: its app's client id and its refresh token. */
+  oauth?: { clientId: string; refreshToken: string; resource: string };
   client?: Client;
   transport?: StreamableHTTPClientTransport;
 }
@@ -839,6 +841,80 @@ export class SynoikiaWorld extends QuickPickleWorld {
       ?.client?.close()
       .catch(() => undefined);
     this.agents.set(agent, { token: created.token as string, tokenId: created.id as string, owner });
+  }
+
+  /** The agent connects through the app "Acme Chat" with OAuth: `owner` signs in on the consent page and lets it
+   * read and write `slug`. Core restarts once with a public address; the World keeps the refresh token. */
+  async oauthAgent(agent: string, owner: string, slug: string) {
+    await this.tasksInstance(slug);
+    await this.publicMcpAddress();
+    const redirectUri = 'http://127.0.0.1:9/callback';
+    const clients = (await this.expectOk(this.admin.get('/api/oauth/clients'), 'list clients')) as unknown as {
+      clientId: string;
+      name: string;
+    }[];
+    const clientId =
+      clients.find((c) => c.name === 'Acme Chat')?.clientId ??
+      ((
+        await this.expectOk(
+          this.admin.post('/api/oauth/clients', { name: 'Acme Chat', redirectUris: [redirectUri] }),
+          'register client',
+        )
+      ).client_id as string);
+    const verifier = randomBytes(32).toString('base64url');
+    const q = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+      state: 'acme-chat',
+    });
+    const consentPath = `/oauth/authorize?${q.toString()}`;
+    const { send } = this.pageBrowser();
+    await this.signInOnPage(send, owner, consentPath);
+    const page = await send(consentPath);
+    const form = /name="form" value="([^"]+)"/.exec(page.html)?.[1];
+    const resource = /name="resource" value="([^"]+)"/.exec(page.html)?.[1];
+    if (!form || !resource) throw new Error(`no consent form: ${page.html}`);
+    const done = await send('/oauth/consent', { form, resource, access: 'write', decision: 'approve' });
+    const code = new URL(done.location ?? redirectUri).searchParams.get('code');
+    if (!code) throw new Error(`no code: ${done.location} ${done.html}`);
+    const res = await fetch(`${this.mcpBase}/oauth/token`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+        client_id: clientId,
+        resource,
+      }),
+    });
+    const tokens = (await res.json()) as { access_token?: string; refresh_token?: string };
+    if (!tokens.access_token || !tokens.refresh_token) throw new Error(`token exchange: ${JSON.stringify(tokens)}`);
+    this.agents.set(agent, {
+      token: tokens.access_token,
+      tokenId: '',
+      owner,
+      oauth: { clientId, refreshToken: tokens.refresh_token, resource },
+    });
+  }
+
+  /** The OAuth agent asks for a new access token with its refresh token; the answer of the token service. */
+  async renewOAuth(agent: string) {
+    const a = this.agents.get(agent);
+    if (!a?.oauth) throw new Error(`agent ${agent} did not sign in with OAuth`);
+    const res = await fetch(`${this.mcpBase}/oauth/token`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: a.oauth.refreshToken,
+        client_id: a.oauth.clientId,
+        resource: a.oauth.resource,
+      }),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   }
 
   /** An MCP session of the agent on the instance, kept open for later calls. */

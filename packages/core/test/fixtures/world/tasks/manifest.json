@@ -2,6 +2,7 @@
   "id": "tasks",
   "name": "Acme Tasks (World fixture)",
   "version": "1.0.0",
+  "description": "Keeps the to-do lists of Acme Tasks.",
   "sdk": "^0.2.0",
   "entry": "index.mjs",
   "binding": {
@@ -20,9 +21,11 @@
     "scopes": [
       {
         "key": "list",
-        "label": "List"
+        "label": "List",
+        "registryKind": "list"
       }
-    ]
+    ],
+    "registryKind": "task"
   },
   "matchProfiles": {
     "list": [
