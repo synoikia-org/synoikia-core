@@ -3,25 +3,35 @@ Feature: Roles in the portal
   The admin gives each role its instances and three switches on each of them.
   The switches let the role's users set personal levels, keep own rules and see the status of the instance.
   The most a role may do in each group is set on the access page of the instance.
-  A rename or a delete asks first. When core refuses a change, the portal says why.
+  Adding an instance and turning a switch apply at once. The removal of an instance, a rename and a delete ask first.
+  When core refuses a change, the portal says why.
 
-  Rule: A role's instances and switches apply at once
+  Rule: Adding an instance and turning a switch apply at once
 
     Scenario: Adding /tasks to "family" and turning on personal levels asks nothing
       Given the role "family" and the instance /tasks
       When the admin adds /tasks to "family" and turns on "Set personal levels" on the roles page
       Then "family" has /tasks with personal levels, and the portal asked nothing
 
-    Scenario: Removing /tasks from "family" asks nothing
-      Given the role "family" has the instance /tasks
-      When the admin removes /tasks from "family" on the roles page
-      Then "family" no longer has /tasks, and the portal asked nothing
-
     Scenario: A switch on an instance that the role lost meanwhile is explained
       Given the role "family" has the instance /tasks
       And the admin opened the roles page, and another admin removed /tasks from "family" meanwhile
       When the admin turns on "Own pre-approval rules" for "family" on /tasks
       Then the portal says to add the instance to the role first
+
+  Rule: Removing an instance from a role asks first, because the role loses its levels there
+
+    Scenario: Removing /tasks from "family" names what the role loses
+      Given the role "family" has the instance /tasks
+      When the admin removes /tasks from "family" on the roles page and confirms the question
+      Then the question said that "family" loses its maximum levels, personal levels and own rules on /tasks
+      And "family" no longer has /tasks
+
+    Scenario: A cancelled removal keeps /tasks and its levels
+      Given the role "family" has the instance /tasks
+      And "family" may at most Read in the group "lists" of /tasks
+      When the admin removes /tasks from "family" on the roles page and cancels the question
+      Then "family" still has /tasks, and still may at most Read in the group "lists"
 
   Rule: A role's maximum levels are set on the access page of the instance
 

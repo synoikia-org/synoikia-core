@@ -32,7 +32,6 @@ Feature: My profile in the portal
       Then the profile shows the recovery codes until the admin says they saved them
       And the profile says "Enter a current code (or a recovery code) to turn it off."
 
-    @backlog
     Scenario: The recovery codes stay while the portal loads the profile again
       Given the admin set up two-factor sign-in on their profile and sees the recovery codes
       When the browser is offline for a minute and comes back

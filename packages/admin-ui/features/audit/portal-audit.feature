@@ -2,6 +2,7 @@
 Feature: The audit log in the portal
   The admin reads every call, search, change and sign-in in the audit log.
   Each event names who did it. Filters apply when the admin asks, and the log shows 100 events for each page.
+  The pager counts the events that are on screen, also while the next page loads.
 
   Rule: Each event names who did it
 
