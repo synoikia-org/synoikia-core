@@ -25,6 +25,14 @@ Feature: Best-practice attestation
       When agent 7 imports "flour" and "sugar" into "Groceries" with the key "let-me-in"
       Then agent 7 is told to read the guide of "import tasks" first
 
+  Rule: The access level is checked before the guide
+
+    Scenario: An import that the admin turned off is refused as off, not for a missing key
+      Given the admin gives "import tasks" its own level none
+      When agent 7 imports "flour" and "sugar" into "Groceries" without a key
+      Then agent 7 is told that the admin turned "import tasks" off, and is not asked for the guide
+      And the list "Groceries" still holds the open tasks "milk", "bread" and "eggs"
+
   Rule: The key works only in the session that read the guide
 
     Scenario: A key from another session is refused
