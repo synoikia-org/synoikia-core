@@ -70,6 +70,16 @@ When(
 );
 
 Then(
+  'agent {word} is told that the admin turned {string} off, and is not asked for the guide',
+  (world: SynoikiaWorld, _agent: string, name: string) => {
+    expect(world.answer).toEqual({
+      error: 'OPERATION_DISABLED',
+      message: expect.stringMatching(new RegExp(`^${opKey(name)} .*access level None`)) as string,
+    });
+  },
+);
+
+Then(
   'agent {word} is told to read the guide of {string} first',
   (world: SynoikiaWorld, _agent: string, name: string) => {
     expect(world.answer).toEqual({
