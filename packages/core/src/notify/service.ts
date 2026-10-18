@@ -2,11 +2,11 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { writeAudit } from '../audit.js';
-import { aad } from '../crypto/index.js';
+import { aad, DecryptionError } from '../crypto/index.js';
 import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
 import { notifierChannels } from '../db/schema.js';
-import { NotFoundError, ValidationError } from '../errors.js';
+import { NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
 import type { CoreEventMap, CoreEventName, CoreEvents } from '../events.js';
 
 /** Notification channels (design §9): ntfy and signed webhooks, informational only; payloads carry
@@ -60,6 +60,7 @@ const ChannelInputSchema = z.discriminatedUnion('kind', [
 
 type ChannelRow = typeof notifierChannels.$inferSelect;
 type Secrets = { token?: string; hmacSecret?: string; headers?: Record<string, string> };
+const SECRET_FIELDS = { ntfy: ['token'], webhook: ['hmacSecret', 'headers'] } as const;
 
 export interface Notification {
   event: NotifyEvent;
@@ -89,18 +90,23 @@ export class NotifierService {
     } = {},
   ) {}
 
-  private secretsOf(row: ChannelRow): Secrets {
-    return row.secretsEnc
-      ? this.box.decryptJson<Secrets>(row.secretsEnc, aad('notifier_channels', 'secrets_enc', row.id))
-      : {};
+  /** Undefined when the current master key cannot decrypt them (design §7.2). */
+  private secretsOf(row: ChannelRow): Secrets | undefined {
+    if (!row.secretsEnc) return {};
+    try {
+      return this.box.decryptJson<Secrets>(row.secretsEnc, aad('notifier_channels', 'secrets_enc', row.id));
+    } catch (err) {
+      if (err instanceof DecryptionError) return undefined;
+      throw err;
+    }
   }
 
   private publicRow(row: ChannelRow) {
     const s = this.secretsOf(row);
+    const base = { ...row, events: knownEvents(row.events), secretsEnc: undefined };
+    if (!s) return { ...base, secrets: {}, secretsUnreadable: true };
     return {
-      ...row,
-      events: knownEvents(row.events),
-      secretsEnc: undefined,
+      ...base,
       secrets: {
         ...(row.kind === 'ntfy' ? { token: { set: !!s.token } } : {}),
         ...(row.kind === 'webhook'
@@ -156,10 +162,11 @@ export class NotifierService {
     if (existing && existing.kind !== input.kind)
       throw new ValidationError('kind_immutable', 'A channel’s kind cannot change');
     const id = existing?.id ?? randomUUID();
-    const secrets = this.mergeSecrets(
-      existing ? this.secretsOf(existing) : {},
-      input.secrets as Record<string, unknown>,
-    );
+    const given = input.secrets as Record<string, unknown>;
+    const current = existing ? this.secretsOf(existing) : {};
+    // Unreadable secrets are replaced only by a save that gives each secret field, with a value or null.
+    if (!current && !SECRET_FIELDS[input.kind].every((k) => given[k] !== undefined)) throw new SecretsUnreadableError();
+    const secrets = this.mergeSecrets(current ?? {}, given);
     const values = {
       id,
       kind: input.kind,
@@ -212,6 +219,7 @@ export class NotifierService {
   async test(id: string) {
     const row = this.db.select().from(notifierChannels).where(eq(notifierChannels.id, id)).get();
     if (!row) throw new NotFoundError('channel_not_found', 'No such channel');
+    if (!this.secretsOf(row)) throw new SecretsUnreadableError();
     return this.deliver(row, {
       event: 'sync.failed',
       title: 'Test notification',
@@ -327,6 +335,7 @@ export class NotifierService {
 
   private async deliver(row: ChannelRow, n: Notification): Promise<{ ok: boolean; error?: string }> {
     const secrets = this.secretsOf(row);
+    if (!secrets) return this.failed(row, new SecretsUnreadableError().message);
     let request: { url: string; headers: Record<string, string>; body: string };
     if (row.kind === 'ntfy') {
       const cfg = NtfyConfig.parse(row.config);
@@ -399,11 +408,15 @@ export class NotifierService {
         lastError = err instanceof Error ? err.message : String(err);
       }
     }
+    return this.failed(row, lastError);
+  }
+
+  private failed(row: ChannelRow, error: string) {
     this.db
       .update(notifierChannels)
-      .set({ lastError: lastError.slice(0, 300) })
+      .set({ lastError: error.slice(0, 300) })
       .where(eq(notifierChannels.id, row.id))
       .run();
-    return { ok: false, error: lastError };
+    return { ok: false, error };
   }
 }

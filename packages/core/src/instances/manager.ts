@@ -15,7 +15,7 @@ import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
 import { pendingApprovals, pluginInstances, plugins } from '../db/schema.js';
 import { isValidSlug } from '../endpoints/slug.js';
-import { BadGatewayError, ConflictError, NotFoundError, ValidationError } from '../errors.js';
+import { BadGatewayError, ConflictError, NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
 import type { CoreEvents } from '../events.js';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../gate/redact.js';
 import type { InstanceRuntime } from '../gate/pipeline.js';
@@ -378,10 +378,7 @@ export class InstanceManager {
       if (!(err instanceof DecryptionError)) throw err;
       const given = (k: string) => patch[k] === null || (typeof patch[k] === 'string' && patch[k] !== '');
       if (secretFieldNames(manifest).every(given)) return {};
-      throw new ConflictError(
-        'secrets_unreadable',
-        'The stored secrets cannot be read with the current master key. Enter them again.',
-      );
+      throw new SecretsUnreadableError();
     }
   }
 

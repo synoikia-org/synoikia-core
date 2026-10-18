@@ -35,6 +35,13 @@ export class ForbiddenError extends ServiceError {
   }
 }
 
+/** Stored secrets that the current master key cannot decrypt (design §7.2). */
+export class SecretsUnreadableError extends ConflictError {
+  constructor() {
+    super('secrets_unreadable', 'The stored secrets cannot be read with the current master key. Enter them again.');
+  }
+}
+
 /** A plugin or upstream answered, but with something core cannot use. */
 export class BadGatewayError extends ServiceError {
   constructor(code: string, message: string, details?: unknown) {
