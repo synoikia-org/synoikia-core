@@ -253,13 +253,13 @@ When(
 );
 
 Then(
-  'agent {word} is told that {string} does not exist and that {string} is disabled',
+  'agent {word} is told that {string} does not exist and that {string} is unavailable',
   (world: SynoikiaWorld, _agent: string, missing: string, disabled: string) => {
     const { knocks } = clientAuth(world);
     expect(knocks.get(missing)).toMatchObject({ status: 404, body: { error: { message: 'Unknown MCP endpoint' } } });
     expect(knocks.get(disabled)).toMatchObject({
       status: 503,
-      body: { error: { message: 'This endpoint is disabled' } },
+      body: { error: { message: 'This instance is unavailable' } },
     });
   },
 );

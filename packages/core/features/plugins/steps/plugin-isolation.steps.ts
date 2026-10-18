@@ -96,14 +96,32 @@ Then(
   },
 );
 
+/** The admin's answer to "sync now". */
+const syncAnswers = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
+
+When('the admin tries to sync {string}', async (world: SynoikiaWorld, slug: string) => {
+  const res = await world.admin.post(`/api/instances/${await world.tasksInstance(slug)}/sync`);
+  syncAnswers.set(world, { status: res.status, body: (await res.json()) as Record<string, unknown> });
+});
+
 Then(
-  'the admin sees that the last sync of {string} failed, because the plugin sent a catalog that is not valid',
-  async (world: SynoikiaWorld, slug: string) => {
-    const id = await world.tasksInstance(slug);
-    const instance = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
-    expect(instance.lastSyncStatus).toMatch(/^error: Invalid syncCatalog result from plugin: /);
+  'the admin is told that the sync failed, because the plugin sent a catalog that is not valid',
+  (world: SynoikiaWorld) => {
+    expect(syncAnswers.get(world)).toMatchObject({
+      status: 502,
+      body: {
+        error: 'sync_failed',
+        message: expect.stringMatching(/^Invalid syncCatalog result from plugin: /) as string,
+      },
+    });
   },
 );
+
+Then('the last sync of {string} shows the same reason', async (world: SynoikiaWorld, slug: string) => {
+  const id = await world.tasksInstance(slug);
+  const instance = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
+  expect(instance.lastSyncStatus).toBe(`error: ${String(syncAnswers.get(world)!.body.message)}`);
+});
 
 Then(
   'agent {word} is told that the plugin failed with {string}',

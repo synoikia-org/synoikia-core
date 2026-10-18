@@ -142,6 +142,44 @@ Then('the connection never shows the API token', (world: SynoikiaWorld) => {
   expect(JSON.stringify(of(world).answers[0]!.body)).not.toContain(API_TOKEN);
 });
 
+When(
+  'the admin opens the connection of {string} and then saves it with the API token',
+  async (world: SynoikiaWorld, slug: string) => {
+    await world.signInAgain();
+    const id = await world.tasksInstance(slug);
+    const answers = [
+      await world.admin.get(`/api/instances/${id}/connection`),
+      await world.admin.put(`/api/instances/${id}/connection`, {
+        config: { url: world.upstream!.url },
+        secrets: { token: API_TOKEN },
+      }),
+    ];
+    of(world).answers = await Promise.all(
+      answers.map(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, unknown> })),
+    );
+  },
+);
+
+Then(
+  'the admin was told first to enter the secrets again, and then {string} runs with the API token set',
+  async (world: SynoikiaWorld, slug: string) => {
+    const [opened, saved] = of(world).answers;
+    expect(opened).toEqual({
+      status: 409,
+      body: {
+        error: 'secrets_unreadable',
+        message: 'The stored secrets cannot be read with the current master key. Enter them again.',
+      },
+    });
+    expect(saved).toMatchObject({ status: 200, body: { secrets: { token: { set: true } } } });
+    const id = await world.tasksInstance(slug);
+    await eventually(
+      async () => (await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance')).status === 'ready',
+      'the instance to run',
+    );
+  },
+);
+
 Given('the admin saves the connection of {string} without the token', async (world: SynoikiaWorld, slug: string) => {
   const id = await world.tasksInstance(slug);
   await world.expectOk(

@@ -100,6 +100,40 @@ Given('the admin turned single sign-on off', async (world: SynoikiaWorld) => {
   await world.setUpAcmeId({ enabled: false });
 });
 
+const ssoSave = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
+
+const saveSso = async (world: SynoikiaWorld, enabled: boolean) => {
+  const res = await world.admin.put('/api/settings/oidc', { enabled, issuer: '', clientId: '' });
+  ssoSave.set(world, { status: res.status, body: (await res.json()) as Record<string, unknown> });
+};
+
+When('the admin saves single sign-on as off, with no issuer and no client', async (world: SynoikiaWorld) => {
+  await saveSso(world, false);
+});
+
+When('the admin tries to turn single sign-on on, with no issuer and no client', async (world: SynoikiaWorld) => {
+  await saveSso(world, true);
+});
+
+const ssoSettings = async (world: SynoikiaWorld) =>
+  ((await world.expectOk(world.admin.get('/api/settings'), 'read settings')) as { oidc: Record<string, unknown> }).oidc;
+
+Then('single sign-on is off on the server, with no issuer and no client', async (world: SynoikiaWorld) => {
+  expect(ssoSave.get(world)).toMatchObject({ status: 200, body: { enabled: false, issuer: '', clientId: '' } });
+  expect(await ssoSettings(world)).toMatchObject({ enabled: false, issuer: '', clientId: '' });
+});
+
+Then(
+  'the admin is told that the issuer and the client are not valid, and single sign-on stays as it was',
+  async (world: SynoikiaWorld) => {
+    const acme = await world.acmeId();
+    expect(ssoSave.get(world)).toMatchObject({ status: 400, body: { error: 'invalid_oidc' } });
+    const details = ssoSave.get(world)!.body.details as string[];
+    expect(details.map((d) => d.split(':')[0]).sort()).toEqual(['clientId', 'issuer']);
+    expect(await ssoSettings(world)).toMatchObject({ enabled: true, issuer: acme.issuer, clientId: acme.clientId });
+  },
+);
+
 Given('the admin allows only the Acme ID group {string}', async (world: SynoikiaWorld, group: string) => {
   await setPolicy(world, { group });
 });

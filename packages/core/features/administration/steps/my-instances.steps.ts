@@ -104,6 +104,34 @@ When(
   },
 );
 
+Given(
+  'user {int} sets their own level of the group {string} to {word}',
+  async (world: SynoikiaWorld, user: number, group: string, level: string) => {
+    const id = await world.tasksInstance(world.lastInstance);
+    await world.expectOk(
+      portalOf(world, user).put(`/api/me/endpoints/${id}/groups/${group}`, { level }),
+      'set an own group level',
+    );
+  },
+);
+
+When('user {int} looks at the levels of {string}', async (world: SynoikiaWorld, user: number, slug: string) => {
+  const { status, view } = await myView(world, person(user), slug);
+  expect(status).toBe(200);
+  admin(world).seen.view = view;
+});
+
+Then(
+  'user {int} sees only the group {string}, with each write off because of their own level',
+  (world: SynoikiaWorld, _user: number, group: string) => {
+    const view = admin(world).seen.view as LevelView;
+    expect(view.groups.map((g) => [g.key, g.ownLevel])).toEqual([[group, 'read']]);
+    expect(view.operations.map((o) => o.key).sort()).toEqual(['tasks.add', 'tasks.complete', 'tasks.import']);
+    for (const op of view.operations)
+      expect(op).toMatchObject({ group, roleMax: 'ask', reachable: false, level: 'none', reason: 'own_level' });
+  },
+);
+
 Then('it works on {string} and is refused on {string}', (world: SynoikiaWorld) => {
   expect(admin(world).seen.statuses).toEqual([200, 403]);
 });

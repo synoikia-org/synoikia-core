@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Then, When } from 'quickpickle';
+import Database from 'better-sqlite3';
+import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { startCoreProcess } from '../../support/core-process.js';
 import { eventually, GATEWAY } from '../../support/world.js';
@@ -195,10 +196,21 @@ Then('its log has the warning for the token of another issuer, and no debug or i
   expect(log.filter((l) => /^(DEBUG|INFO) /.test(l))).toEqual([]);
 });
 
-When('the admin tries to open the connection of {string}', async (world: SynoikiaWorld, slug: string) => {
-  await world.signInAgain();
+Given('the database of the server refuses each change of {string}', async (world: SynoikiaWorld, slug: string) => {
+  const id = await world.tasksInstance(slug);
+  const db = new Database(path.join(world.dataDir, 'synoikia.sqlite'));
+  db.exec(
+    `CREATE TRIGGER refuse_changes BEFORE UPDATE OF config, secrets_enc ON plugin_instances WHEN OLD.id = '${id}' ` +
+      `BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`,
+  );
+  db.close();
+});
+
+When('the admin tries to save the connection of {string}', async (world: SynoikiaWorld, slug: string) => {
   mark(world);
-  const res = await world.admin.get(`/api/instances/${world.instances.get(slug)!}/connection`);
+  const res = await world.admin.put(`/api/instances/${world.instances.get(slug)!}/connection`, {
+    config: { url: world.upstream!.url },
+  });
   of(world).answers = [{ status: res.status, text: await res.text() }];
 });
 
@@ -212,7 +224,7 @@ Then(
   (world: SynoikiaWorld, slug: string) => {
     const errors = lines(world).filter((l) => l.startsWith('ERROR request failed'));
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/^ERROR request failed method=GET route=\/api\/instances\/:id\/connection /);
+    expect(errors[0]).toMatch(/^ERROR request failed method=PUT route=\/api\/instances\/:id\/connection /);
     expect(errors[0]).not.toContain(world.instances.get(slug)!);
   },
 );

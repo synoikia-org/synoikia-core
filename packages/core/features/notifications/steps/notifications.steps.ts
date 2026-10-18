@@ -277,6 +277,16 @@ Then('the admin got the notifications {string} and {string}', async (world: Syno
   expect(inbox.map((n) => n.title).sort()).toEqual([a, b].sort());
 });
 
+Then(
+  'the admin got the notifications {string}, {string} and {string}',
+  async (world: SynoikiaWorld, a: string, b: string, c: string) => {
+    const inbox = identity(world).inbox!;
+    await eventually(() => inbox.length >= 3, 'three notifications');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(inbox.map((n) => n.title).sort()).toEqual([a, b, c].sort());
+  },
+);
+
 When(
   'the admin syncs {string}, which fails, and then again after the plugin lists its operations',
   async (world: SynoikiaWorld, slug: string) => {

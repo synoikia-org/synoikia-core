@@ -2,6 +2,7 @@ import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { csrfOf, eventually, opKey } from '../../support/world.js';
 import type { PageResponse, SynoikiaWorld } from '../../support/world.js';
+import { admin } from '../../administration/steps/administration.js';
 
 /** What a step saw that a later step checks: approval links, the page the admin opened and what came back. */
 const seen = new WeakMap<
@@ -190,6 +191,24 @@ Then(
     let ended: Record<string, unknown>[] = [];
     await eventually(async () => (ended = await endedGrants(world)).length > 0, 'the end of the session grant');
     expect(ended).toEqual([expect.objectContaining({ client: `token:agent ${agent}`, reason })]);
+  },
+);
+
+Then(
+  'both times the admin finds the two session grants of agent {word} and the end of the first under the name {string}',
+  (world: SynoikiaWorld, agent: string, name: string) => {
+    const { found, csv } = admin(world);
+    const grantRows = found.filter((r) => r.decision.startsWith('session_grant.'));
+    expect(grantRows.map((r) => [r.decision, r.detail?.client, r.detail?.reason]).sort()).toEqual([
+      ['session_grant.created', `token:agent ${agent}`, undefined],
+      ['session_grant.created', `token:agent ${agent}`, undefined],
+      ['session_grant.ended', `token:agent ${agent}`, 'replaced'],
+    ]);
+    const adminId = world.person(name).id;
+    for (const r of grantRows) expect(r).toMatchObject({ actorKind: 'user', actorId: adminId, actorName: name });
+    const lines = csv.split('\n').filter((l) => l.includes(',session_grant.'));
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(line).toContain(`,user,${adminId},${name},false,`);
   },
 );
 
