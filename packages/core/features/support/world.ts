@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import type { CryptoKey, JWK } from 'jose';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { createAppContext } from '../../src/app.js';
-import type { AppContext } from '../../src/app.js';
+import type { AppContext, AppOptions } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
 import { startServers } from '../../src/server.js';
 import type { RunningServers } from '../../src/server.js';
@@ -18,6 +20,17 @@ import { browser } from '../../test/admin-client.js';
 
 const PLUGINS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../test/fixtures/world');
 const ADMIN = { username: 'admin', password: 'world admin passphrase' };
+/** "The access gateway": a Cloudflare Access application in front of core, with its team domain and audience. */
+export const GATEWAY = { teamDomain: 'acme.cloudflareaccess.com', aud: 'acme-tasks-access' };
+let gatewayKeys: Promise<{ privateKey: CryptoKey; jwk: JWK }> | undefined;
+const gatewayKey = () =>
+  (gatewayKeys ??= (async () => {
+    const { publicKey, privateKey } = await generateKeyPair('RS256');
+    return { privateKey, jwk: { ...(await exportJWK(publicKey)), kid: 'acme-access-1', alg: 'RS256', use: 'sig' } };
+  })());
+
+/** How long core waits for an answer to a form before the call moves to the approval link (30 s in production). */
+export const FORM_WAIT_MS = 1000;
 /** The upstream's API token, stored as the instance's secret. */
 export const API_TOKEN = 'acme-tok-9f8e7d6c'; // gitleaks:allow (the fake upstream's test token)
 
@@ -46,6 +59,8 @@ export type Access = 'read' | 'write';
 
 interface Agent {
   token: string;
+  /** The credential's id in the owner's portal. */
+  tokenId: string;
   /** The user whose credential this is: "admin" or "user 12". */
   owner: string;
   client?: Client;
@@ -57,7 +72,25 @@ export interface Prompt {
   mode: 'url' | 'form';
   message: string;
   url?: string;
+  /** The fields of a form. */
+  fields?: string[];
 }
+
+/** How an app answers a prompt: `cancel` is a dismissal. A thrown error means the app could not show it. */
+export type PromptAnswer = 'accept' | 'decline' | 'cancel';
+
+/** A page of the MCP listener as a browser got it. */
+export interface PageResponse {
+  status: number;
+  /** The scripts the page may run, by its content security policy. */
+  csp: string;
+  /** The cookies the page set. */
+  cookies: string[];
+  html: string;
+}
+
+/** The form token of a page of the MCP listener. */
+export const csrfOf = (html: string) => /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -108,16 +141,36 @@ export class SynoikiaWorld extends QuickPickleWorld {
   agents = new Map<string, Agent>();
   people = new Map<string, Person>();
   roles = new Map<string, string>();
+  /** The ids of the pre-approval rules made so far, in order. */
+  rules: string[] = [];
   /** What the last agent call returned; `refused` holds the message when the instance refused the credential. */
   answer: Record<string, unknown> = {};
+  /** The prompts the agents' apps were shown, in order. */
+  prompts: Prompt[] = [];
+  /** An agent call that still runs, started by `startCall`. */
+  running?: Promise<void>;
+  /** Work to undo when the scenario ends, such as a plugin harness. */
+  cleanups: (() => Promise<unknown>)[] = [];
+  /** How far the World moved core's clock ahead of the real time. */
+  clockMs = 0;
   /** What the last refused portal change answered. */
   portalAnswer: { status: number; body: Record<string, unknown> } = { status: 0, body: {} };
 
   async init() {
     await super.init();
+    // A @long-running step may wait for a real timer of core, such as the shortest approval expiry.
+    const { info } = this as unknown as { info: { tags: string[]; config: { stepTimeout: number } } };
+    if (info.tags.includes('@long-running')) info.config.stepTimeout = 20_000;
     this.upstream = await startFakeHttp({ routes: this.upstreamRoutes(), guard: (req) => this.guardUpstream(req) });
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-world-'));
     cpSync(PLUGINS, path.join(this.dataDir, 'plugins'), { recursive: true });
+    await this.startCore();
+    this.admin = await this.portal(ADMIN.username, ADMIN.password);
+    const me = await this.expectOk(this.admin.get('/api/profile'), 'read profile');
+    this.people.set('admin', { id: me.id as string, ...ADMIN, portal: this.admin });
+  }
+
+  private async startCore(opts: AppOptions = {}) {
     this.ctx = await createAppContext(
       loadConfig({
         DATA_DIR: this.dataDir,
@@ -128,17 +181,38 @@ export class SynoikiaWorld extends QuickPickleWorld {
         ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
         ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
       }),
+      { formFallbackMs: FORM_WAIT_MS, now: () => new Date(Date.now() + this.clockMs), ...opts },
     );
     await this.ctx.start();
     this.servers = await startServers(this.ctx);
     this.adminBase = `http://127.0.0.1:${this.servers.admin.port}`;
     this.mcpBase = `http://127.0.0.1:${this.servers.mcp.port}`;
-    this.admin = await this.portal(ADMIN.username, ADMIN.password);
-    const me = await this.expectOk(this.admin.get('/api/profile'), 'read profile');
-    this.people.set('admin', { id: me.id as string, ...ADMIN, portal: this.admin });
+  }
+
+  /** Moves core's clock ahead; the portals sign in again, as their sessions time out. */
+  async advanceClock(ms: number) {
+    this.clockMs += ms;
+    for (const p of this.people.values())
+      await this.expectOk(
+        p.portal!.post('/auth/login', { username: p.username, password: p.password }),
+        'sign in again',
+      );
+  }
+
+  /** Stops core and starts it again on the same data; agents open new sessions, portal sign-ins stay. */
+  async restartCore() {
+    for (const agent of this.agents.values()) {
+      await agent.client?.close().catch(() => undefined);
+      agent.client = undefined;
+      agent.transport = undefined;
+    }
+    await this.servers?.close();
+    await this.ctx?.stop();
+    await this.startCore();
   }
 
   async stop() {
+    for (const undo of this.cleanups.splice(0).reverse()) await undo().catch(() => undefined);
     for (const agent of this.agents.values()) await agent.client?.close().catch(() => undefined);
     for (const client of this.oldClients) await client.close().catch(() => undefined);
     await this.servers?.close();
@@ -261,8 +335,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
     return path.join(this.dataDir, 'plugins', 'tasks', name);
   }
 
-  /** Drops a flag file the fixture plugin reads: `down`, `restart` or `catalog-broken`. */
-  pluginFlag(name: 'down' | 'restart' | 'catalog-broken', value = '') {
+  /** Drops a flag file the fixture plugin reads: `down`, `restart`, `catalog-broken` or `no-confirmation`. */
+  pluginFlag(name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation', value = '') {
     writeFileSync(this.pluginFile(name), value);
   }
 
@@ -446,13 +520,25 @@ export class SynoikiaWorld extends QuickPickleWorld {
     const known = this.people.get(person);
     if (known) return known;
     const roleId = await this.role(roleName);
-    const username = person.replace(/\s+/g, '');
+    const username = `${person.replace(/\s+/g, '')}@acme.example`;
     const password = `${username} world passphrase`;
     const created = await this.expectOk(this.admin.post('/api/users', { username, password, roleId }), 'create user');
     const portal = await this.portal(username, password);
     const p = { id: created.id as string, username, password, portal };
     this.people.set(person, p);
     return p;
+  }
+
+  /** A person who makes their own account with the sign-up form, and gets the role the admin chose for it. */
+  async signUp(person: string) {
+    const username = `${person.replace(/\s+/g, '')}@acme.example`;
+    const password = `${username} world passphrase`;
+    const portal = browser({ request: (p, init) => fetch(`${this.adminBase}${String(p)}`, init) });
+    await portal.init();
+    const created = await this.expectOk(portal.post('/auth/register', { username, password }), 'sign up');
+    if (created.status !== 'ok') throw new Error(`sign up: ${JSON.stringify(created)}`);
+    const me = await this.expectOk(portal.get('/api/profile'), 'read profile');
+    this.people.set(person, { id: me.id as string, username, password, portal });
   }
 
   person(name: string) {
@@ -470,6 +556,36 @@ export class SynoikiaWorld extends QuickPickleWorld {
     else await this.expectOk(res, 'set own level');
   }
 
+  // ── pre-approval rules ──
+
+  /** A pre-approval rule for one operation, written by the admin or, with `owner`, in that user's own portal. */
+  async rule(
+    slug: string,
+    name: string,
+    match: unknown[],
+    opts: { owner?: string; extra?: Record<string, unknown>; expect?: 'ok' | 'refused' } = {},
+  ) {
+    const id = await this.tasksInstance(slug);
+    const op = await this.operation(slug, name);
+    const body = { operationId: op.id, match, reason: `the World's rule for ${name}`, ...opts.extra };
+    const res = opts.owner
+      ? this.person(opts.owner).portal!.post(`/api/me/endpoints/${id}/rules`, body)
+      : this.admin.post(`/api/instances/${id}/rules`, body);
+    if (opts.expect === 'refused') return void (await this.expectRefused(res, 'save rule'));
+    const created = await this.expectOk(res, 'save rule');
+    this.rules.push(created.id as string);
+  }
+
+  /** The rules of the instance as the admin sees them. */
+  async ruleList(slug: string) {
+    const id = await this.tasksInstance(slug);
+    return (await this.expectOk(this.admin.get(`/api/instances/${id}/rules`), 'list rules')) as unknown as {
+      id: string;
+      inert: string | null;
+      strictMissAt: string | null;
+    }[];
+  }
+
   // ── agents ──
 
   /** A new credential of `owner` for the agent; without `access`, it takes what the portal offers first. */
@@ -483,7 +599,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
       .get(agent)
       ?.client?.close()
       .catch(() => undefined);
-    this.agents.set(agent, { token: created.token as string, owner });
+    this.agents.set(agent, { token: created.token as string, tokenId: created.id as string, owner });
   }
 
   /** An MCP session of the agent on the instance, kept open for later calls. */
@@ -494,25 +610,36 @@ export class SynoikiaWorld extends QuickPickleWorld {
     return this.connect(agent, slug);
   }
 
-  /** A fresh MCP session of the agent; with `prompts`, its app can show approval prompts of that kind. */
+  /** A fresh MCP session of the agent; with `prompts`, its app can show approval prompts of that kind, or both. */
   async connect(
     agent: string,
     slug: string,
-    prompts?: { mode: 'url' | 'form'; answer: (p: Prompt) => Promise<'accept' | 'decline'> },
+    prompts?: {
+      mode: 'url' | 'form' | 'both';
+      answer: (p: Prompt) => Promise<PromptAnswer>;
+    },
   ) {
     const a = this.agents.get(agent);
     if (!a) throw new Error(`The World has no agent ${agent} yet`);
     if (a.client) this.oldClients.push(a.client);
-    const capabilities = prompts ? { elicitation: prompts.mode === 'url' ? { url: {} } : { form: {} } } : {};
+    const modes = { url: { url: {} }, form: { form: {} }, both: { url: {}, form: {} } };
+    const capabilities = prompts ? { elicitation: modes[prompts.mode] } : {};
     const client = new Client({ name: `agent ${agent}`, version: '1.0.0' }, { capabilities });
     if (prompts)
       client.setRequestHandler(ElicitRequestSchema, async (req) => {
-        const p = req.params as { mode?: string; message: string; url?: string };
-        const action = await prompts.answer({
+        const p = req.params as {
+          mode?: string;
+          message: string;
+          url?: string;
+          requestedSchema?: { properties?: Record<string, unknown> };
+        };
+        const prompt: Prompt = {
           mode: p.mode === 'url' ? 'url' : 'form',
           message: p.message,
           url: p.url,
-        });
+          ...(p.mode === 'url' ? {} : { fields: Object.keys(p.requestedSchema?.properties ?? {}) }),
+        };
+        const action = await prompts.answer(prompt);
         return action === 'accept' && p.mode !== 'url' ? { action, content: {} } : { action };
       });
     const url = new URL(`${this.mcpBase}/${slug}`);
@@ -523,6 +650,30 @@ export class SynoikiaWorld extends QuickPickleWorld {
     a.client = client;
     a.transport = transport;
     return client;
+  }
+
+  /** The agent's app, which shows prompts of `mode` and answers each one with `answer`; the World keeps the prompts. */
+  async app(
+    agent: string,
+    mode: 'url' | 'form' | 'both',
+    answer: (p: Prompt) => Promise<PromptAnswer> = () => Promise.resolve('accept'),
+  ) {
+    await this.connect(agent, this.lastInstance, {
+      mode,
+      answer: (p) => {
+        this.prompts.push(p);
+        return answer(p);
+      },
+    });
+  }
+
+  /** Starts the agent's call of one operation without waiting for its answer; `callEnded` waits. */
+  startCall(agent: string, name: string, params: Record<string, unknown>) {
+    this.running = this.call(agent, name, params);
+  }
+
+  async callEnded() {
+    await this.running;
   }
 
   /** The id of the agent's current MCP session. */
@@ -572,19 +723,56 @@ export class SynoikiaWorld extends QuickPickleWorld {
     this.answer = JSON.parse(res.content[0]!.text) as Record<string, unknown>;
   }
 
+  // ── the access gateway ──
+
+  /** Puts the access gateway in front of core: its key set answers at its team domain, and core trusts it. */
+  async accessGateway() {
+    const { jwk } = await gatewayKey();
+    const certs = `https://${GATEWAY.teamDomain}/cdn-cgi/access/certs`;
+    const real = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return url === certs ? Promise.resolve(Response.json({ keys: [jwk] })) : real(input, init);
+    };
+    this.cleanups.push(() => Promise.resolve((globalThis.fetch = real)));
+    await this.expectOk(
+      this.admin.put('/api/settings/mcp', { clientAuth: { external: true }, cfAccess: GATEWAY }),
+      'turn on the access gateway',
+    );
+  }
+
+  /** What the access gateway adds to a request it lets through: an assertion with these claims. */
+  async gatewayAssertion(claims: Record<string, unknown>) {
+    const { privateKey } = await gatewayKey();
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'acme-access-1' })
+      .setIssuer(`https://${GATEWAY.teamDomain}`)
+      .setAudience(GATEWAY.aud)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+  }
+
   // ── the approval page ──
 
-  /** The approval page of the last parked call (or of `url`), in a fresh browser that signs in as `person`. */
-  async approvalPage(person: string, url?: string) {
-    const link = url ?? (this.answer.approval as { url: string } | undefined)?.url;
-    if (!link) throw new Error(`No approval to open: ${JSON.stringify(this.answer)}`);
-    const pagePath = new URL(link, this.mcpBase).pathname;
+  /** The link of the last approval: the last link prompt of an app, else the last parked call. */
+  approvalLink() {
+    const link =
+      this.prompts.findLast((p) => p.mode === 'url')?.url ?? (this.answer.approval as { url: string } | undefined)?.url;
+    if (!link) throw new Error(`No approval link: ${JSON.stringify(this.answer)}`);
+    return new URL(link, this.mcpBase).pathname;
+  }
+
+  /** A fresh browser on the MCP listener, with its own cookies; `headers` go with every request, `extra` with one. */
+  pageBrowser(headers: Record<string, string> = {}) {
     const jar = new Map<string, string>();
-    const send = async (p: string, form?: Record<string, string>) => {
+    const send = async (p: string, form?: Record<string, string>, extra: Record<string, string> = {}) => {
       const res = await fetch(`${this.mcpBase}${p}`, {
         method: form ? 'POST' : 'GET',
         redirect: 'manual',
         headers: {
+          ...headers,
+          ...extra,
           cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
           ...(form ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
         },
@@ -595,23 +783,45 @@ export class SynoikiaWorld extends QuickPickleWorld {
         const eq = pair.indexOf('=');
         jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
       }
-      return res;
+      const page: PageResponse = {
+        status: res.status,
+        csp: res.headers.get('content-security-policy') ?? '',
+        cookies: res.headers.getSetCookie(),
+        html: await res.text(),
+      };
+      return page;
     };
-    const csrfOf = (html: string) => /name="csrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
+    return { send, jar };
+  }
+
+  /** `person` signs in with a password on the sign-in form that the page at `pagePath` shows, in the browser of `send`. */
+  async signInOnPage(send: ReturnType<SynoikiaWorld['pageBrowser']>['send'], person: string, pagePath: string) {
     const { username, password } = this.person(person);
-    const login = await (await send(pagePath)).text();
-    await send('/oauth/login', { csrf: csrfOf(login), continue: pagePath, username, password });
-    const html = await (await send(pagePath)).text();
+    const login = await send(pagePath);
+    return send('/oauth/login', { csrf: csrfOf(login.html), continue: pagePath, username, password });
+  }
+
+  /** The approval page of the last approval (or of `url`), in a fresh browser that signs in as `person`. */
+  async approvalPage(person: string, url?: string) {
+    const pagePath = url ? new URL(url, this.mcpBase).pathname : this.approvalLink();
+    const { send } = this.pageBrowser();
+    await this.signInOnPage(send, person, pagePath);
+    const opened = await send(pagePath);
+    const post = (form: Record<string, string>) => send(pagePath, form);
     return {
-      html,
+      html: opened.html,
+      status: opened.status,
+      post,
+      send,
       decide: async (decision: 'approve' | 'deny' | 'approve_session', confirm?: string) => {
-        const res = await send(pagePath, {
-          csrf: csrfOf(html),
+        const res = await post({
+          csrf: csrfOf(opened.html),
           decision,
           ...(confirm ? { confirm } : {}),
           ...(decision === 'approve_session' ? { grant: '1' } : {}),
         });
-        if (!res.ok) throw new Error(`decide: ${res.status} ${await res.text()}`);
+        if (res.status !== 200) throw new Error(`decide: ${res.status} ${res.html}`);
+        return res;
       },
     };
   }

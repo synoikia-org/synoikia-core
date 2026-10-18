@@ -7,3 +7,6 @@ import '../call-path/steps/call-pipeline.steps.js';
 import '../call-path/steps/call-targets.steps.js';
 import '../call-path/steps/rate-limits.steps.js';
 import '../call-path/steps/config-write.steps.js';
+import '../approvals/steps/pre-approval-rules.steps.js';
+import '../approvals/steps/approval-channels.steps.js';
+import '../approvals/steps/approval-page.steps.js';

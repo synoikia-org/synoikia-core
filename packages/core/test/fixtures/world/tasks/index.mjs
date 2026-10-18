@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Flag files the World drops next to this file (the child may only read them): `down` stops every
-// answer, `catalog-broken` fails the catalog sync, and a new `restart` value restarts the child once.
+// Flag files the World drops here: `down` stops every answer, `catalog-broken` fails the catalog sync,
+// `no-confirmation` leaves out the typed confirmation, and a new `restart` value restarts the child once.
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 
@@ -34,7 +34,7 @@ const CATALOG = [
   op('lists.archive', 'archive a list', 'lists', 'write', { typedConfirmation: true, matchProfile: 'list' }),
   op('lists.delete', 'delete a list', 'lists', 'write', { locked: true, matchProfile: 'list' }),
   op('tasks.add', 'add a task', 'tasks', 'write', { matchProfile: 'task', paramsSchema: TASK_PARAMS }),
-  op('tasks.complete', 'complete a task', 'tasks', 'write', { matchProfile: 'task' }),
+  op('tasks.complete', 'complete a task', 'tasks', 'write', { matchProfile: 'done' }),
   op('tasks.import', 'import tasks', 'tasks', 'write', { attestationRequired: true, matchProfile: 'list' }),
 ];
 
@@ -72,9 +72,13 @@ const openTasksWithIds = (list) => upstream('GET', `${listPath(list)}/tasks?stat
 
 const INVOKE = {
   'lists.tasks': (p, ctx) => upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx)),
-  'lists.count': async (p, ctx) => ({
-    open: (await upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx))).length,
-  }),
+  'lists.count': async (p, ctx) => {
+    const lists = p.list === undefined ? (await upstream('GET', '/lists')).map((l) => l.name) : [p.list];
+    let open = 0;
+    for (const list of lists)
+      open += (await upstream('GET', `${listPath(list)}/tasks?status=open`, undefined, callHeaders(ctx))).length;
+    return { open };
+  },
   'lists.share': (p, ctx) => upstream('GET', `${listPath(p.list)}/share`, undefined, callHeaders(ctx)),
   'lists.rename': (p, ctx) =>
     upstream(
@@ -110,19 +114,29 @@ async function catalog() {
   return [...CATALOG, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
 }
 
+// Every target names its list as the scope "list", except in the "Inbox", which belongs to no list.
+const scoped = (list) => (list === 'Inbox' ? {} : { scopes: { list } });
+
 async function targetsOf(key, params) {
-  if (typeof params?.list !== 'string') return [];
-  try {
-    if (key === 'tasks.complete') {
-      const open = await openTasksWithIds(params.list);
-      return open.filter((t) => t.title === params.title).map((t) => ({ kind: 'task', id: t.id, name: t.title }));
+  const lists = Array.isArray(params?.list) ? params.list : [params?.list];
+  if (!lists.every((l) => typeof l === 'string')) return [];
+  const out = [];
+  for (const list of lists) {
+    try {
+      if (key === 'tasks.complete') {
+        const open = await openTasksWithIds(list);
+        for (const t of open.filter((t) => t.title === params.title))
+          out.push({ kind: 'task', id: t.id, name: t.title, ...scoped(list) });
+        continue;
+      }
+      await upstream('GET', listPath(list));
+    } catch (err) {
+      if (err.notFound) throw Object.assign(new Error(`no list ${list}`), { code: 'TARGET_RESOLUTION_FAILED' });
+      throw err;
     }
-    await upstream('GET', listPath(params.list));
-  } catch (err) {
-    if (err.notFound) throw Object.assign(new Error(`no list ${params.list}`), { code: 'TARGET_RESOLUTION_FAILED' });
-    throw err;
+    out.push({ kind: 'list', id: list, name: list, ...scoped(list) });
   }
-  return [{ kind: 'list', id: params.list, name: params.list }];
+  return out;
 }
 
 async function registry() {
@@ -155,7 +169,9 @@ const handlers = {
   summarize: (id, { key, params }) =>
     reply(id, {
       text: summary(key, params ?? {}),
-      ...(key === 'lists.archive' || key === 'lists.delete' ? { confirmLiteral: params.list } : {}),
+      ...((key === 'lists.archive' || key === 'lists.delete') && !flag('no-confirmation')
+        ? { confirmLiteral: params.list }
+        : {}),
     }),
   async prepareWrite(id, { params }) {
     const current = await upstream('GET', listPath(params.list));
