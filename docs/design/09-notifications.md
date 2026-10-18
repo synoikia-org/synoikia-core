@@ -24,3 +24,5 @@ Each channel subscribes to a set of events, and can have a filter for instances.
 - A failure sets `last_error`, which Settings → Notifications shows. Each channel has a Test button.
 - Messages use the redacted summary. They never hold raw parameters.
 - Core removes event names that are no longer valid when it reads or saves a channel.
+
+Scenarios: [`@id:notifications`](../../packages/core/features/notifications/notifications.feature).

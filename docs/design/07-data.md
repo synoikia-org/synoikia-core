@@ -72,6 +72,8 @@ The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_
 
 **Stored JSON from an older release.** Core reads stored JSON settings (global and for each instance) in a lenient mode. If the current schema refuses a field, core uses its default and logs a warning. At start, core removes the refused fields from the stored JSON once. It keeps valid fields as they are, so new defaults apply to fields that nobody set. Discovery validates plugin manifests again at each start. Core marks a plugin with a manifest that is no longer valid as unusable, and its endpoints return 503.
 
+Scenarios: [`@id:stored-settings-upgrade`](../../packages/core/features/data/stored-settings-upgrade.feature), [`@id:upgrades`](../../packages/core/features/data/upgrades.feature).
+
 ## 7.2 Secrets and master key
 
 **Master key.**
@@ -95,12 +97,11 @@ The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_
 
 **Key rotation.** `node dist/cli.js rotate-master-key` changes the master key.
 
-- The server must be stopped. A running server holds `DATA_DIR/server.lock` with its pid and host. The command refuses to run while that process is alive, because the server keeps the old key in memory.
-- A lock from another host (another container on the same volume) always counts as held. `--force` overrides this when the operator knows that the server is stopped.
+- The server must be stopped, because it keeps the old key in memory. A running server holds `DATA_DIR/server.lock` with its pid and host.
 - The command first decrypts all encrypted columns, then encrypts them again in one transaction. A wrong current key changes nothing.
-- With a key file, the command writes the new key to `master.key.new` before it changes the database. Then it moves the file over `master.key`.
-- With `MASTER_KEY` in the environment, the new key must be in `NEW_MASTER_KEY`.
 - The command deletes all sessions, because their pepper comes from the master key.
+
+Scenarios: [`@id:secrets`](../../packages/core/features/data/secrets.feature), [`@id:master-key-rotation`](../../packages/core/features/maintenance/master-key-rotation.feature).
 
 **Derived keys.** HKDF makes these keys from the master key: the attestation HMAC key, the signed-state key (MFA and consent forms), and the session-id pepper. Approval-link tokens are random and stored as SHA-256 hashes. They need no key.
 
@@ -109,12 +110,13 @@ The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_
 | Writer                       | Tables                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Admin API (signed-in user)   | `users`, `settings`, `oidc_config`, `plugin_repos`, `plugins`, `plugin_instances`, `operation_groups.{level, label}`, `operation_group_aliases`, `operations.{level_override, write_acknowledged, attestation_required}`, `pre_approval_rules`, `mcp_tokens`, `oauth_clients` (admin), `notifier_channels` |
-| Catalog sync (plugin output) | `operations` (inserts, inferred fields, `stale`, `last_seen_at`, locked seeds, `sensitive_*`, acknowledgement resets), `pre_approval_rules.enabled` (off only), `operation_groups` (inserts at `ask`, `stale`), `registry_entries`, `guides`, the sync columns of `plugin_instances`                       |
+| Catalog sync (plugin output) | `operations` (inserts, inferred fields, `stale`, `last_seen_at`, locked seeds, `sensitive_*`, acknowledgement resets), `pre_approval_rules.enabled` (off only), `operation_groups` (inserts at `ask`, `stale`), `registry_entries`, the sync columns of `plugin_instances`                                 |
+| `guides.get` in `search`     | `guides` (§5.1)                                                                                                                                                                                                                                                                                            |
 | Gate and approval service    | `pending_approvals`, `approval_links`, `pre_approval_hits`, `audit_log`                                                                                                                                                                                                                                    |
 | OAuth server                 | `oauth_*`, `sessions` (kind `oauth_ui`)                                                                                                                                                                                                                                                                    |
 | Nobody                       | `audit_log` rows are never changed or deleted through an API                                                                                                                                                                                                                                               |
 
-**Rules that the service layer enforces** (tests cover them):
+**Rules that the service layer enforces:**
 
 - Only a sync can set `locked`, from a plugin seed. The API cannot clear it. The API cannot change a classification at all.
 - `PATCH` with level `write` on a locked operation returns 409.
@@ -124,3 +126,5 @@ The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_
 - Only the Admin API changes levels, and core audits each change. Only the approval page makes approval decisions (§5.3).
 - A user delete clears `level_changed_by`, `acknowledged_by`, `pre_approval_rules.created_by`, `mcp_tokens.created_by` and `pending_approvals.owner_user_id` (decided rows only) for that user. It refuses while a `pending` row of the user remains. It deletes the pre-approval rules that the user owns: an empty `owner_user_id` makes an admin rule.
 - Sandbox code and plugin children have no access to any of these tables.
+
+Scenarios: [`@id:catalog-access-on-sync`](../../packages/core/features/access/catalog-access-on-sync.feature), [`@id:pre-approval-rules`](../../packages/core/features/approvals/pre-approval-rules.feature), [`@id:user-deletion`](../../packages/core/features/administration/user-deletion.feature), [`@id:audit-log`](../../packages/core/features/administration/audit-log.feature).

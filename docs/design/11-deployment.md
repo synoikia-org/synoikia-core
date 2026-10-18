@@ -13,11 +13,9 @@
 
 ## Health
 
-`/healthz` (on both listeners) needs no authentication and holds no secrets or slugs.
+`/healthz` on each listener needs no authentication. Both return only `{"status": "ok"}`. The details of each instance are only in `/api/overview` on the Admin listener.
 
-- On the Admin listener it returns `{status, db, plugins, pendingApprovals, lastSyncAgeSeconds}`.
-- On the MCP listener it returns only the overall status.
-- The details of each instance are only in `/api/overview`.
+Scenarios: [`@id:listeners`](../../packages/core/features/deployment/listeners.feature).
 
 ## Reverse proxy
 
@@ -25,6 +23,8 @@
 - `admin.example.com` → `:8081`. The admin portal runs on this dedicated port, separate from the MCP port. The portal sign-in protects it (§6.1). Cloudflare Access or Authelia can add a second layer.
 - `TRUST_PROXY=true`, or a number of proxies (for example `2`), makes core use `X-Forwarded-*`. Core then takes the client IP (for rate limits and audit), the scheme and the cookie `Secure` flag from these headers.
 - Core reads `X-Forwarded-For` from the right. The entry that the outermost trusted proxy added is the client. Core ignores the entries to its left, because the client sent them.
+
+Scenarios: [`@id:proxies`](../../packages/core/features/deployment/proxies.feature), [`@id:host-origin`](../../packages/core/features/deployment/host-origin.feature).
 
 ## Environment
 
@@ -34,19 +34,13 @@ The full list is in `.env.example`: `DATA_DIR`, `MASTER_KEY`, `MCP_HOST`, `MCP_P
 
 Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`.
 
-- **Refused MCP requests.** Core logs the reason. The client never gets it. The reason is one of these:
-  - the effective client auth methods of the endpoint and the kind of credential (never its value);
-  - why the external provider did not identify the caller, for example a service token;
-  - the `iss` and `aud` that a Cloudflare Access assertion claims;
-  - a `Host` or `Origin` outside the allowed set;
-  - an endpoint that is not available;
-  - a client that the client policy refuses, with its client name (§6.6);
-  - the JSON-RPC error of the transport.
-- **Levels.** A request with a token-shaped credential logs at `warn`. Probes and bad headers log at `debug`, also the first step of OAuth discovery without credentials.
-- **Throttle.** Core logs one refusal for each client IP and status in each minute. The next line gives the number of lines it did not write.
+- **Refused MCP requests.** Core logs the reason, for example the auth methods and the kind of credential, or the client name (§6.6). The client never gets the reason. The log never holds a credential value.
 - The reason is a quoted and shortened field, because it can quote claims that are not verified.
-- `info` adds each new MCP session. `debug` adds one line for each request on the MCP listener, with the path only, because query strings hold OAuth state.
+- **Throttle.** Core logs one refusal for each client IP and status in each minute. The next line gives the number of lines it did not write.
+- Request lines hold the path only, because query strings hold OAuth state.
 - A proxy in front of core (for example Cloudflare Access) logs its own refusals. They never reach core.
+
+Scenarios: [`@id:server-log`](../../packages/core/features/deployment/server-log.feature).
 
 ## Network egress
 

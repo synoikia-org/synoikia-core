@@ -44,19 +44,14 @@ The Admin listener (port 8081) has its own sign-in.
 - A session ends after 30 minutes without use, and after 12 hours in total. Both values are settings.
 - Sign-out deletes the session. A password change ends the other sessions of the user.
 
-**Delete a user.** An admin deletes a user on Settings → Users (`DELETE /api/users/:id`). The delete is permanent.
+**Delete a user.** An admin deletes a user (`DELETE /api/users/:id`). The delete is permanent.
 
-- Core refuses to delete:
-  - the admin who asks (409 `self_delete`);
-  - the last user (409 `last_user`);
-  - the last enabled admin (409 `last_admin`);
-  - the last enabled linked user while local sign-in is off (409 `local_login_disabled`).
-- Before the delete, core revokes the sessions, OAuth grants and bearer tokens of the user (§6.2). It also cancels the pending approvals that the user owns, and ends the session grants that the user gave (§5.8). The delete fails with 409 `approvals_pending` while a pending approval of the user remains.
-- Then, in one transaction, core:
-  - deletes the user, their personal levels and their own pre-approval rules;
-  - keeps the other rows that name the user, and clears that name: admin pre-approval rules that the user made, bearer tokens that the user made, decided approvals, operation acknowledgements and group level changes;
-  - writes the audit event `user_deleted` with the user id, user name and `registered_via`.
-- Core does not change the audit log. The log shows the user name from `user_deleted` for the events of a deleted user, and marks it as deleted (`actorDeleted`). The actor filter also finds a deleted user by name.
+- Core refuses to delete the admin who asks, the last user or the last enabled admin. While local sign-in is off, it also keeps the last enabled linked user.
+- First, core takes every credential of the user away: sessions, OAuth grants and bearer tokens (§6.2). It also ends their pending approvals and the session grants that they gave (§5.8).
+- Then, in one transaction, core deletes the user, their personal levels and their own pre-approval rules. It keeps the shared rows that name the user and clears that name (§7.3). It writes the audit event `user_deleted`.
+- Core does not change the audit log. The log reads the user name of a deleted user from `user_deleted` (§7.1).
+
+Scenarios: [`@id:user-deletion`](../../packages/core/features/administration/user-deletion.feature), [`@id:users`](../../packages/core/features/administration/users.feature).
 
 **CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it.
 
@@ -64,8 +59,10 @@ The Admin listener (port 8081) has its own sign-in.
 
 - Five failed sign-ins for a user name in 15 minutes lock that user name. The lock lasts 15 minutes from the fifth failure.
 - Core counts failures for each surface. Failures on the MCP listener sign-in lock the user name there only, never in the admin portal.
-- A per-IP budget applies to `/auth/*`, to `/api/instances/:id/connection/test` and to the MCP listener sign-in and its code step.
+- A budget of 60 attempts in 5 minutes applies to each client IP. It covers password sign-in, its code step and the sign-up form on both listeners. It also covers client registration and the connection test.
 - Core audits sign-in failures and wrong codes as `auth` events, on both surfaces.
+
+Scenarios: [`@id:first-account`](../../packages/core/features/identity/first-account.feature), [`@id:portal-sign-in`](../../packages/core/features/identity/portal-sign-in.feature), [`@id:portal-sessions`](../../packages/core/features/identity/portal-sessions.feature), [`@id:single-sign-on`](../../packages/core/features/identity/single-sign-on.feature), [`@id:local-sign-in-off`](../../packages/core/features/identity/local-sign-in-off.feature).
 
 ## 6.2 MCP client authentication
 
@@ -144,6 +141,8 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 
 **Owner check.** Each credential has an owner: the user who made the token, the user who gave the OAuth consent, or the user that the `external` method finds. For each request, the owner must be enabled and the role of the owner must have the instance. Otherwise core refuses the request with 403. The consent page shows only the endpoints of the role of the user.
 
+Scenarios: [`@id:client-auth-methods`](../../packages/core/features/client-auth/client-auth-methods.feature), [`@id:bearer-tokens`](../../packages/core/features/client-auth/bearer-tokens.feature), [`@id:access-gateway`](../../packages/core/features/client-auth/access-gateway.feature), [`@id:oauth-discovery`](../../packages/core/features/client-auth/oauth-discovery.feature), [`@id:oauth-clients`](../../packages/core/features/client-auth/oauth-clients.feature), [`@id:oauth-consent`](../../packages/core/features/client-auth/oauth-consent.feature), [`@id:oauth-tokens`](../../packages/core/features/client-auth/oauth-tokens.feature).
+
 ## 6.3 Access ceiling
 
 Each credential has an access ceiling: `read` or `write`.
@@ -154,6 +153,8 @@ Each credential has an access ceiling: `read` or `write`.
 - The `external` method trusts the external provider. Core does not limit its principals.
 
 The person who connects a client decides once what the client can ever do.
+
+Scenarios: [`@id:access-levels`](../../packages/core/features/access/access-levels.feature), [`@id:oauth-consent`](../../packages/core/features/client-auth/oauth-consent.feature).
 
 ## 6.4 Roles
 
@@ -190,15 +191,12 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 **Rules.**
 
 - A new endpoint, and a new group from a sync, start at `none` for each role.
-- An endpoint that an admin adds to a role starts with all its switches off.
 - A change to a role or to a role maximum applies to the next call. It also applies to a parked execution before it continues.
-- When an admin removes an endpoint from a role, core deletes the role maximums for that endpoint.
-- Core refuses to delete a role that a user has (409 `role_in_use`), or that is the default role (409 `default_role`).
-- A user can write own rules only for operations that they can call. Their rule editor offers only these operations.
-- The rule editor of a user gets option lists and registry entries only for the match fields of the operations that the user can write rules for. Registry entries come without their attributes. Core refuses a manifest in which a match field and a connection-form field use the same options source.
-- If an admin turns off "Set personal levels" on an endpoint, core ignores the personal levels on that endpoint and keeps them. It does the same for own rules.
+- A user can write own rules only for operations that they can call. The rule editor of the user gets option lists and registry entries only for these operations, and registry entries without their attributes.
+- Core refuses a manifest in which a match field and a connection-form field use the same options source.
 - "See other endpoints" gives no access. Core answers 404 for the levels, rules and status of such an endpoint, and 403 to MCP calls.
-- An admin rule is not inert while a role can reach its operation at `ask`. It is also not inert while a role reaches the operation at `write` and has "Set personal levels" on for the endpoint.
+
+Scenarios: [`@id:roles`](../../packages/core/features/administration/roles.feature), [`@id:my-instances`](../../packages/core/features/administration/my-instances.feature), [`@id:own-credentials`](../../packages/core/features/administration/own-credentials.feature), [`@id:role-access`](../../packages/core/features/access/role-access.feature).
 
 ## 6.5 Self-registration
 
@@ -206,11 +204,13 @@ Self-registration is off by default. It is on while an admin sets a default role
 
 A user that self-registration makes gets the default role. Core records the source in `registered_via` and audits it as `user_registered`. While self-registration is on, a deleted `oidc` or `external` user comes back as a new user at their next sign-in (§6.1). User names are unique without regard to case. A name from the sign-up form or OIDC cannot contain `:`. The sign-up form gives one error for a taken name, and does not tell that the name exists.
 
-| Source     | When                                                                                                                                |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `oidc`     | OIDC `autoProvision` is on and the allow policy accepts the identity.                                                               |
-| `external` | The external provider (§6.2) identifies a caller with no user.                                                                      |
-| `signup`   | The "Create account" form on the sign-in page. It needs `localSignup` and local sign-in on. The per-IP budget of `/auth/*` applies. |
+| Source     | When                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `oidc`     | OIDC `autoProvision` is on and the allow policy accepts the identity.                                                          |
+| `external` | The external provider (§6.2) identifies a caller with no user.                                                                 |
+| `signup`   | The "Create account" form on the sign-in page. It needs `localSignup` and local sign-in on. The per-IP budget of §6.1 applies. |
+
+Scenarios: [`@id:self-registration`](../../packages/core/features/administration/self-registration.feature).
 
 ## 6.6 MCP client policy
 
@@ -227,5 +227,7 @@ The client policy allows or denies MCP clients by their client name. The client 
 - Core refuses a save of `allow` mode with no names, with 400 `invalid_settings`.
 - **When.** Core checks the policy after authentication (§6.2), on an `initialize` request, before it makes the MCP session. It reads the client name from the request body. It reads the body once, with the limits of the MCP transport (4 MiB and 100 messages in a batch). Core checks the policy again on each later request of a session. A policy change thus ends an open session of a refused client at its next request.
 - **Refusal.** Core answers 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server". It keeps no session. It logs the refusal with the client name (§11), and writes an `auth` audit event `client_refused` with the slug, the client name and the mode.
-- **Seen clients.** Core keeps in memory the last 50 client names that opened an MCP session. Each entry has the client name, the version, the principal label of the caller and the time. Core trims each client name and clips it to 100 characters, for the record and for the match. `GET /api/settings/mcp/clients-seen` returns them, the newest first. The portal offers them as names to add. A restart clears the list.
+- **Seen clients.** Core keeps in memory the last 50 client names that opened an MCP session, for the admin to add to the policy. A restart clears the list.
 - **Limit.** A client declares its own name, and any client can send any name. The policy stops honest clients that the admin does not want. It is not a security boundary. Client auth (§6.2), the access ceiling (§6.3) and the gate (§5) are the boundary.
+
+Scenarios: [`@id:client-policy`](../../packages/core/features/client-auth/client-policy.feature).

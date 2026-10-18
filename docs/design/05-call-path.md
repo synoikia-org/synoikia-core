@@ -5,20 +5,23 @@ Views: [execute through the gate](../architecture/README.md#execute-through-the-
 ## 5.1 `search(code)`
 
 1. Core runs the code in a new `isolated-vm` isolate (§5.4).
-2. The code can use these read-only APIs. Core answers them from the database. They never call the plugin.
-   - `catalog.find({ text?, group?, tag?, kind?, classification?, includeDisabled? })` returns descriptors. By default it returns only callable operations (§5.2.1). Each has `approval: 'none' | 'required' | 'auto'`: it runs, it asks a human, or it runs without a question at level `write`. With `includeDisabled`, it also returns the other operations, marked `disabled` with a `reason`: `level_none`, `token_read_only` or `locked_not_opted_in`. For a user who is not an admin, it never returns an operation that the user cannot call (§6.4).
-   - `catalog.groups()` returns `{ key, label, level, counts: { read, write, locked, pendingReview, overridden } }[]`. The model can then tell the user why an operation is not callable.
+2. The code can use these read-only APIs:
+   - `catalog.find({ text?, group?, tag?, kind?, classification?, includeDisabled? })` returns descriptors. By default it returns only callable operations (§5.2.1). Each has `approval: 'none' | 'required' | 'auto'`: it runs, it asks a human, or it runs without a question. With `includeDisabled`, it also returns the other operations, marked `disabled` with a `reason`. For a user who is not an admin, it never returns an operation that the user cannot call (§6.4).
+   - `catalog.groups()` returns the groups with their levels and counts. The model can then tell the user why an operation is not callable.
    - `catalog.get(key)` returns the full descriptor with `paramsSchema` and docs.
    - `registry.find({ kind?, text?, parent?, scopes? })` returns matching registry entries only, never the full registry. It exists only if the plugin has `registry`.
-   - `guides.get(key)` returns `{ content, best_practice_key }`. It exists only if the plugin has `attestation`. See "Attestation" below.
-3. Core redacts the return value (§5.5). It limits its size to 64 KB by default and marks a truncated value. Core audits the run as a `search` event.
+   - `guides.get(key)` returns the guide of an operation with its `best_practice_key`. It exists only if the plugin has `attestation`.
+3. The `catalog` and `registry` APIs read only the database. `guides.get` calls the plugin once for each read (`getGuide`). Core stores a new `guides` row when the guide version or content changed.
+4. Core redacts the return value (§5.5) and limits its size (§5.4). Core audits the run as a `search` event.
 
 **Attestation.** Some operations need the model to read a best-practice guide first (`attestationRequired`).
 
 - The key is `HMAC(attestation key, instance ‖ operation key ‖ guide version ‖ MCP session id)`.
 - The key works only in the MCP session that read the guide. Core refuses a key from another session.
 - A new guide version makes all old keys invalid.
-- Core audits each guide read (`search` / `guide_read`) with the guide version and the session.
+- Core audits each guide read as a `search` event with `decision: guide_read`, the guide version and the MCP session.
+
+Scenarios: [`@id:catalog-search`](../../packages/core/features/catalog/catalog-search.feature), [`@id:attestation`](../../packages/core/features/call-path/attestation.feature).
 
 ## 5.2 `execute(code)` and the binding
 
@@ -41,12 +44,12 @@ binding(args)
   ├─ 7. human approval (§5.3), then access checked again            | PERMISSION_DENIED / OPERATION_DISABLED
   ├─ 8. targets resolved again                                      | TARGETS_CHANGED
   ├─ 9. catalog version checked again, write counted                | PLUGIN_UNAVAILABLE / RATE_LIMITED
-  ├─ 10. invoke (plugin)                                            | UPSTREAM_* / PLUGIN_*
+  ├─ 10. invoke (plugin)                                            | UPSTREAM_* / PLUGIN_* / INVALID_PARAMS
   ├─ 11. redaction of the result (§5.5)
   └─ 12. audit (each branch, refusals included)
 ```
 
-**Errors.** Core throws errors into the sandbox as `Error` objects with a `code` property. The model code can catch them. They never stop the host. The codes are:
+**Binding errors.** Core throws these errors into the sandbox as `Error` objects with a `code` property. The model code can catch them. They never stop the host.
 
 | Code                       | Cause                                                                                                                                                                                           |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -56,19 +59,37 @@ binding(args)
 | `TARGET_RESOLUTION_FAILED` | The plugin cannot resolve a target.                                                                                                                                                             |
 | `TARGETS_CHANGED`          | The targets are not the targets that the approver saw. The call must be made again.                                                                                                             |
 | `CONFIG_CONFLICT`          | The object changed after it was read (`prepareWrite`).                                                                                                                                          |
+| `INVALID_PARAMS`           | The plugin refused the parameters of the call.                                                                                                                                                  |
 | `PERMISSION_DENIED`        | A human denied the call, the client declined, the approval timed out, the client cannot show an approval and cannot park, or the client has too many parked executions.                         |
-| `RATE_LIMITED`             | The principal used its write or run budget.                                                                                                                                                     |
+| `RATE_LIMITED`             | The principal used its write budget.                                                                                                                                                            |
 | `UPSTREAM_DENIED`          | The upstream refused the call for lack of permission.                                                                                                                                           |
 | `UPSTREAM_ERROR`           | The upstream call failed.                                                                                                                                                                       |
 | `UPSTREAM_TIMEOUT`         | `invoke` did not answer in time. The result is unknown (see below).                                                                                                                             |
 | `PLUGIN_UNAVAILABLE`       | The plugin child is down, or the bundle changed while the call waited.                                                                                                                          |
-| `PLUGIN_ERROR`             | The plugin answer is not valid.                                                                                                                                                                 |
+| `PLUGIN_ERROR`             | The plugin answer is not valid, or the plugin gave an error code that core does not pass on.                                                                                                    |
 | `EXECUTION_ENDED`          | The `execute` run ended before the call, or core stopped its parked execution.                                                                                                                  |
+| `NOT_A_BINDING`            | The sandbox asked the host for a function that is not a binding.                                                                                                                                |
+| `INTERNAL`                 | An unexpected error in core. The message gives no detail.                                                                                                                                       |
+
+**Run results.** The tool result of `execute`, `search` or `resume` carries these codes. A binding error that the code does not catch ends the run with its own code.
+
+| Code                  | Cause                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `RATE_LIMITED`        | The principal used its run budget. Core makes no isolate.                                                        |
+| `BUSY`                | Too many sandboxes run, or another `resume` waits on the same execution.                                         |
+| `SYNTAX_ERROR`        | The code does not compile.                                                                                       |
+| `CODE_ERROR`          | The code threw an error without a string `code`.                                                                 |
+| `TIMEOUT`             | The run passed its time limit (§5.4).                                                                            |
+| `MEMORY_LIMIT`        | The run passed its memory limit (§5.4).                                                                          |
+| `INTERNAL`            | An unexpected error in core.                                                                                     |
+| `AWAITING_APPROVAL`   | The execution parked on an approval (§5.6). The tool result is not an error.                                     |
+| `STILL_RUNNING`       | `resume`: the script still runs after the decision.                                                              |
+| `EXECUTION_NOT_FOUND` | `resume`: the id is unknown or collected, belongs to another principal or endpoint, or is from before a restart. |
 
 **Rules of the pipeline:**
 
 - **One call at a time.** The calls of one `execute` run in sequence. While a call waits for approval, the full `execute` waits.
-- **An `execute` ends with its sandbox.** The run ends when the script returns, throws or times out. It also ends when the MCP request is cancelled or the session closes. Then core refuses the calls that remain (`EXECUTION_ENDED`) and cancels an open approval. A parked execution (§5.6) is the one exception: it continues after the tool call answered, until its script ends or core stops it. It reaches the upstream only after a human decision.
+- **An `execute` ends with its sandbox.** The run ends when the script returns, throws or times out. It also ends when the MCP request is cancelled or the session closes. Then core refuses the calls that remain (`EXECUTION_ENDED`) and cancels an open approval. A parked execution (§5.6) is the one exception. It reaches the upstream only after a human decision.
 - **Catalog version.** Core reads the catalog version (§10) when it gates a call. It reads it again just before `invoke`. If it is not set or it changed, core refuses the call with `PLUGIN_UNAVAILABLE`. A plugin update or a restart onto other code during the approval then cannot run the call under the rules of another bundle.
 - **Timeouts.** Core cannot cancel an `invoke` that timed out. The upstream can still complete the write. Core audits the call as `error:UPSTREAM_TIMEOUT`, which means "result unknown". Each `invoke` has a unique `context.callId`. A plugin can send it to an upstream that supports idempotency keys.
 - **`prepareWrite`** runs for write operations of kind `config` on plugins with `configTransform`.
@@ -77,23 +98,25 @@ binding(args)
   - Upstream writes: 10 each minute by default. Core checks the limit before it asks for an approval. It counts a write only when the write runs, so a denied call costs nothing.
   - Sandboxes: at most 4 at the same time for each instance and 16 in total. Over this limit, core refuses the run with `BUSY`. A parked execution gives back its place and counts against the parked limits (§5.6).
 
+Scenarios: [`@id:call-pipeline`](../../packages/core/features/call-path/call-pipeline.feature), [`@id:rate-limits`](../../packages/core/features/call-path/rate-limits.feature), [`@id:call-targets`](../../packages/core/features/call-path/call-targets.feature), [`@id:config-write`](../../packages/core/features/call-path/config-write.feature).
+
 **Pre-approval rules.** A rule approves matching calls without a human. Its `match` is a list of conditions. All conditions must be true.
 
-- `{ field: "/json/pointer", op: "eq" | "in" | "prefix" | "range" | "bool", value }` applies to the normalized parameters. A missing field gives no match.
-- `{ field: "$targets", ids?: [], scopes?: { <key>: [] } }` is true only if each resolved target meets all given selectors. Its id must be in `ids`. For each scope key, its value must be in the list. A target with no value for a selected scope does not match. Zero targets gives no match. A rule can use only the scope keys that the `$targets` field of the operation offers (§3.2).
+- `{ field: "/json/pointer", op: "eq" | "in" | "prefix" | "range" | "bool", value }` applies to the normalized parameters. A missing field gives no match. `prefix` matches at a path segment boundary.
+- `{ field: "$targets", ids?: [], scopes?: { <key>: [] } }` is true only if each resolved target meets all given selectors. Zero targets gives no match. A rule can use only the scope keys that the `$targets` field of the operation offers (§3.2).
 - **Strict matching.** A condition must cover each parameter of the call. A condition on a path covers everything below it.
   - A `$targets` condition also covers the parameter subtrees in its field's `covers`, because it already checks each target.
-  - A parameter that the rule does not mention must be absent. `{ field, op: "any" }` accepts it. `{ field: "", op: "any" }` accepts all parameters, and the portal marks this "not recommended".
-  - An empty `match` matches only calls without parameters.
-  - If the conditions were true but the call had extra parameters, core records `strict_miss_at` on the rule. The rule list shows this.
-- `prefix` matches at a path segment boundary. `tank/media` matches `tank/media` and `tank/media/tv`, but not `tank/media-private`.
+  - A parameter that the rule does not mention must be absent. `{ field, op: "any" }` accepts it.
+  - If the conditions were true but the call had extra parameters, core records `strict_miss_at` on the rule.
 - `rate_limit` and `window_seconds` use `pre_approval_hits`. Over the limit, the call goes to a human. Core does not refuse it.
-- A rule applies only at level `ask`. It never applies to a locked operation. A rule on a hidden operation, or on one at level `write`, has no effect, and the rule list shows this.
-- An admin rule has no owner. It applies to the calls of all users. An own rule (§6.4) has an owner. It applies only to the calls of its owner, and only while the role of the owner allows own rules.
+- A rule applies only at level `ask`. It never applies to a locked operation.
+- An admin rule has no owner. It applies to the calls of all users. An own rule (§6.4) applies only to the calls of its owner, while the role of the owner allows own rules.
+
+Scenarios: [`@id:pre-approval-rules`](../../packages/core/features/approvals/pre-approval-rules.feature).
 
 ## 5.2.1 Access levels
 
-Each operation has an access level. The admin usually sets the level for a group. The plugin gives the groups (§3.2). When the admin sets the level of a group, all operations in the group follow it. The admin can give one operation its own level. That level applies until the admin sets the group level again, or clicks ↺.
+Each operation has an access level. The admin usually sets the level for a group. The plugin gives the groups (§3.2). When the admin sets the level of a group, all operations in the group follow it. The admin can give one operation its own level. That level applies until the admin sets the group level again.
 
 Read or write comes from the upstream API, through the plugin. For example, a REST plugin uses the HTTP method. The admin cannot change a classification. Only a `plugin.yaml` rule can (§3.4).
 
@@ -103,8 +126,8 @@ Read or write comes from the upstream API, through the plugin. For example, a RE
 | ----------- | --------------- | --------------------------------------------------------- | ------------------------------------------------------- |
 | `none`      | off             | off                                                       | off                                                     |
 | `read`      | run             | off                                                       | off                                                     |
-| `ask`       | run             | each call asks for approval; pre-approval rules can apply | only with their own `ask`                               |
-| `write`     | run             | run without a question after acknowledgement              | only with their own `ask`; never run without a question |
+| `ask`       | run             | each call asks for approval, pre-approval rules can apply | only with their own `ask`                               |
+| `write`     | run             | run without a question after acknowledgement              | only with their own `ask`, never run without a question |
 
 **Own levels.** An operation can have only the levels that its kind allows:
 
@@ -138,70 +161,63 @@ effectiveAccess(op, group, principal):
   otherwise                         → auto
 ```
 
-**Locked operations.**
+**Locked operations.** They never follow their group into `ask` or `write`. A locked operation is callable only when the admin sets its own level to `ask`. Core refuses `write` for it. Each call needs a human and a typed confirmation (§5.3). A pre-approval rule never applies to it.
 
-- They never follow their group into `ask` or `write`.
-- A locked operation is callable only when the admin sets its own level to `ask`.
-- Core refuses `write` for a locked operation: 409 from the API, disabled in the portal.
-- Each call needs a human and a typed confirmation (§5.3).
-- A pre-approval rule can never apply to a locked operation.
-
-**Acknowledgement.** At level `write`, calls run without a question. When the admin selects `write`, they acknowledge this. There is no other confirmation step.
-
-- When a group goes to `write`, core acknowledges each write in it that is not locked. The audit event lists them.
-- When one operation goes to `write`, core acknowledges it.
-- A write that is not acknowledged asks, also at level `write`. The group shows "N to acknowledge".
+**Acknowledgement.** At level `write`, calls run without a question. When the admin selects `write` for a group or an operation, core acknowledges each write in it that is not locked. A write that is not acknowledged asks, also at level `write`.
 
 **Catalog sync and access.** A sync never opens an operation by itself.
 
-- A new operation in an existing group gets its own level: `read` for a read, `none` for a write. In a group at `none`, it follows the group. A new operation in a new group follows the group. Core sends `sync.pending_review` for new writes (§9).
-- A change from read to write resets the acknowledgement. So do these changes to an acknowledged write: its parameter schema, its kind, its match profile, its lock, or its return from stale.
-- If the own level of an operation does not fit its new kind, core narrows it. For example, a read at `read` becomes `none` when it becomes a write.
+- A new operation in an existing group gets its own level: `read` for a read, `none` for a write. A new operation in a new group follows the group. Core sends `sync.pending_review` for new writes (§9).
+- A change from read to write resets the acknowledgement. So does a change to the parameter schema, kind, match profile, lock or stale state of an acknowledged write.
+- If the own level of an operation does not fit its new kind, core narrows it.
 - If a sync locks an operation, core clears its own level. The operation is then off until the admin sets `ask`.
-- If the plugin moves an operation to another group, the operation keeps the access that it had. If the new group gives different access, the operation gets its own level.
-- Each sync checks enabled pre-approval rules against the new catalog and the match profiles. Core disables and audits each rule that does not fit (`rules_disabled_operation_changed`). The `sync.pending_review` notification counts them.
+- If the plugin moves an operation to another group, the operation keeps the access that it had.
+- Each sync checks enabled pre-approval rules against the new catalog and match profiles. Core disables and audits each rule that does not fit.
 
-**Defaults.** A new group starts at `ask`: reads run and each write asks. Locked operations stay off until the admin sets each one to `ask`. The access ceiling of a credential (§6.3) is `read` by default, which also keeps a client away from writes.
-
-**Bulk action.** The Access page has one "Set all groups…" control. Each choice applies after one confirmation. All operations then follow their groups. `write` acknowledges each write that is not locked. Core audits the action as one `config` event with the levels before and after, and the acknowledged writes.
+**Defaults.** A new group starts at `ask`: reads run and each write asks. Locked operations stay off until the admin sets each one to `ask`. The access ceiling of a credential (§6.3) is `read` by default.
 
 **Regroup.** The groups of the plugin are the default. The admin can merge groups and change labels. Core stores a merge as an alias (`plugin_group → group_key`) and applies it at each sync. A merge of groups with different levels takes the lower level.
+
+Scenarios: [`@id:access-levels`](../../packages/core/features/access/access-levels.feature), [`@id:catalog-access-on-sync`](../../packages/core/features/access/catalog-access-on-sync.feature), [`@id:role-access`](../../packages/core/features/access/role-access.feature). The Access page: [`@id:portal-instances`](../../packages/admin-ui/features/instances/portal-instances.feature).
 
 ## 5.3 Human approval
 
 A human must make an approval, not the client that made the call. The answer to a form prompt goes back through the calling client. A scripted client, or a client under prompt injection, could then approve its own writes. For this reason, core shows its own approval page.
 
-An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`. The values are `off` and `ask`. The default is `off`, and the portal shows a warning. Core reads each other stored value as `off`. At startup, core removes such a value and logs a warning for the endpoint. Then the human approves an operation at `ask`, read or write, in the agent session. The operation must not be locked and must not need a typed confirmation. The client can then approve these calls itself.
+An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`. The values are `off` and `ask`. The default is `off`. Core reads each other stored value as `off`, and removes it at startup. With `ask`, the human approves an operation at `ask` in the agent session. The operation must not be locked and must not need a typed confirmation.
 
 1. **Pending approval.** Core creates a `pending_approvals` row with:
-   - the instance, the operation key, and the redacted parameters for display;
-   - `params_hash`: SHA-256 over the canonical JSON of the key, the parameters, the resolved targets and the expected hash;
-   - the summary, `confirm_literal` and the diff;
-   - the client identity, the user who owns the credential (`owner_user_id`), and the MCP session;
+   - the instance, the operation key, and the redacted parameters for display
+   - `params_hash`: SHA-256 over the canonical JSON of the key, the parameters, the resolved targets and the expected hash
+   - the summary, `confirm_literal` and the diff
+   - the client identity, the user who owns the credential (`owner_user_id`), and the MCP session
    - `expires_at`: 15 minutes by default, set for each instance.
      Core keeps the parameters that are not redacted in memory only.
-2. **Channel.** Core uses the first channel that applies, in this order. The audit `detail.approvalChannel` records the channel of the decision: `form`, `url`, `link` or `card`.
-   - **Form elicitation.** In-session approval applies to the call, and the client supports form prompts. The form has no fields. **Accept** approves the call. **Decline** and **Cancel** deny it. If the client cannot show the form, core denies the call (`prompt_failed`). The audit records `decided_via: elicitation` and the client as `decided_by`.
-     If the form has no answer after 30 s and the caller can park, core cancels the form. The same approval then parks on the link (§5.6), with the same id and expiry. Core ignores a later answer of the cancelled form. If the caller cannot park, core keeps the form open.
-   - **URL-mode elicitation.** This is the approval path for the other calls. Core makes a single-use page token (`approval_links`, stored as a hash, valid until the approval expires). It calls `elicitInput({ mode: 'url', url: PUBLIC_MCP_URL/a/<token>, elicitationId, message })`. The human opens the page, signs in, and decides there. The client never sees the decision form or the literal. The answer of the client only tells if the page opened (`accept`). `decline` and `cancel` deny. After the decision, core sends `notifications/elicitation/complete` and makes the token invalid.
-   - **Link.** The client has no channel above. The execution parks (§5.6). Core makes the same single-use page token and returns the page link in the tool result. The approval card (§5.7) shows it, or the agent shows it as text. The human decides on the page. If in-session approval applies to the call, the human can also decide on the approval card (channel `card`).
-   - **No channel.** A caller that cannot park, for example a script through the test harness, has no channel. Core denies the call at once: `client_cannot_approve` for a client with forms only, `no_approval_path` for a client without prompts. Over the parked limits, core denies with `too_many_parked`.
+2. **Channel.** Core uses the first channel that applies, in this order. The audit `detail.approvalChannel` records the channel of the decision.
+
+   | Channel | When                                                                                  | Who decides                                                                                               |
+   | ------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+   | `form`  | In-session approval applies, and the client supports form prompts.                    | The client: the form has no fields. After 30 s without an answer, a caller that can park moves to `link`. |
+   | `url`   | The client supports URL-mode elicitation.                                             | The human, on the approval page. The client answer only tells if the page opened.                         |
+   | `link`  | The client has no channel above, and the caller can park. The execution parks (§5.6). | The human, on the approval page. With in-session approval, also on the approval card (`card`).            |
+   | none    | The caller cannot park, or the parked limits are full.                                | Nobody. Core denies the call at once.                                                                     |
+
+   The page token (`approval_links`) is single use, stored as a hash, and valid until the approval expires.
+
 3. **Approval page** (`/a/:token` on the MCP listener). The page needs:
    - an approver that core identifies in one of these two ways:
-     - **Page sign-in.** The user signs in on the MCP listener with a password, or with OIDC. A user with TOTP also gives a TOTP code at this sign-in. The session lasts `approvalSessionIdleHours` without use (12 h by default) and at most `approvalSessionAbsoluteDays` (7 days by default). A lower setting also shortens the sessions that exist. A TOTP reset, a new enrollment or turning TOTP off signs out all approval sessions of the user.
-     - **External provider.** This applies only when there is no page sign-in and the effective methods of the endpoint include `external`. The external provider (§6.2) identifies the request of the browser. With Cloudflare Access, this is a verified user assertion; core refuses service tokens. The identity must match an enabled user, as for the `external` method. Self-registration does not apply here. Core keeps no session, because the provider identifies each request.
-   - a POST with a CSRF token. The token is signed with the double-submit cookie, the approval link and the approver, so a token from another form or another user fails. A GET or a prefetch decides nothing.
-     A page sign-in has priority over the external provider. If core cannot identify an approver, the page shows the sign-in form.
-     `decided_by` is the user name. `decided_via` is `url`. The audit `detail.approverSignIn` is `session` or `external`. The page has three choices: **Deny**, **Approve once** and **Approve for this session** (§5.8).
-     After the decision, the page tells the user to go back to the chat. It runs one static script that tries to close the tab (`window.close()`). The CSP allows only this script, by its SHA-256 hash. The other pages run no scripts.
-4. **Typed confirmation.** For an operation with typed confirmation, the approver must type `confirm_literal` exactly. Otherwise core returns 400 and the approver can try again. `summarize` gets redacted parameters, so the summary and the literal cannot hold a secret. If such an operation has no literal, core refuses the call.
+     - **Page sign-in.** The user signs in on the MCP listener with a password and TOTP, or with OIDC. The session has its own idle and total lengths (`approvalSessionIdleHours`, `approvalSessionAbsoluteDays`). A TOTP change signs out all approval sessions of the user.
+     - **External provider.** This applies only when there is no page sign-in and the effective methods of the endpoint include `external`. The external provider (§6.2) identifies each request of the browser. The identity must match an enabled user. Self-registration does not apply here.
+   - a POST with a CSRF token. The token is signed with the double-submit cookie, the approval link and the approver. A GET or a prefetch decides nothing.
+     A page sign-in has priority over the external provider. The audit `detail.approverSignIn` is `session` or `external`. The page has three choices: **Deny**, **Approve once** and **Approve for this session** (§5.8). After the decision, the page runs one static script that tries to close the tab. The CSP allows only this script, by its SHA-256 hash.
+4. **Typed confirmation.** For an operation with typed confirmation, the approver must type `confirm_literal` exactly. `summarize` gets redacted parameters, so the summary and the literal cannot hold a secret. If such an operation has no literal, core refuses the call.
 5. **Targets checked again.** For plugins with `targets`, core resolves the targets again after the approval. If they are not the targets that the approver saw, core refuses the call (`TARGETS_CHANGED`). The plugin gets the approved targets in `InvokeContext.targets`.
-6. **Access checked again.** If the admin lowered the level while the approval was open, core refuses the call (`access_changed`).
+6. **Access checked again.** If the level went down while the approval was open, core refuses the call (`access_changed`).
 7. **Single use.** An approval allows one `invoke` of exactly its `params_hash`. A new call makes a new approval.
-8. **Timeout.** An approval that times out is denied and logged as `timed-out`. Core never allows a call on timeout.
-9. **Tool annotations.** `search` has `readOnlyHint: true`. `execute` has `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. Clients that confirm tool calls themselves use these hints. The gate does not depend on them.
-10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403 and does not see the call, also if that user is an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides. Core identifies the approver as item 3 tells. Each decision records who made it.
-11. **Redacted values.** The approval page shows the same redacted parameters as the audit log. A value under a sensitive key shows as `[REDACTED]`. The approval page must not show secrets. A plugin summary for such an operation tells what changes without the value.
+8. **Timeout.** An approval that times out is denied. Core never allows a call on timeout.
+9. **Tool annotations.** `search` has `readOnlyHint: true`. `execute` has `readOnlyHint: false, destructiveHint: true, openWorldHint: true`. The gate does not depend on them.
+10. **Who can approve.** Only the user who owns the credential of the call (§6.4). Another user gets 403, also an admin. A call without an owner can come only from inside core, for example the test harness. For such a call, an admin decides.
+11. **Redacted values.** The approval page shows the same redacted parameters as the audit log. It must not show secrets.
 
 **Approval states.**
 
@@ -212,12 +228,14 @@ An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`
 | `pending` | `timed_out` | `expires_at` passes.                                                                                                                      |
 | `pending` | `cancelled` | The `execute` ends, the session closes (not for a parked execution), the endpoint stops, the owner is deleted (§6.1), or core shuts down. |
 
+Scenarios: [`@id:approval-channels`](../../packages/core/features/approvals/approval-channels.feature), [`@id:approval-page`](../../packages/core/features/approvals/approval-page.feature), [`@id:approval-browsers`](../../packages/core/features/administration/approval-browsers.feature).
+
 ## 5.4 Sandbox
 
 - Core uses `isolated-vm` 6.2 with its prebuilt binaries. Node runs with `--no-node-snapshot`, which `isolated-vm` needs.
 - Each `execute` and `search` gets a new isolate. Core disposes of it after the run and never uses it again.
 - `code` is the body of an async function. It can `await` bindings and `return` a value that JSON can encode. All values cross the boundary as JSON.
-- An error in the isolate comes back as `{ code, message }`. A binding error is an `Error` with `err.code` in the sandbox, so the code can catch it.
+- An error in the isolate comes back as `{ code, message }` (§5.2). A binding error is an `Error` with `err.code` in the sandbox, so the code can catch it.
 - **Limits for each run** (an instance can change them):
 
   | Limit       | Default | Notes                                                          |
@@ -237,6 +255,8 @@ An endpoint can allow in-session approval with `formElicitationApprovals: 'ask'`
   - The prelude freezes the binding namespaces and deletes `__syn` from the global object.
   - The host calls only its own binding properties (`Object.hasOwn`).
 
+Scenarios: [`@id:sandbox`](../../packages/core/features/sandbox/sandbox.feature).
+
 ## 5.5 Redaction
 
 Core replaces values with `"[REDACTED]"` in results, parameters, summaries and diffs. Keys match these lists:
@@ -252,16 +272,16 @@ Core replaces values with `"[REDACTED]"` in results, parameters, summaries and d
 - A rule shorter than five characters (`pass`, `pwd`) matches only as the last word of a key (`smtp_pass`). So `bypass` stays visible.
 - For a key that only contains a rule, booleans and numbers stay visible (`password_set: true`, `max_tokens: 4096`).
 
-**Secret parameters without a key name.** A parameter can hold a secret without a key that tells it, for example a password as the second positional argument. A descriptor declares these as `sensitiveParams`: JSON pointers into the parameters (`/1`, `/0/password`). Core replaces them wherever it shows or stores parameters: the input of `summarize`, pending approvals and their notifications, and the audit log. `invoke` gets the real values.
+**Secret parameters without a key name.** A descriptor declares these as `sensitiveParams`: JSON pointers into the parameters (`/1`, `/0/password`). Core replaces them wherever it shows or stores parameters. `invoke` gets the real values.
 
-**Secret results without a key name.** A result can hold a secret under a key that tells nothing, for example a generated token in `value` or a keytab in `file`. A descriptor declares these as `sensitiveResult`:
+**Secret results without a key name.** A descriptor declares these as `sensitiveResult`:
 
 - `'whole'`: the full result is a secret.
 - `{ keys, deep? }`: each non-empty value under one of these exact key names, in the result or in each row of it. With `deep`, at any depth. A value deeper than 16 levels is hidden too.
 
-Core stores the declaration with the operation. It applies it to the raw `invoke` result first, then applies the instance redactor. Nothing else sees the raw result. The SDK function `maskSensitiveResult` does this masking, and core calls it. One case stays in the plugin: a result that holds the results of other operations, for example the records of a job queue. Core cannot know which operation made each record. The plugin masks each record with the rule of its own operation (`rules.maskEmbeddedResult`).
+Core stores the declaration with the operation. It applies it to the raw `invoke` result first, then applies the instance redactor. Nothing else sees the raw result. The SDK function `maskSensitiveResult` does this masking, and core calls it. One case stays in the plugin: a result that holds the results of other operations, for example the records of a job queue. The plugin masks each record with the rule of its own operation (`rules.maskEmbeddedResult`).
 
-**Diffs.** A `prepareWrite` diff names each changed field in a path (`/smtp/password`). Key redaction does not see this. So core hides `before` and `after` of an entry if its path has a sensitive segment. It also hides them at or below a `sensitiveParams` path. A `__proto__` key in parameters stays a visible key in each redacted copy. Approvers and the audit log see all that the plugin gets.
+**Diffs.** A `prepareWrite` diff names each changed field in a path (`/smtp/password`). Key redaction does not see this. So core hides `before` and `after` of an entry if its path has a sensitive segment, or is at or below a `sensitiveParams` path.
 
 **Secret values in text.** Text has no keys. So each instance redactor also removes the actual secret values of the instance from each string. It also removes their URL-encoded and JSON-encoded forms, if they have 6 or more characters.
 
@@ -273,37 +293,21 @@ Core stores the declaration with the operation. It applies it to the raw `invoke
 - The audit log and pending approvals.
 - The portal.
 
-**Parameters in memory only.** The database stores only the redacted copy and `params_hash` of an open approval. The real parameters stay in memory.
+**Parameters in memory only.** The database stores only the redacted copy and `params_hash` of an open approval. The real parameters stay in memory. An approval must never apply to parameters that the approver did not see. So each approval ends when its parameters can be lost:
 
-- **Graceful shutdown** (SIGTERM, SIGINT):
-  1. Core cancels open approvals, so waiting clients get a denial.
-  2. Core closes MCP sessions and portal event streams.
-  3. The listeners stop. After 5 s, core cuts the remaining connections.
-  4. Core stops the plugin children and the database.
+- **Graceful shutdown** (SIGTERM, SIGINT). Core cancels open approvals first, so waiting clients get a denial. Then it closes the sessions, the listeners, the plugin children and the database.
 - **Endpoint stop.** When an endpoint stops (disabled, deleted, plugin disabled, or restarted after a connection change), core cancels its open approvals.
 - **Crash.** After a crash, core denies the pending rows at the next start (`denied: server_restart`).
 
-An approval must never apply to parameters that the approver did not see.
+Scenarios: [`@id:redaction`](../../packages/core/features/redaction/redaction.feature), [`@id:shutdown`](../../packages/core/features/deployment/shutdown.feature).
 
 ## 5.6 Parked executions and `resume`
 
-A client without a usable prompt, for example a chat client without elicitation, still gets each approval. The execution parks: it waits on the server, and the tool call answers at once. A form approval also parks when the form has no answer after 30 s (§5.3). Some clients tell core that they support forms, but do not show them.
+A client without a usable prompt, for example a chat client without elicitation, still gets each approval. The execution parks: it waits on the server, and the tool call answers at once with `status: awaiting_approval`, the `executionId` and the approval link. This is not an error result. A form approval also parks when the form has no answer after 30 s (§5.3). Some clients tell core that they support forms, but do not show them.
 
-**Flow.**
-
-1. A binding needs a human decision, and no client prompt applies (§5.3). Or a form prompt has no answer after 30 s. The caller can park.
-2. Core makes the pending approval and the page token. It writes the audit event `awaiting_approval` with the `executionId`, the `approvalId` and `channel: link`. After a form with no answer, the event also has `formFallback: true`.
-3. The `execute` call returns `status: awaiting_approval`, the `executionId` and `approval` (`url`, `operationKey`, `summary`, `expiresAt`, `inSession`). This is not an error result. `inSession` is true when in-session approval applies to the call.
-4. The human decides on the approval page, or on the approval card when `inSession` is true (§5.7).
-5. The script continues at the decision. It does not wait for `resume`. The sandbox time limit starts again.
-6. The agent shows the link and calls `resume(executionId)` at once. It calls `resume` again while the result has the same link, for up to about 3 minutes. Then it asks the user to tell it when they decide. `resume` waits up to 45 s for a change. It returns one of these:
-   - the result of the script, after which core forgets the execution;
-   - `awaiting_approval` with the same link and `approval.repeat: true`, if the human did not decide yet;
-   - `awaiting_approval` with a new link, if the script reached another approval;
-   - `running` with `STILL_RUNNING`, if the script still runs after the decision;
-   - `EXECUTION_NOT_FOUND`, for an unknown or collected id, an id of another principal or endpoint, or an id from before a restart.
-
-Each write of a parked script runs once. The agent must not run the code again.
+- The script continues at the human decision. It does not wait for `resume`. The sandbox time limit starts again.
+- `resume(executionId)` waits up to 45 s for a change. It returns the result once, the same link again, a new link, `STILL_RUNNING` or `EXECUTION_NOT_FOUND` (§5.2).
+- Each write of a parked script runs once. The agent must not run the code again.
 
 **Park again.** A parked script can park again for its next approval only if each approval before it was given. It can park at most 10 times. Otherwise core denies the call at once (`park_refused`). A loop that catches denials and asks again then ends with the sandbox time limit.
 
@@ -324,9 +328,11 @@ Each write of a parked script runs once. The agent must not run the code again.
 
 One `resume` at a time can wait on an execution. A second one gets `BUSY`.
 
-**End.** A parked execution ends when its script ends. Its approval times out as in §5.3. When the endpoint stops, core cancels the approval, stops the execution and refuses its remaining calls. At shutdown, core cancels all approvals. A restart loses all parked executions, and core denies their pending rows (§5.5).
+**End.** A parked execution ends when its script ends. Its approval times out as in §5.3. When the endpoint stops, core cancels the approval and stops the execution. A later `resume` then gets `EXECUTION_ENDED`. A restart loses all parked executions, and core denies their pending rows (§5.5).
 
-**Audit.** Each `resume` writes a `call` event with `decision: resumed` and the `executionId`. With `awaiting_approval` and the decision, it gives one trace for each execution.
+**Audit.** The audit event `awaiting_approval` records the `executionId`, the `approvalId` and the channel. Each `resume` writes a `call` event with `decision: resumed`. Together they give one trace for each execution.
+
+Scenarios: [`@id:parked-executions`](../../packages/core/features/approvals/parked-executions.feature).
 
 ## 5.7 Approval card
 
@@ -334,29 +340,29 @@ The approval card is an MCP Apps view (extension `io.modelcontextprotocol/ui`). 
 
 - **Resource.** `ui://synoikia/approval`, MIME type `text/html;profile=mcp-app`. Core serves static HTML and script. It loads nothing from other origins and declares no CSP domains.
 - **Tools.** `execute` and `resume` set `_meta.ui.resourceUri` to the card. Three tools have `_meta.ui.visibility: ["app"]`, so the model does not see them:
-  - `approval_status(executionId)` returns the state of a parked execution: `pending`, `approved`, `denied`, `timed_out`, `cancelled`, `running` or `done`, with `expiresAt` and the last decision. With `pending`, it also returns the `approvalId` that the execution waits on. `resumeWaiting: true` tells that a `resume` waits on the execution now. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
-  - `approval_decide(executionId, approvalId, approve)` approves or denies the approval that the parked execution waits on. It has the owner check of `resume`. If the execution waits on another approval, core refuses with `approval_changed`. It returns only `decided`, or `decided: false` with an error code.
+  - `approval_status(executionId)` returns the state of a parked execution, the `approvalId` that it waits on, and `resumeWaiting`. It never returns parameters, results or the name of the approver. It has the owner check of `resume`.
+  - `approval_decide(executionId, approvalId, approve)` approves or denies the approval that the parked execution waits on. It has the owner check of `resume`. If the execution waits on another approval, core refuses with `approval_changed`.
   - `session_grant_revoke(grantId)` ends a session grant of the same principal and endpoint.
-- **Decisions.** The card decides only when `approval.inSession` is true. It then shows **Approve**, **Deny** and **Review on the page**. Core refuses a decision when the approval is closed, when in-session approval does not apply to the call, or when the endpoint does not allow it now. The audit records `decided_via: elicitation`, the client as `decided_by`, and `detail.approvalChannel: card`. A card decision never gives a session grant.
-- **Page.** For each other approval, the card has no approve control. It never has a confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
-- **Next approval.** Each `approval` in a result has its `id`. When `approval_status` returns another `approvalId`, the card shows its approval as approved and removes its controls. A parked execution parks again only after an approval was given (§5.6).
+- **Decisions.** The card decides only when in-session approval applies to the call, and the endpoint allows it at the time of the decision. A card decision never gives a session grant.
+- **Page.** For each other approval, the card has no approve control and no confirmation field. It shows the state and opens the approval page through `ui/open-link`. The host renders the card from the tool result, so the agent cannot change the link.
 - **Repeat.** A result with `approval.repeat: true` shows no approval on its card. An earlier card shows that approval.
-- **Continue.** A waiting `resume` gets the result at the decision, so the agent continues in the same turn. The card then sends no message. When the state is final and no `resume` waits for 3 polls (about 6 s), the card sends one `ui/message` to the chat ("Approved, continue."). The agent then calls `resume`. If the host refuses the message, the card asks the user to say "continue".
-- **Session grant.** When a session grant is active, the result has `sessionGrant` (`id`, `expiresAt`). The card shows it with a **Revoke** control.
+- **Continue.** A waiting `resume` gets the result at the decision, so the card sends no message. When the state is final and no `resume` waits for 3 polls, the card sends one `ui/message` to the chat to continue.
 - A host without MCP Apps ignores the card. The agent shows the link from the text result.
 
-At session start, core logs the elicitation mode of the client (`none`, `form` or `url`) and if it supports MCP Apps.
+Scenarios: [`@id:approval-card`](../../packages/core/features/approvals/approval-card.feature).
 
 ## 5.8 Session grants
 
 A session grant lets one principal run the operations at `ask` on one endpoint without a question, for a time.
 
-- **Who gives it.** Only a human on the approval page, with **Approve for this session**, when the human approves a call. A client, the card and form elicitation cannot give one. **Approve once** is the main button, and the shortest length is the default.
+- **Who gives it.** Only a human on the approval page, with **Approve for this session**, when the human approves a call. A client, the card and form elicitation cannot give one.
 - **Scope.** The principal (the credential) and the endpoint of the approved call. A new grant for the same principal and endpoint replaces the old one.
 - **Length.** 1 h, 4 h or until midnight (server time). The endpoint setting `sessionGrantMaxHours` (8 by default) is the maximum. `0` removes the choice from the page. Core applies the maximum again when it makes the grant.
-- **Effect.** At step 6 of the gate, an operation at `ask` runs with `auto-approved:grant:<id>`. The `catalog` entries show `approval: auto`. These do not change:
-  - Locked operations and operations with typed confirmation always need a human. The page does not offer a grant for them.
+- **Effect.** At step 6 of the gate, an operation at `ask` runs with `auto-approved:grant:<id>`. These do not change:
+  - Locked operations and operations with typed confirmation always need a human.
   - Level `none`, a group at `read` and the access ceiling still refuse.
   - The write rate limit, attestation, target resolution, redaction and the audit still apply.
-- **End.** At its expiry, with **Revoke** on the card or in the portal (endpoint settings, "Active session approvals"), when the endpoint stops, when the approver is disabled or deleted (§6.1), or at a restart. Core keeps grants in memory only.
-- **Audit.** `config` events `session_grant.created` (approver, client, approval, expiry) and `session_grant.ended` (reason: `expired`, `revoked`, `replaced`, `endpoint_stopped`, `user_disabled`, `user_deleted`).
+- **End.** At its expiry, at a revoke, when the endpoint stops, when the approver is disabled or deleted (§6.1), or at a restart. Core keeps grants in memory only.
+- **Audit.** `config` events `session_grant.created` and `session_grant.ended`, with the reason.
+
+Scenarios: [`@id:session-grants`](../../packages/core/features/approvals/session-grants.feature).

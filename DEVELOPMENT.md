@@ -70,6 +70,8 @@ The portal's feature files are in `packages/admin-ui/features/`. Their World bui
 
 The plugin SDK's feature files are in `packages/plugin-sdk/features/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
 
+The feature files of `@synoikia/create-plugin` are in `packages/create-plugin/features/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
+
 ## Architecture model
 
 The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. The `architect` skill and `docs/workflow.md` say when a change updates it. An `arch:` commit changes only the model.
