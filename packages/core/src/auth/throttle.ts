@@ -56,7 +56,9 @@ export class LoginThrottle {
   /** Records a failure; returns true if this failure triggered a lockout, which lasts a window from now. */
   fail(username: string, surface: LoginSurface = 'admin'): boolean {
     const key = failureKey(username, surface);
-    if (this.failures.add(key, this.opts.windowMs).length !== this.opts.maxFailures) return false;
+    // Five or more, not exactly five: concurrent failures can pass the fifth before any of them locks.
+    if (this.failures.add(key, this.opts.windowMs).length < this.opts.maxFailures) return false;
+    if (this.lockedFor(username, surface) > 0) return false;
     this.locks.add(key, this.opts.windowMs);
     return true;
   }
