@@ -83,14 +83,6 @@ Given(
   },
 );
 
-Given(
-  'a run on {string} may take {int} second, and Acme takes {int} seconds to answer',
-  async (world: SynoikiaWorld, slug: string, run: number, upstream: number) => {
-    await world.instanceSettings(slug, { sandbox: { timeoutMs: run * 1000 } });
-    world.upstreamDelayMs = upstream * 1000;
-  },
-);
-
 When(
   'agent {word} asks for the share password of {string}',
   async (world: SynoikiaWorld, agent: string, list: string) => {
