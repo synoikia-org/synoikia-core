@@ -44,6 +44,8 @@ export interface PublicUser {
   createdAt: string;
   lastLoginAt: string | null;
   role: PublicRole;
+  /** `GET /api/profile` only, while two-factor is on. */
+  recoveryCodesLeft?: number;
 }
 
 /** `POST /api/users`. */

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { messageRole, rovingKeydown } from '../a11y';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, useId } from 'vue';
 import { useRoute } from 'vue-router';
 import { errorText } from '../api';
+import ModalDialog from '../components/ModalDialog.vue';
 import MyCredentials from '../components/MyCredentials.vue';
 import PageHeader from '../components/PageHeader.vue';
+import RecoveryCodes from '../components/RecoveryCodes.vue';
 import TotpEnrollment from '../components/TotpEnrollment.vue';
 import {
   useApprovalBrowsersQuery,
@@ -12,6 +14,7 @@ import {
   useDisableTotp,
   useProfileQuery,
   useRefreshProfile,
+  useRotateRecoveryCodes,
   useSignOutApprovalBrowsers,
   useUnlinkOidc,
 } from '../composables/useProfile';
@@ -30,6 +33,7 @@ const changePw = useChangePassword();
 const disable = useDisableTotp();
 const unlinkOidc = useUnlinkOidc();
 const signOutBrowsers = useSignOutApprovalBrowsers();
+const rotate = useRotateRecoveryCodes();
 const me = computed(() => profileQuery.data.value);
 const approvalBrowsers = computed(() => browsersQuery.data.value ?? []);
 const notes = ref<Record<string, Message>>({});
@@ -41,6 +45,11 @@ const pw = ref({ current: '', next: '', confirm: '' });
 const disableCode = ref('');
 // Two-factor is on once confirmed, but the codes stay until the person saved them, whatever a reload says.
 const showingCodes = ref(false);
+const rotating = ref(false);
+const rotateCode = ref('');
+const rotateFormId = useId();
+const newCodes = computed(() => rotate.data.value?.recoveryCodes);
+const rotateError = computed(() => rotate.errorText.value);
 const theme = ref<ThemePref>(getTheme());
 const THEME_LABELS: Record<ThemePref, string> = { auto: 'Auto', light: 'Light', dark: 'Dark' };
 function pickTheme(pref: ThemePref) {
@@ -98,6 +107,18 @@ function unlink() {
     onSuccess: () => setMsg('oidc', 'ok', 'Single sign-on unlinked.'),
     onError: failed('oidc'),
   });
+}
+function openRotate() {
+  rotate.reset();
+  rotateCode.value = '';
+  rotating.value = true;
+}
+function rotateCodes() {
+  rotate.mutate(rotateCode.value.trim(), { onSuccess: () => (rotating.value = false) });
+}
+async function savedNewCodes() {
+  rotate.reset();
+  await refreshProfile();
 }
 async function enrolled() {
   showingCodes.value = false;
@@ -165,7 +186,8 @@ async function enrolled() {
 
       <section class="card">
         <h2>Two-factor authentication</h2>
-        <template v-if="me.totpEnabled && !showingCodes">
+        <RecoveryCodes v-if="newCodes" :codes="newCodes" @saved="savedNewCodes" />
+        <template v-else-if="me.totpEnabled && !showingCodes">
           <p class="small"><span class="pill ok">On</span> Enter a current code (or a recovery code) to turn it off.</p>
           <form class="row" @submit.prevent="disableTotp">
             <input
@@ -178,6 +200,12 @@ async function enrolled() {
             />
             <button class="btn btn-danger" type="submit" :disabled="!disableCode.trim()">Turn off</button>
           </form>
+          <div class="row recovery-left">
+            <span class="small">
+              {{ me.recoveryCodesLeft }} recovery {{ me.recoveryCodesLeft === 1 ? 'code' : 'codes' }} left
+            </span>
+            <button class="btn btn-sm" type="button" @click="openRotate">New recovery codes</button>
+          </div>
         </template>
         <TotpEnrollment v-else @confirmed="showingCodes = true" @enrolled="enrolled" />
         <p v-if="messages.totp" class="alert" :class="messages.totp.kind" :role="messageRole(messages.totp.kind)">
@@ -237,6 +265,36 @@ async function enrolled() {
       </section>
     </div>
     <p v-else-if="messages.load" class="alert error" role="alert">{{ messages.load.text }}</p>
+    <ModalDialog v-if="rotating" title="New recovery codes" @close="rotating = false">
+      <form :id="rotateFormId" class="stack" @submit.prevent="rotateCodes">
+        <p class="small">
+          Your current recovery codes stop working. Enter the current code from your authenticator app.
+        </p>
+        <div class="field">
+          <label :for="`${rotateFormId}-code`">Code</label>
+          <input
+            :id="`${rotateFormId}-code`"
+            v-model="rotateCode"
+            class="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="123456"
+          />
+        </div>
+        <p v-if="rotateError" class="alert error" role="alert">{{ rotateError }}</p>
+      </form>
+      <template #footer>
+        <button class="btn" type="button" @click="rotating = false">Cancel</button>
+        <button
+          class="btn btn-primary"
+          type="submit"
+          :form="rotateFormId"
+          :disabled="!rotateCode.trim() || rotate.isPending.value"
+        >
+          Get new codes
+        </button>
+      </template>
+    </ModalDialog>
   </div>
 </template>
 
@@ -252,6 +310,9 @@ async function enrolled() {
   border-radius: var(--radius-md);
 }
 .alert {
+  margin-top: 12px;
+}
+.recovery-left {
   margin-top: 12px;
 }
 </style>
