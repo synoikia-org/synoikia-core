@@ -67,6 +67,12 @@ Feature: Session grants
       Then the admin sees one session grant of agent 7 on "tasks"
       And the audit log shows that the session grant of agent 7 ended because a new one replaced it
 
+    Scenario: The filter "ADMIN" finds the session grants that the admin gave and replaced
+      Given agent 7 waits for the admin to approve the adds of "salt" and "pepper"
+      And the admin approves both adds for this session
+      When the admin filters the audit log by "ADMIN" and exports it
+      Then both times the admin finds the two session grants of agent 7 and the end of the first under the name "admin"
+
     Scenario Outline: The session grant ends when <event>
       Given the admin approved the add of "butter" by agent 7 for this session
       When <action>

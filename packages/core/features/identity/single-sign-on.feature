@@ -16,6 +16,16 @@ Feature: Single sign-on
       When user 12 signs in with Acme ID
       Then user 12 is told that single sign-on is not enabled
 
+  Rule: The issuer and the client count only while single sign-on is on
+
+    Scenario: Single sign-on saves as off without an issuer and a client
+      When the admin saves single sign-on as off, with no issuer and no client
+      Then single sign-on is off on the server, with no issuer and no client
+
+    Scenario: Single sign-on does not turn on without an issuer and a client
+      When the admin tries to turn single sign-on on, with no issuer and no client
+      Then the admin is told that the issuer and the client are not valid, and single sign-on stays as it was
+
   Rule: A linked identity signs in as its user
 
     Scenario: User 12 signs in with their linked Acme ID

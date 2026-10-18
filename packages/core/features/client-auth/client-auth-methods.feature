@@ -89,7 +89,7 @@ Feature: Agent sign-in methods
       And Acme Tasks also runs as the instance "shopping"
       And the admin disabled the instance "shopping"
       When agent 7 opens a session on "nope" and on "shopping" with its credential
-      Then agent 7 is told that "nope" does not exist and that "shopping" is disabled
+      Then agent 7 is told that "nope" does not exist and that "shopping" is unavailable
 
   Rule: A session belongs to the credential that opened it
 

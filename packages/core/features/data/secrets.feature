@@ -18,6 +18,12 @@ Feature: Secrets
       When the operator restarts the server with another master key
       Then the admin signs in again and sees that "tasks" cannot read its secrets
 
+    Scenario: After a restart with another master key, the admin enters the API token again
+      Given Acme Tasks runs as the instance "tasks"
+      And the operator restarts the server with another master key
+      When the admin opens the connection of "tasks" and then saves it with the API token
+      Then the admin was told first to enter the secrets again, and then "tasks" runs with the API token set
+
   Rule: The master key in the start-up settings has 32 bytes
 
     Scenario: A master key in the start-up settings is used, and no key file is made

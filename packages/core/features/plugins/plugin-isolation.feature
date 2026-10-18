@@ -28,8 +28,9 @@ Feature: Plugin isolation
     Scenario: A catalog that breaks the plugin contract is refused
       Given Acme Tasks runs as the instance "tasks"
       And the plugin of "tasks" sends an operation without its classification
-      When the admin syncs "tasks", which fails
-      Then the admin sees that the last sync of "tasks" failed, because the plugin sent a catalog that is not valid
+      When the admin tries to sync "tasks"
+      Then the admin is told that the sync failed, because the plugin sent a catalog that is not valid
+      And the last sync of "tasks" shows the same reason
 
     Scenario: A plugin that does not know a method fails the call
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"

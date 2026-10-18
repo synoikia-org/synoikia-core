@@ -55,13 +55,6 @@ Feature: Notifications
 
   Rule: The channels hear when an instance goes down and when it recovers
 
-    @long-running
-    Scenario: The channels hear when the plugin of an instance crashes
-      Given Acme Tasks runs as the instance "tasks"
-      And the admin gets a notification when an instance goes down, crashes or recovers
-      When the plugin of "tasks" crashes and starts again
-      Then the admin got the notifications "/tasks is down" and "Plugin for /tasks crashed"
-
     Scenario: The channels hear when an instance whose first sync failed recovers
       Given the admin gets a notification when an instance goes down, crashes or recovers
       And the plugin of "tasks" cannot list its operations
@@ -69,8 +62,8 @@ Feature: Notifications
       When the admin syncs "tasks", which fails, and then again after the plugin lists its operations
       Then the admin got the notifications "/tasks is down" and "/tasks recovered"
 
-    @backlog
-    Scenario: The channels hear when the plugin of an instance is back after a crash
+    @long-running
+    Scenario: The channels hear when the plugin of an instance crashes and when it is back
       Given Acme Tasks runs as the instance "tasks"
       And the admin gets a notification when an instance goes down, crashes or recovers
       When the plugin of "tasks" crashes and starts again

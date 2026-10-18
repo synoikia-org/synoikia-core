@@ -77,6 +77,13 @@ Feature: My instances
       When user 12 tries to set their own level of "add a task" to ask
       Then user 12 is told that their role allows at most none for "add a task"
 
+    Scenario: A group that user 12 closed with an own level stays shown, so user 12 can open it again
+      Given the role "family" lets its users set their own levels on "tasks"
+      And the admin sets the maximum of "family" for the group "tasks" to ask
+      And user 12 sets their own level of the group "tasks" to read
+      When user 12 looks at the levels of "tasks"
+      Then user 12 sees only the group "tasks", with each write off because of their own level
+
   Rule: Own rules belong to their owner
 
     Scenario: User 12 changes only their own rule, and the admin sees who owns it

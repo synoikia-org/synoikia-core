@@ -46,7 +46,7 @@ Feature: Server log
       Then its log has the warning for the token of another issuer, and no debug or info line
 
     Scenario: A fault logs the route pattern, not the address that was asked for
-      Given the operator restarts the server with another master key
-      When the admin tries to open the connection of "tasks"
+      Given the database of the server refuses each change of "tasks"
+      When the admin tries to save the connection of "tasks"
       Then the admin is told only that there was an internal error
       And the server log names the route of the connection, but not the id of "tasks"
