@@ -8,7 +8,7 @@ const run = (world: SynoikiaWorld, agent: string, code: string) => world.execute
 const openTasks = (list: string) => `await tasks.call('lists.tasks', ${JSON.stringify({ list })})`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-Given('a run on {string} may take {int} second', async (world: SynoikiaWorld, slug: string, seconds: number) => {
+Given('a run on {string} may take {int} second(s)', async (world: SynoikiaWorld, slug: string, seconds: number) => {
   await world.instanceSettings(slug, { sandbox: { timeoutMs: seconds * 1000 } });
 });
 
