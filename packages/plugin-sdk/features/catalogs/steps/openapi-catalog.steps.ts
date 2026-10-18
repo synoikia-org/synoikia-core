@@ -226,9 +226,10 @@ When(/^the agent sends Acme Tasks the request (.+)$/, async (world: PluginAuthor
   await world.call(() => binding.resolveOperation({ fn: 'request', args: [yamlValue(request)] }));
 });
 
-When('core runs the operation {string} of Acme Tasks', async (world: PluginAuthorWorld, key: string) => {
+When('core runs the read of {string} on Acme Tasks', async (world: PluginAuthorWorld, path: string) => {
   const binding = world.binding();
-  await world.call(() => binding.invoke({ key, params: {}, context: { callId: 'c-1', deadlineMs: 5000 } }));
+  const context = { callId: 'c-1', deadlineMs: 5000 };
+  await world.call(() => binding.invoke({ key: `GET ${path}`, params: {}, context }));
 });
 
 Then('the request is refused with {string}', (world: PluginAuthorWorld, reason: string) => {
