@@ -79,6 +79,8 @@ export const principalKey = (caller: CallerContext) => caller.client.key ?? call
 const MAX_ERROR_MESSAGE = 500;
 // `invoke` times out this long before the run does, so the agent learns that the result is unknown.
 const INVOKE_MARGIN_MS = 500;
+// A shorter deadline can miss even a fast answer, so the run ends with its time limit instead.
+const MIN_INVOKE_MS = 100;
 const PASSTHROUGH_PLUGIN_CODES = new Set([
   'UNKNOWN_OPERATION',
   'INVALID_PARAMS',
@@ -498,8 +500,8 @@ export function createGateBindings(
 
       // 9. The real upstream call, within what's left of the sandbox budget.
       const remaining = budget.remainingMs() - INVOKE_MARGIN_MS;
-      // Inside the margin the run ends before any answer could arrive, so nothing goes upstream.
-      if (remaining <= 0) reject('rejected:time_limit', new BindingError('TIMEOUT', 'Sandbox time limit exceeded'));
+      if (remaining < MIN_INVOKE_MS)
+        reject('rejected:time_limit', new BindingError('TIMEOUT', 'Sandbox time limit exceeded'));
       if (isWrite && !deps.limiter.take(writeBucket, rt.settings.writesPerMinute, 60_000)) overWriteBudget();
       const result = await rt
         .plugin()
