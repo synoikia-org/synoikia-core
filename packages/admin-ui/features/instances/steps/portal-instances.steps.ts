@@ -603,7 +603,7 @@ When(
 );
 
 When(
-  'the admin types {string} in the delete question of {instance} and presses Enter',
+  'the admin types {string} in the delete question of {instance} and confirms with Enter',
   async (world: PortalWorld, typed: string, slug: string) => {
     await settingsPage(world, slug);
     world.noted.settings = JSON.stringify((await world.instance(slug))?.settings);
