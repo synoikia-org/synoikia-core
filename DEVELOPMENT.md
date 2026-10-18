@@ -27,7 +27,7 @@ Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @syno
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across six runners. The `e2e-ui` job runs the portal's scenarios in Chromium. The `test` job runs every other test. Locally, run them in this order:
+CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across four runners. The `e2e-ui` job runs the portal's scenarios in Chromium. The `test` job runs every other test. Locally, run them in this order:
 
 ```sh
 pnpm lint
