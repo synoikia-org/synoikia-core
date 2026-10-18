@@ -151,7 +151,7 @@ When(
       await world.admin.get(`/api/instances/${id}/connection`),
       await world.admin.put(`/api/instances/${id}/connection`, {
         config: { url: world.upstream!.url },
-        secrets: { token: API_TOKEN },
+        secrets: { token: API_TOKEN, webhookSecret: null },
       }),
     ];
     of(world).answers = await Promise.all(
