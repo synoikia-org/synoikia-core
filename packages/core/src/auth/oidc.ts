@@ -92,6 +92,7 @@ export class OidcService {
     private readonly stateKey: Buffer,
     /** Allow http:// issuers (tests, lab IdPs on a trusted LAN). */
     private readonly allowInsecure = false,
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   private row() {
@@ -206,7 +207,7 @@ export class OidcService {
       state: state.state,
       nonce: state.nonce,
     });
-    return { url: url.toString(), stateToken: signPayload(this.stateKey, state, STATE_TTL_MS) };
+    return { url: url.toString(), stateToken: signPayload(this.stateKey, state, STATE_TTL_MS, this.now().getTime()) };
   }
 
   /** Validates the callback query (state, PKCE, nonce, ID token) and returns the identity plus the flow state. */
@@ -214,7 +215,7 @@ export class OidcService {
     callbackQuery: string,
     stateToken: string | undefined,
   ): Promise<{ identity: OidcIdentity; state: OidcState }> {
-    const state = OidcStateSchema.safeParse(verifyPayload(this.stateKey, stateToken)).data;
+    const state = OidcStateSchema.safeParse(verifyPayload(this.stateKey, stateToken, this.now().getTime())).data;
     if (!state) throw new OidcError('oidc_state', 'Sign-in session expired or invalid; try again');
     const config = await this.configuration();
     // The token request's redirect_uri must equal the one sent to the IdP, not the URL a proxy forwarded.

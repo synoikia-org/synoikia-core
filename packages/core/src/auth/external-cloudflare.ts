@@ -6,6 +6,9 @@ import type { ExternalIdentity, ExternalProvider } from './external.js';
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
+/** The team domain without the scheme or a trailing slash an admin may have written. */
+const domainOf = (teamDomain: string) => teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
 const MAX_CLAIM = 120;
 const clip = (v: string) => (v.length > MAX_CLAIM ? `${v.slice(0, MAX_CLAIM)}…` : v);
 
@@ -33,7 +36,7 @@ export async function checkCloudflareAccess(
   assertion: string,
   keys?: JWTVerifyGetKey,
 ): Promise<ExternalIdentity> {
-  const domain = teamDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const domain = domainOf(teamDomain);
   let jwks = keys ?? jwksCache.get(domain);
   if (!jwks) {
     const remote = createRemoteJWKSet(new URL(`https://${domain}/cdn-cgi/access/certs`));
@@ -72,14 +75,19 @@ export const cloudflareAccess: ExternalProvider = {
   id: 'cloudflare',
   name: 'Cloudflare Access',
   configured: (settings) => !!settings.cfAccess.teamDomain && !!settings.cfAccess.aud,
-  async identify(headers, settings) {
+  async identify(headers, settings, keys) {
     const assertion = headers.get('cf-access-jwt-assertion');
     if (!assertion)
       return {
         ok: false,
         reason: 'no Cf-Access-Jwt-Assertion header: the request did not come through the Cloudflare Access application',
       };
-    const checked = await checkCloudflareAccess(settings.cfAccess.teamDomain, settings.cfAccess.aud, assertion);
+    const checked = await checkCloudflareAccess(
+      settings.cfAccess.teamDomain,
+      settings.cfAccess.aud,
+      assertion,
+      keys?.(domainOf(settings.cfAccess.teamDomain)),
+    );
     return checked.ok ? checked : { ok: false, reason: `Cloudflare Access assertion rejected: ${checked.reason}` };
   },
 };

@@ -78,6 +78,7 @@ export class UserService {
     private readonly db: Db,
     private readonly box: SecretBox,
     private readonly hashCost: PasswordHashCost = PASSWORD_HASH,
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   count(): number {
@@ -398,7 +399,7 @@ export class UserService {
     const user = this.get(userId);
     const secret = this.totpSecret(user);
     if (!secret || user.totpEnabled) throw new ConflictError('totp_not_pending', 'Start TOTP enrollment first');
-    const step = verifyTotp(secret, code);
+    const step = verifyTotp(secret, code, { nowMs: this.now().getTime() });
     if (step === null) throw new ValidationError('invalid_code', 'That code is not valid');
     const codes = Array.from({ length: RECOVERY_CODES }, () =>
       randomToken(8).replace(/[-_]/g, '').slice(0, 10).toLowerCase(),
@@ -441,7 +442,7 @@ export class UserService {
     const user = this.get(userId);
     const secret = this.totpSecret(user);
     if (!user.totpEnabled || !secret) return false;
-    const step = verifyTotp(secret, code, { lastStep: user.totpLastStep });
+    const step = verifyTotp(secret, code, { nowMs: this.now().getTime(), lastStep: user.totpLastStep });
     if (step === null) return false;
     this.db.update(users).set({ totpLastStep: step }).where(eq(users.id, userId)).run();
     return true;

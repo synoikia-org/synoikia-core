@@ -282,14 +282,18 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
       redirectHost: new URL(redirectUri).host || redirectUri,
       username: session.user.username,
       endpoints: mine.map((e) => ({ ...e, checked: requested.includes(e.resource) })),
-      formToken: signPayload(ctx.keys.state, form, FORM_TTL_MS),
+      formToken: signPayload(ctx.keys.state, form, FORM_TTL_MS, ctx.now().getTime()),
       access: 'read',
     });
   });
 
   app.post('/oauth/consent', async (c) => {
     const body = await c.req.parseBody({ all: true });
-    const form = verifyPayload<AuthorizeRequest>(ctx.keys.state, typeof body.form === 'string' ? body.form : undefined);
+    const form = verifyPayload<AuthorizeRequest>(
+      ctx.keys.state,
+      typeof body.form === 'string' ? body.form : undefined,
+      ctx.now().getTime(),
+    );
     const session = uiSession(ctx, c, 'oauth');
     // The consent form is bound to the session that rendered it (and so to this browser).
     if (!form || !session || form.session !== sha256(getCookie(c, UI_SESSIONS.oauth.cookie) ?? '')) {
@@ -322,7 +326,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
         endpoints: oauthEndpoints(ctx, issuer(c))
           .filter((e) => form.offered.includes(e.resource))
           .map((e) => ({ ...e, checked: false })),
-        formToken: signPayload(ctx.keys.state, form, FORM_TTL_MS),
+        formToken: signPayload(ctx.keys.state, form, FORM_TTL_MS, ctx.now().getTime()),
         access: body.access === 'write' ? 'write' : 'read',
         error: 'Pick at least one endpoint, or deny.',
       });
@@ -370,7 +374,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     }
     if (user.totpEnabled) {
       return totpPage(c, {
-        mfa: signPayload(ctx.keys.state, { mfaUser: user.id }, 5 * 60_000),
+        mfa: signPayload(ctx.keys.state, { mfaUser: user.id }, 5 * 60_000, ctx.now().getTime()),
         continueTo,
         csrf: uiCsrf(ctx, c),
       });
@@ -386,6 +390,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     const pending = verifyPayload<{ mfaUser: string }>(
       ctx.keys.state,
       typeof body.mfa === 'string' ? body.mfa : undefined,
+      ctx.now().getTime(),
     );
     if (!checkUiCsrf(c, body.csrf) || !pending)
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Your sign-in expired; try again.', 401);

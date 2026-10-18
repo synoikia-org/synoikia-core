@@ -3,6 +3,7 @@ import { SessionGrantService } from './approvals/grants.js';
 import { ApprovalLinkService } from './approvals/links.js';
 import { ApprovalService } from './approvals/service.js';
 import { SeenClients } from './auth/client-policy.js';
+import type { ExternalKeys } from './auth/external.js';
 import { McpTokenService } from './auth/mcp-tokens.js';
 import { OAuthService } from './auth/oauth.js';
 import { OidcService } from './auth/oidc.js';
@@ -64,6 +65,8 @@ export interface AppContext {
   keys: { attestation: Buffer; state: Buffer };
   warnings: string[];
   now: () => Date;
+  /** Tests only: see {@link AppOptions.externalKeys}. */
+  externalKeys?: ExternalKeys;
   gateDeps(): GateDeps;
   /** Re-scan plugin directories and update the registry (startup, after installs). */
   discoverPlugins(): ReturnType<typeof syncPluginRegistry>;
@@ -98,10 +101,13 @@ export interface AppOptions {
   formFallbackMs?: number;
   /** Tests only: a cheaper password hash. Never set from the environment or the config. */
   passwordHashCost?: PasswordHashCost;
+  /** Tests only: the key set of an external provider's domain, in place of the one it publishes; undefined fetches it. */
+  externalKeys?: ExternalKeys;
 }
 
 export async function createAppContext(config: Config, opts: AppOptions = {}): Promise<AppContext> {
   const now = opts.now ?? (() => new Date());
+  const nowMs = () => now().getTime();
   const warnings: string[] = [];
   const master = loadMasterKey({ envKey: config.MASTER_KEY, dataDir: config.DATA_DIR });
   if (master.warning) warnings.push(master.warning);
@@ -112,7 +118,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   if (orphans > 0) warnings.push(`Denied ${orphans} approval(s) left pending by the previous run`);
 
   const events = new CoreEvents();
-  const users = new UserService(db, secrets, opts.passwordHashCost);
+  const users = new UserService(db, secrets, opts.passwordHashCost, now);
   const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD);
   if (boot === 'created')
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
@@ -132,7 +138,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   const links = new ApprovalLinkService(db, now);
   const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
-  const executions = new ExecutionRegistry(() => now().getTime());
+  const executions = new ExecutionRegistry(nowMs);
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
   events.on('instance.status', ({ instanceId, status }) => {
     if (status !== 'stopped') return;
@@ -145,7 +151,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     attestation: secrets.deriveKey('attestation'),
     state: secrets.deriveKey('signed-state'),
   };
-  const limiter = new SlidingWindowLimiter();
+  const limiter = new SlidingWindowLimiter(nowMs);
   const notifier = new NotifierService(db, secrets, {
     fetch: opts.notifyFetch,
     retryDelaysMs: opts.notifyRetryDelaysMs,
@@ -193,8 +199,8 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     users,
     roles: new RoleService(db),
     sessions: new SessionService(db, secrets.deriveKey('session-pepper'), now),
-    throttle: new LoginThrottle(),
-    oidc: new OidcService(db, secrets, keys.state, opts.oidcAllowInsecure ?? false),
+    throttle: new LoginThrottle({}, nowMs),
+    oidc: new OidcService(db, secrets, keys.state, opts.oidcAllowInsecure ?? false, now),
     tokens: new McpTokenService(db, now),
     oauth: new OAuthService(db, now),
     seenClients: new SeenClients(now),
@@ -209,6 +215,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     keys,
     warnings,
     now,
+    externalKeys: opts.externalKeys,
     gateDeps: () => ({ db, approvals, limiter, attestationKey: keys.attestation, now, grants, executions }),
     discoverPlugins: discover,
     async start() {

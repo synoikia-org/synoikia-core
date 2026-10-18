@@ -211,7 +211,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       return c.json({ error: 'invalid_credentials', message: 'Invalid username or password' }, 401);
     }
     if (user.totpEnabled) {
-      setCookie(c, MFA_COOKIE, signPayload(ctx.keys.state, { mfaUser: user.id }, MFA_TTL_MS), {
+      setCookie(c, MFA_COOKIE, signPayload(ctx.keys.state, { mfaUser: user.id }, MFA_TTL_MS, ctx.now().getTime()), {
         httpOnly: true,
         secure: isSecure(c, ctx.config.TRUST_PROXY),
         sameSite: 'Strict',
@@ -229,7 +229,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!ctx.throttle.allowIp(clientIp(c, ctx.config.TRUST_PROXY)))
       return c.json({ error: 'rate_limited', message: 'Too many attempts; try again later' }, 429);
     const { code } = await readJson(c, z.object({ code: z.string().min(1).max(32) }));
-    const pending = verifyPayload<{ mfaUser: string }>(ctx.keys.state, getCookie(c, MFA_COOKIE));
+    const pending = verifyPayload<{ mfaUser: string }>(ctx.keys.state, getCookie(c, MFA_COOKIE), ctx.now().getTime());
     if (!pending) return c.json({ error: 'mfa_expired', message: 'Sign in again' }, 401);
     const user = ctx.users.get(pending.mfaUser);
     if (ctx.throttle.lockedFor(user.username) > 0)
@@ -316,6 +316,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         ctx.keys.state,
         { purpose: 'oidc_link', userId: state.userId, issuer: identity.issuer, subject: identity.subject },
         LINK_TTL_MS,
+        ctx.now().getTime(),
       );
       const next = `/auth/oidc/link/finish?t=${encodeURIComponent(token)}`;
       c.header('Cache-Control', 'no-store');
@@ -343,7 +344,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.get('/auth/oidc/link/finish', (c) => {
     const session = ctx.sessions.validate(readSessionCookie(c), 'admin', sessionLimits(ctx));
     if (!session) return c.redirect('/login?error=session_changed');
-    const link = LinkTokenSchema.safeParse(verifyPayload(ctx.keys.state, c.req.query('t'))).data;
+    const link = LinkTokenSchema.safeParse(verifyPayload(ctx.keys.state, c.req.query('t'), ctx.now().getTime())).data;
     if (!link || link.userId !== session.user.id) return c.redirect('/profile?error=session_changed');
     try {
       ctx.users.linkOidc(session.user.id, link.issuer, link.subject);
