@@ -174,10 +174,10 @@ Given('the admin disabled Acme Tasks', async (world: SynoikiaWorld) => {
 });
 
 Then(
-  'the admin sees that {string} is stopped, and agent {word} is told that {string} is disabled',
+  'the admin sees that {string} is stopped, and agent {word} is told that {string} is unavailable',
   async (world: SynoikiaWorld, slug: string) => {
     expect(await instance(world, slug)).toMatchObject({ status: 'stopped' });
-    expect(String(world.answer.refused)).toMatch(/disabled/);
+    expect(String(world.answer.refused)).toContain('This instance is unavailable');
   },
 );
 
