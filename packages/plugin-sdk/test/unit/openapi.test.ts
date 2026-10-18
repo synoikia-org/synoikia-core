@@ -11,7 +11,7 @@ import { catalog, op } from '../openapi-fixture.js';
 
 describe('parseOpenApi', () => {
   it('refuses anything but a plausible OpenAPI 3 document', () => {
-    expect(() => parseOpenApi('openapi: "2.0"\npaths: {}', 'Acme')).toThrow('The Acme API spec is not OpenAPI 3.0');
+    expect(() => parseOpenApi('openapi: "2.0"\npaths: {}', 'Acme')).toThrow(/^The Acme API spec is not OpenAPI 3$/);
     expect(() => parseOpenApi('{{{ not yaml', 'Acme')).toThrow(SpecError);
     expect(() => parseOpenApi('', 'Acme')).toThrow('The Acme API spec is empty');
     expect(() => parseOpenApi('openapi: 3.0.0\n')).toThrow('The API spec has no paths');

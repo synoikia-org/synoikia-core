@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Given, Then, When } from 'quickpickle';
 import type { DataTable } from 'quickpickle';
@@ -208,6 +208,15 @@ Given('the repository package names no repository', (world: PluginAuthorWorld) =
 Given('the remote {string} of the repository is {string}', (world: PluginAuthorWorld, name: string, url: string) => {
   world.git('remote', 'add', name, url);
 });
+
+Given(
+  'the repository has no git folder of its own, in a checkout whose remote {string} is {string}',
+  (world: PluginAuthorWorld, name: string, url: string) => {
+    rmSync(path.join(world.repo, '.git'), { recursive: true, force: true });
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: world.dir });
+    execFileSync('git', ['remote', 'add', name, url], { cwd: world.dir });
+  },
+);
 
 When('plugin author 3 packs, signs and indexes the repository', (world: PluginAuthorWorld) => {
   world.must('synoikia-plugin', ['repo', 'pack']);

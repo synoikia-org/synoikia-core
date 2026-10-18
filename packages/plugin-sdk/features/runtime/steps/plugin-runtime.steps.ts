@@ -10,6 +10,7 @@ const ERRORS: Record<string, string> = {
   'method-not-found': ErrorCodes.MethodNotFound,
   'unknown-operation': ErrorCodes.UnknownOperation,
   'invalid-parameters': ErrorCodes.InvalidParams,
+  upstream: ErrorCodes.UpstreamError,
   internal: ErrorCodes.Internal,
 };
 
@@ -80,7 +81,7 @@ When('core sends the plugin the method {string}', async (world: PluginAuthorWorl
 });
 
 Then(
-  /^core gets an? (method-not-found|unknown-operation|invalid-parameters|internal) error(?: "(.+)")?$/,
+  /^core gets an? (method-not-found|unknown-operation|invalid-parameters|upstream|internal) error(?: "(.+)")?$/,
   (world: PluginAuthorWorld, kind: string, message?: string) => {
     const err = failure(world.lastReply);
     expect(err.code).toBe(ERRORS[kind]);

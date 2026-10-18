@@ -1,7 +1,7 @@
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { parse as parseYaml } from 'yaml';
-import { fetchSpec, fillTemplate, matchPath, restLookup } from '@synoikia/plugin-sdk';
+import { ErrorCodes, fetchSpec, fillTemplate, matchPath, restLookup } from '@synoikia/plugin-sdk';
 import { aliasBomb } from '../../support/acme-description.js';
 import { explain } from '../../support/world.js';
 import type { PluginAuthorWorld } from '../../support/world.js';
@@ -72,6 +72,11 @@ Given('plugin author 3 built the catalog from the description', (world: PluginAu
 Then('the catalog is refused with {string}', (world: PluginAuthorWorld, reason: string) => {
   expect(world.catalog?.operations).toBeUndefined();
   expect(world.catalog?.error).toContain(reason);
+});
+
+Then('the catalog is refused with the upstream error {string}', (world: PluginAuthorWorld, reason: string) => {
+  expect(world.catalog?.operations).toBeUndefined();
+  expect(world.catalog).toMatchObject({ code: ErrorCodes.UpstreamError, error: reason });
 });
 
 Then('the catalog holds {string} and {string}', (world: PluginAuthorWorld, a: string, b: string) => {
@@ -219,6 +224,11 @@ Then('the path is refused with {string}', (world: PluginAuthorWorld, reason: str
 When(/^the agent sends Acme Tasks the request (.+)$/, async (world: PluginAuthorWorld, request: string) => {
   const binding = world.binding();
   await world.call(() => binding.resolveOperation({ fn: 'request', args: [yamlValue(request)] }));
+});
+
+When('core runs the operation {string} of Acme Tasks', async (world: PluginAuthorWorld, key: string) => {
+  const binding = world.binding();
+  await world.call(() => binding.invoke({ key, params: {}, context: { callId: 'c-1', deadlineMs: 5000 } }));
 });
 
 Then('the request is refused with {string}', (world: PluginAuthorWorld, reason: string) => {

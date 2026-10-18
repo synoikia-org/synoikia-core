@@ -103,7 +103,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   instructions?: { text?: string; error?: string };
   problems: string[] = [];
   settings?: { value?: PluginSettings; error?: string };
-  catalog?: { operations?: OperationDescriptor[]; error?: string };
+  catalog?: { operations?: OperationDescriptor[]; error?: string; code?: string };
   compiled?: CompiledRules;
   literal?: string;
   masked?: unknown;
@@ -494,7 +494,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
       });
       this.catalog = { operations: this.openapi.operations };
     } catch (err) {
-      this.catalog = { error: explain(err) };
+      this.catalog = { error: explain(err), code: (err as { code?: string }).code };
     }
   }
 

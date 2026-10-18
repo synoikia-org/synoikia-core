@@ -55,7 +55,7 @@ describe('restBinding against an HTTP upstream', () => {
     await expect(resolve({ path: 'items' })).rejects.toThrow('path must be a string starting with /');
     await expect(resolve({ path: '/items?take=1' })).rejects.toThrow(/query/);
     await expect(resolve({ path: '/items', query: 'x' })).rejects.toThrow('query must be an object');
-    await expect(resolve({ path: '/nope' })).rejects.toThrow('GET /nope is not a Acme API operation');
+    await expect(resolve({ path: '/nope' })).rejects.toThrow('GET /nope is not an operation of the Acme API');
   });
 
   it('resolves keys, params, adjustments and split twins', async () => {
