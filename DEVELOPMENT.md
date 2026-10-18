@@ -27,7 +27,7 @@ Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @syno
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across three runners. The `test` job runs every other test. Locally, run them in this order:
+CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across six runners. The `test` job runs every other test. Locally, run them in this order:
 
 ```sh
 pnpm lint
@@ -35,6 +35,13 @@ pnpm format:check   # pnpm format to fix
 pnpm typecheck
 pnpm build
 pnpm test           # all packages; workspace deps resolve to TS sources, no build needed
+```
+
+The whole core suite takes about five minutes. While you work, run only the feature folders you change. Run the whole suite before you push, or let CI run it.
+
+```sh
+pnpm --filter @synoikia/core test:features features/identity                 # one folder
+pnpm --filter @synoikia/core test:features features/identity features/approvals   # several folders
 ```
 
 The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:

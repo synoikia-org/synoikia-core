@@ -31,6 +31,7 @@ Node 22.12+ or 24 (`.nvmrc` pins 22), pnpm 10.
 ```sh
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test   # what CI runs, in that order
 pnpm --filter @synoikia/core exec vitest run test/gate.test.ts                # one test file
+pnpm --filter @synoikia/core test:features features/identity               # one feature folder (the whole suite takes ~5 min)
 pnpm --filter @synoikia/core test:coverage                                      # enforces coverage floors
 pnpm format                                                                     # fix formatting
 pnpm hooks:install                                                              # once per clone: the workflow git hooks
