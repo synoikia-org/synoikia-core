@@ -28,9 +28,9 @@ The sandbox gets `<namespace>.<fn>(...)` for each function in `manifest.binding.
 binding(args)
   │
   ├─ 0. resolveOperation (plugin)       → key, params              | UNKNOWN_OPERATION
-  ├─ 1. attestation (if required)                                   | ATTESTATION_REQUIRED
-  ├─ 2. access level (§5.2.1) under the principal's ceiling         | OPERATION_DISABLED {reason}
+  ├─ 1. access level (§5.2.1) under the principal's ceiling         | OPERATION_DISABLED {reason}
   │      mode: run (read) · approve (ask) · auto (write at level write)
+  ├─ 2. attestation (if required)                                   | ATTESTATION_REQUIRED
   ├─ 3. resolveTargets (plugin, if targets)                         | TARGET_RESOLUTION_FAILED
   ├─ 4. prepareWrite (plugin, configTransform and kind config)      | CONFIG_CONFLICT
   ├─ 5. mode run (read) → invoke
