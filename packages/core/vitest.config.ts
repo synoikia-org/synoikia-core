@@ -16,8 +16,7 @@ export default mergeConfig(
   defineConfig({
     plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'] })],
     test: {
-      // Four test files at once: the fastest on a 4-core machine (178 s at 3, 154 s at 4, no gain above). Scenarios in one
-      // file run in turn, because the World patches process globals.
+      // Four test files at once: the fastest on a 4-core machine (178 s at 3, 154 s at 4, no gain above).
       maxWorkers: 4,
       // Feature files run as tests (docs/workflow.md). Only they load the World, so test files keep their vi.mock calls.
       projects: [
@@ -31,6 +30,10 @@ export default mergeConfig(
             setupFiles: ['features/support/index.ts'],
             // A @long-running scenario waits for real timers of core, such as the shortest approval expiry.
             testTimeout: 30_000,
+            // Three scenarios of a file at once (about 12% faster than one; 2 and 5 were no faster). An @exclusive
+            // scenario runs alone in its process (features/support/world.ts).
+            sequence: { concurrent: true },
+            maxConcurrency: 3,
           },
         },
       ],
