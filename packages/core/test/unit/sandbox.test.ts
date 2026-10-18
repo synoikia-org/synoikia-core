@@ -42,7 +42,7 @@ describe('runInSandbox', () => {
 });
 
 describe('redaction of everything leaving the sandbox', () => {
-  const SECRET = 'sk-live-0123456789';
+  const SECRET = 'sk-live-0123456789'; // gitleaks:allow (a fake secret)
 
   it("keeps the error code when a plugin's sensitive keys include `code`, and still scrubs secret values", async () => {
     // A plugin may list `code` (a PIN, say) as sensitive; that must not hide OPERATION_DISABLED & co.

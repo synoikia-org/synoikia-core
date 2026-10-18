@@ -3,6 +3,6 @@
 useDefault = true
 
 [allowlist]
-description = "Fake credentials of the feature World's upstream"
+description = "Fake credentials of the feature World and the unit tests"
 regexTarget = "match"
-regexes = ['''acme-tok-9f8e7d6c''']
+regexes = ['''acme-tok-9f8e7d6c''', '''sk-live-0123456789''']
