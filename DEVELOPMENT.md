@@ -44,6 +44,7 @@ pnpm --filter @synoikia/core test:features features/identity                 # o
 pnpm --filter @synoikia/core test:features features/identity features/approvals   # several folders
 pnpm --filter @synoikia/admin-ui test:features                              # the portal in Chromium, against a real core
 pnpm --filter @synoikia/plugin-sdk test:features                            # the plugin SDK, as a plugin author uses it
+pnpm --filter @synoikia/create-plugin test:features                         # the plugin tool, run as commands by a plugin author
 ```
 
 The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
