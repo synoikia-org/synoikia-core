@@ -1,28 +1,44 @@
+import { fork } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { ZodError } from 'zod';
 import {
+  buildOpenApiCatalog,
   checkManifest,
   compileRules,
   HttpJsonClient,
   parseManifest,
   parsePluginSettings,
   readInstructionsFile,
+  restBinding,
+  SDK_VERSION,
 } from '@synoikia/plugin-sdk';
 import type {
   CompiledRules,
   HttpJsonClientOptions,
+  InitParams,
   Manifest,
+  OpenApiCatalog,
+  OpenApiCatalogOptions,
   OperationDescriptor,
   OperationDraft,
   PluginSettings,
   ResolvedTarget,
+  RestBinding,
+  RpcNotification,
+  RpcResponse,
 } from '@synoikia/plugin-sdk';
+import { acmeDescription, keyOf } from './acme-description.js';
+
+const SDK_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const PLUGIN_MAIN = path.join(SDK_ROOT, 'features/support/acme-tasks-plugin.main.ts');
 
 export const API_TOKEN = 'acme-tok-9f8e7d6c';
 
@@ -40,6 +56,8 @@ const minimalManifest = () => ({
 export interface AcmeList {
   id?: string;
   name?: string;
+  /** Set for a list of another user. */
+  owner?: string;
   tasks: { title: string; done: boolean; tags?: string[] }[];
 }
 
@@ -94,6 +112,8 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   multipart?: Record<string, string>;
   address?: { value?: string; error?: string };
   outcomes: Outcome[] = [];
+  /** What one step keeps for the next steps of its scenario. */
+  kept: Record<string, unknown> = {};
 
   /** The fake "Acme Tasks" upstream. */
   lists: AcmeList[] = [];
@@ -110,6 +130,20 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   token = API_TOKEN;
   maxBytes?: number;
   timeoutMs?: number;
+  /** The OpenAPI description Acme Tasks serves, and the versions it serves it for. */
+  description: Record<string, unknown> = acmeDescription();
+  descriptionText?: string;
+  descriptionRefs = new Set(['v4.2']);
+  descriptionFailures = new Set<string>();
+  descriptionSlowMs = 0;
+  openApiOptions: Partial<Pick<OpenApiCatalogOptions, 'minOperations' | 'actionWords' | 'pathActionWords'>> = {};
+  openapi?: OpenApiCatalog;
+  /** What the plugin process sent: log lines, and closed connections among them. */
+  pluginLog: string[] = [];
+  replies: RpcResponse[] = [];
+  private plugin?: ChildProcess;
+  private waiting = new Map<number, (res: RpcResponse) => void>();
+  private rpcId = 0;
   private servers: http.Server[] = [];
   port = 0;
   otherPort = 0;
@@ -279,7 +313,11 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   }
 
   addList(name: string, titles: string[] = []) {
-    const list = { id: `l-${this.lists.length + 1}`, name, tasks: titles.map((title) => ({ title, done: false })) };
+    const list: AcmeList = {
+      id: `l-${this.lists.length + 1}`,
+      name,
+      tasks: titles.map((title) => ({ title, done: false })),
+    };
     this.lists.push(list);
     return list;
   }
@@ -323,6 +361,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
       this.sessions.add(sid);
       return send(200, {}, { 'set-cookie': `sid=${sid}; HttpOnly` });
     }
+    if (parts[0] === 'spec') return this.serveDescription(parts[1] ?? '', send);
     if (this.sessionMode) {
       const sid = /sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
       if (!sid || !this.sessions.has(sid)) return send(401, { message: 'sign in first' });
@@ -332,6 +371,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
     if (parts[0] === 'version') return send(200, this.version);
     if (parts[0] === 'account') return send(200, this.account);
     if (parts[0] === 'echo') return send(200, {});
+    if (parts[0] === 'tokens' && req.method === 'POST') return send(201, { token: 'acme-tok-1a2b3c4d' });
     if (parts[0] === 'moved') return send(302, '', { location: `http://127.0.0.1:${this.otherPort}/api/lists` });
     if (parts[0] !== 'lists') return send(404, { message: 'not found' });
     if (parts.length === 1) return send(200, this.lists);
@@ -341,7 +381,12 @@ export class PluginAuthorWorld extends QuickPickleWorld {
     if (failure !== undefined) return send(500, failure);
     if (this.bigAnswer) return send(200, 'x'.repeat(2048));
     const answer = () => {
+      if (parts.length === 2 && req.method === 'DELETE') {
+        this.lists.splice(this.lists.indexOf(list), 1);
+        return send(204);
+      }
       if (parts.length === 2) return send(200, list);
+      if (parts[2] === 'share' || parts[2] === 'import') return send(200, {});
       if (parts[2] !== 'tasks') return send(404, { message: 'not found' });
       if (req.method === 'GET')
         return send(
@@ -363,6 +408,23 @@ export class PluginAuthorWorld extends QuickPickleWorld {
     };
     if (this.slowMs) setTimeout(answer, this.slowMs);
     else answer();
+  }
+
+  get descriptionYaml(): string {
+    return this.descriptionText ?? stringifyYaml(this.description);
+  }
+
+  private serveDescription(ref: string, send: (status: number, payload?: unknown) => void) {
+    if (this.descriptionFailures.has(ref)) return send(500, { message: 'storage offline' });
+    if (!this.descriptionRefs.has(ref)) return send(404, { message: 'not found' });
+    const text = this.descriptionYaml;
+    if (this.descriptionSlowMs) setTimeout(() => send(200, text), this.descriptionSlowMs);
+    else send(200, text);
+  }
+
+  /** How often Acme Tasks served its description. */
+  get descriptionReads(): number {
+    return this.received.filter((r) => r.path.startsWith('/api/spec/')).length;
   }
 
   /** Stops Acme Tasks, so its port refuses connections. */
@@ -413,6 +475,104 @@ export class PluginAuthorWorld extends QuickPickleWorld {
     return cookies;
   }
 
+  // --- the OpenAPI catalog ---
+
+  /** The catalog key of the Acme Tasks operation with this summary. */
+  keyOf(summary: string): string {
+    return keyOf(this.description, summary);
+  }
+
+  /** Builds the catalog from the description Acme Tasks gives, with the rules of `plugin.yaml`. */
+  buildFromDescription() {
+    this.loadSettings();
+    if (this.settings?.error) throw new Error(`plugin.yaml is not valid: ${this.settings.error}`);
+    try {
+      this.openapi = buildOpenApiCatalog(this.descriptionYaml, {
+        service: 'Acme Tasks',
+        rules: this.rules(),
+        ...this.openApiOptions,
+      });
+      this.catalog = { operations: this.openapi.operations };
+    } catch (err) {
+      this.catalog = { error: explain(err) };
+    }
+  }
+
+  /** The plugin's `acme.request(...)`, over the catalog built from the description. */
+  binding(): RestBinding {
+    if (!this.openapi) this.buildFromDescription();
+    const catalog = this.openapi;
+    if (!catalog) throw new Error(`no catalog: ${this.catalog?.error}`);
+    const others = new Set(this.lists.filter((l) => l.owner).map((l) => l.id));
+    return restBinding({
+      namespace: 'acme',
+      service: 'Acme Tasks',
+      rules: this.rules(),
+      catalog: async () => catalog,
+      client: () => this.client(),
+      splitWhen: { 'other-user': (call) => others.has(call.params.path?.listId) },
+    });
+  }
+
+  // --- the plugin process, driven as core drives it ---
+
+  /** Writes plugin.yaml, with the lists of plugin author 3 in the plugin's own section. */
+  writePluginYaml() {
+    this.setYaml({ plugin: { myLists: this.lists.filter((l) => !l.owner).map((l) => l.id!) } });
+    this.writeFile('plugin.yaml', this.pluginYaml);
+  }
+
+  /** Starts the plugin as its own process, with plugin.yaml and the lists of plugin author 3. */
+  async startPlugin() {
+    await this.startAcme();
+    this.writePluginYaml();
+    const child = fork(PLUGIN_MAIN, [], {
+      cwd: SDK_ROOT,
+      execArgv: ['--import', 'tsx', '--conditions', 'synoikia-source'],
+      env: { ...process.env, ACME_PLUGIN_DIR: this.dir },
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    });
+    child.on('message', (msg: RpcResponse | RpcNotification) => {
+      if ('id' in msg) this.waiting.get(msg.id)?.(msg);
+      else if (msg.method === 'log') this.pluginLog.push(msg.params.message);
+    });
+    this.plugin = child;
+  }
+
+  /** Sends one request to the plugin, as core does, and waits for its reply. */
+  send(method: string, params?: unknown): Promise<RpcResponse> {
+    if (!this.plugin) throw new Error('core has not started the plugin');
+    const id = ++this.rpcId;
+    const reply = new Promise<RpcResponse>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`the plugin did not answer ${method}`)), 10_000);
+      this.waiting.set(id, (res) => {
+        clearTimeout(timer);
+        this.waiting.delete(id);
+        this.replies.push(res);
+        resolve(res);
+      });
+    });
+    this.plugin.send({ jsonrpc: '2.0', id, method, params });
+    return reply;
+  }
+
+  /** The connection core gives the plugin. */
+  initParams(over: Partial<InitParams> = {}): InitParams {
+    return {
+      instanceId: 'tasks',
+      config: { baseUrl: this.baseUrl },
+      secrets: { token: this.token },
+      sdkVersion: SDK_VERSION,
+      ...over,
+    };
+  }
+
+  get lastReply(): RpcResponse {
+    const r = this.replies.at(-1);
+    if (!r) throw new Error('the plugin sent no reply');
+    return r;
+  }
+
   /** Runs one call of the plugin and keeps what it got back. */
   async call(run: () => Promise<unknown>): Promise<Outcome> {
     await this.startAcme();
@@ -433,6 +593,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   }
 
   async stop() {
+    this.plugin?.kill();
     await Promise.all(this.servers.map(closeServer));
     rmSync(this.dir, { recursive: true, force: true });
   }
