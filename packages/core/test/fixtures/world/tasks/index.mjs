@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Flag files the World drops here: `down` stops every answer, `catalog-broken` fails the catalog sync,
-// `no-confirmation` leaves out the typed confirmation, and a new `restart` value restarts the child once.
+// Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation` and `count-is-write` (the count
+// syncs as a write) change what the plugin answers, and a new `restart` value restarts the child once.
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 
@@ -111,7 +111,10 @@ const summary = (key, p) => {
 async function catalog() {
   if (flag('catalog-broken')) throw Object.assign(new Error('cannot read the catalog'), { code: 'UPSTREAM_ERROR' });
   const views = (await upstream('GET', '/views')) ?? [];
-  return [...CATALOG, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
+  const ops = flag('count-is-write')
+    ? CATALOG.map((o) => (o.key === 'lists.count' ? { ...o, classification: 'write' } : o))
+    : CATALOG;
+  return [...ops, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
 }
 
 // Every target names its list as the scope "list", except in the "Inbox", which belongs to no list.

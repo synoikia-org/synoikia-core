@@ -10,3 +10,7 @@ import '../call-path/steps/config-write.steps.js';
 import '../approvals/steps/pre-approval-rules.steps.js';
 import '../approvals/steps/approval-channels.steps.js';
 import '../approvals/steps/approval-page.steps.js';
+import '../approvals/steps/parked-executions.steps.js';
+import '../approvals/steps/approval-card.steps.js';
+import '../approvals/steps/session-grants.steps.js';
+import '../approvals/steps/read-to-write-approval.steps.js';

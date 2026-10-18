@@ -145,6 +145,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
   rules: string[] = [];
   /** What the last agent call returned; `refused` holds the message when the instance refused the credential. */
   answer: Record<string, unknown> = {};
+  /** The id of the last parked execution an agent was told about. */
+  executionId = '';
   /** The prompts the agents' apps were shown, in order. */
   prompts: Prompt[] = [];
   /** An agent call that still runs, started by `startCall`. */
@@ -335,8 +337,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
     return path.join(this.dataDir, 'plugins', 'tasks', name);
   }
 
-  /** Drops a flag file the fixture plugin reads: `down`, `restart`, `catalog-broken` or `no-confirmation`. */
-  pluginFlag(name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation', value = '') {
+  /** Drops a flag file the fixture plugin reads: `down`, `restart`, `catalog-broken`, `no-confirmation` or `count-is-write`. */
+  pluginFlag(name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation' | 'count-is-write', value = '') {
     writeFileSync(this.pluginFile(name), value);
   }
 
@@ -689,6 +691,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         content: { text: string }[];
       };
       this.answer = JSON.parse(res.content[0]!.text) as Record<string, unknown>;
+      if (typeof this.answer.executionId === 'string') this.executionId = this.answer.executionId;
     } catch (err) {
       this.answer = { refused: err instanceof Error ? err.message : String(err) };
     }
@@ -716,11 +719,28 @@ export class SynoikiaWorld extends QuickPickleWorld {
   }
 
   async resume(agent: string, executionId: string) {
+    this.answer = await this.resumeAnswer(agent, executionId);
+  }
+
+  /** What `resume` answers the agent, without keeping it as the last answer. */
+  async resumeAnswer(agent: string, executionId: string) {
     const client = await this.session(agent, this.lastInstance);
     const res = (await client.callTool({ name: 'resume', arguments: { executionId } })) as {
       content: { text: string }[];
     };
-    this.answer = JSON.parse(res.content[0]!.text) as Record<string, unknown>;
+    const answer = JSON.parse(res.content[0]!.text) as Record<string, unknown>;
+    if (typeof answer.executionId === 'string') this.executionId = answer.executionId;
+    return answer;
+  }
+
+  /** The approval card in the agent's app calls one of its own tools, such as `approval_status`. */
+  async cardTool(agent: string, name: string, args: Record<string, unknown>) {
+    const client = await this.session(agent, this.lastInstance);
+    const res = (await client.callTool({ name, arguments: args })) as {
+      structuredContent?: Record<string, unknown>;
+      content: { text: string }[];
+    };
+    return res.structuredContent ?? (JSON.parse(res.content[0]!.text) as Record<string, unknown>);
   }
 
   // ── the access gateway ──
