@@ -14,3 +14,5 @@ import '../approvals/steps/parked-executions.steps.js';
 import '../approvals/steps/approval-card.steps.js';
 import '../approvals/steps/session-grants.steps.js';
 import '../approvals/steps/read-to-write-approval.steps.js';
+import '../sandbox/steps/sandbox.steps.js';
+import '../redaction/steps/redaction.steps.js';

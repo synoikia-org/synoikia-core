@@ -53,7 +53,8 @@ export const opKey = (name: string) => {
   return key;
 };
 
-type Task = { title: string; done: boolean };
+/** A task in Acme; other fields are what Acme keeps on it besides its title. */
+type Task = { title: string; done: boolean; [field: string]: unknown };
 type Portal = ReturnType<typeof browser>;
 export type Access = 'read' | 'write';
 
@@ -337,8 +338,11 @@ export class SynoikiaWorld extends QuickPickleWorld {
     return path.join(this.dataDir, 'plugins', 'tasks', name);
   }
 
-  /** Drops a flag file the fixture plugin reads: `down`, `restart`, `catalog-broken`, `no-confirmation` or `count-is-write`. */
-  pluginFlag(name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation' | 'count-is-write', value = '') {
+  /** Drops a flag file the fixture plugin reads (see its index.mjs for what each one changes). */
+  pluginFlag(
+    name: 'down' | 'restart' | 'catalog-broken' | 'no-confirmation' | 'count-is-write' | 'secret-result' | 'diff-path',
+    value = '',
+  ) {
     writeFileSync(this.pluginFile(name), value);
   }
 

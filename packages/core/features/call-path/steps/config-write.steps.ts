@@ -59,8 +59,9 @@ Then(
 
 Then('the approval page shows the share password as [REDACTED] before and after', async (world: SynoikiaWorld) => {
   const { changes } = await approvalPage(world);
-  expect(changes.find((c) => c.path === '/sharePassword')).toEqual({
-    path: '/sharePassword',
+  const change = changes.find((c) => /sharePassword$/.test(c.path));
+  expect(change).toEqual({
+    path: change?.path,
     before: '[REDACTED]',
     after: '[REDACTED]',
   });

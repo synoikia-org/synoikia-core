@@ -4,8 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation` and `count-is-write` (the count
-// syncs as a write) change what the plugin answers, and a new `restart` value restarts the child once.
+// Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation`, `count-is-write` (the count
+// syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON) and `diff-path` (`dot` or `bare`)
+// change what the plugin answers, and a new `restart` value restarts the child once.
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 
@@ -30,10 +31,18 @@ const CATALOG = [
   op('lists.tasks', 'show the open tasks', 'lists', 'read', { matchProfile: 'list' }),
   op('lists.count', 'count the tasks', 'lists', 'read', { matchProfile: 'list' }),
   op('lists.share', 'show the share password', 'lists', 'read', { matchProfile: 'list' }),
-  op('lists.rename', 'rename a list', 'lists', 'write', { kind: 'config', matchProfile: 'list' }),
+  op('lists.rename', 'rename a list', 'lists', 'write', {
+    kind: 'config',
+    matchProfile: 'list',
+    sensitiveParams: ['/lockCode'],
+  }),
   op('lists.archive', 'archive a list', 'lists', 'write', { typedConfirmation: true, matchProfile: 'list' }),
   op('lists.delete', 'delete a list', 'lists', 'write', { locked: true, matchProfile: 'list' }),
-  op('tasks.add', 'add a task', 'tasks', 'write', { matchProfile: 'task', paramsSchema: TASK_PARAMS }),
+  op('tasks.add', 'add a task', 'tasks', 'write', {
+    matchProfile: 'task',
+    paramsSchema: TASK_PARAMS,
+    sensitiveParams: ['/pin'],
+  }),
   op('tasks.complete', 'complete a task', 'tasks', 'write', { matchProfile: 'done' }),
   op('tasks.import', 'import tasks', 'tasks', 'write', { attestationRequired: true, matchProfile: 'list' }),
 ];
@@ -89,7 +98,13 @@ const INVOKE = {
     ),
   'lists.archive': (p, ctx) => upstream('POST', `${listPath(p.list)}/archive`, undefined, callHeaders(ctx)),
   'lists.delete': (p, ctx) => upstream('DELETE', listPath(p.list), undefined, callHeaders(ctx)),
-  'tasks.add': (p, ctx) => upstream('POST', `${listPath(p.list)}/tasks`, { title: p.title }, callHeaders(ctx)),
+  'tasks.add': (p, ctx) =>
+    upstream(
+      'POST',
+      `${listPath(p.list)}/tasks`,
+      { title: p.title, ...(p.pin === undefined ? {} : { pin: p.pin }) },
+      callHeaders(ctx),
+    ),
   // Completes exactly the tasks core approved, by their ids.
   'tasks.complete': async (_p, ctx) => {
     const done = [];
@@ -111,9 +126,14 @@ const summary = (key, p) => {
 async function catalog() {
   if (flag('catalog-broken')) throw Object.assign(new Error('cannot read the catalog'), { code: 'UPSTREAM_ERROR' });
   const views = (await upstream('GET', '/views')) ?? [];
-  const ops = flag('count-is-write')
-    ? CATALOG.map((o) => (o.key === 'lists.count' ? { ...o, classification: 'write' } : o))
-    : CATALOG;
+  const secretResult = flag('secret-result') ? JSON.parse(flagValue('secret-result')) : undefined;
+  const ops = CATALOG.map((o) =>
+    o.key === 'lists.count' && flag('count-is-write')
+      ? { ...o, classification: 'write' }
+      : o.key === 'lists.tasks' && secretResult
+        ? { ...o, sensitiveResult: secretResult }
+        : o,
+  );
   return [...ops, ...views.map((v) => op(`views.${v}`, `show the view ${v}`, 'views', 'read'))];
 }
 
@@ -179,8 +199,11 @@ const handlers = {
   async prepareWrite(id, { params }) {
     const current = await upstream('GET', listPath(params.list));
     const diff = [{ path: '/name', before: current.name, after: params.name }];
+    const form = flagValue('diff-path');
+    const passwordPath = form === 'dot' ? 'list.sharePassword' : form === 'bare' ? 'sharePassword' : '/sharePassword';
     if (params.sharePassword !== undefined)
-      diff.push({ path: '/sharePassword', before: current.sharePassword ?? null, after: params.sharePassword });
+      diff.push({ path: passwordPath, before: current.sharePassword ?? null, after: params.sharePassword });
+    if (params.lockCode !== undefined) diff.push({ path: '/lockCode', before: null, after: params.lockCode });
     reply(id, { params, diff, expectedHash: current.version });
   },
   async getGuide(id, { key }) {

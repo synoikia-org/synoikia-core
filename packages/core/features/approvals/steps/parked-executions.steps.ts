@@ -211,8 +211,8 @@ When(
       world.lastInstance,
       `const out = [];\nfor (let i = 0; i < 11; i++) {\n  try { out.push((await ${count}).open); } catch (e) { out.push(e.message); }\n}\nreturn out;`,
     );
-    while (world.answer.status === 'awaiting_approval') {
-      await (await world.approvalPage('admin')).decide('approve');
+    while (world.answer.status === 'awaiting_approval' || world.answer.status === 'running') {
+      if (world.answer.status === 'awaiting_approval') await (await world.approvalPage('admin')).decide('approve');
       await world.resume(agent, world.executionId);
     }
   },

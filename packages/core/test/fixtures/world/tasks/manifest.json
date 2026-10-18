@@ -85,6 +85,10 @@
         "token": {
           "type": "string",
           "writeOnly": true
+        },
+        "webhookSecret": {
+          "type": "string",
+          "writeOnly": true
         }
       },
       "required": ["url"]
