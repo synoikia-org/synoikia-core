@@ -16,6 +16,8 @@ export default mergeConfig(
   defineConfig({
     plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'] })],
     test: {
+      // Up to three test files, and so three scenarios, at once. Scenarios in one file run in turn: the World patches process globals.
+      maxWorkers: 3,
       // Feature files run as tests (docs/workflow.md). Only they load the World, so test files keep their vi.mock calls.
       projects: [
         { extends: true, test: { name: 'unit', include: ['test/**/*.test.ts'] } },
