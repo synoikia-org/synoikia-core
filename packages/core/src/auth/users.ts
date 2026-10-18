@@ -29,7 +29,8 @@ import { generateTotpSecret, otpauthUri, verifyTotp } from './totp.js';
  * and one role each (design §6.4). */
 
 // argon2id, m = 64 MiB, t = 3, p = 1 (design §6.1). @node-rs/argon2 defaults to argon2id.
-const ARGON = { memoryCost: 65536, timeCost: 3, parallelism: 1 };
+export const PASSWORD_HASH = { memoryCost: 65536, timeCost: 3, parallelism: 1 };
+export type PasswordHashCost = typeof PASSWORD_HASH;
 const USERNAME = /^[a-zA-Z0-9._@:-]{2,64}$/;
 const RECOVERY_CODES = 10;
 
@@ -69,13 +70,14 @@ function checkPasswordPolicy(password: string) {
   if (password.length > 1024) throw new ValidationError('weak_password', 'Password is too long');
 }
 
-// Verified when the username doesn't exist, so response timing doesn't reveal which usernames exist.
-let dummyHash: Promise<string> | undefined;
-
 export class UserService {
+  // Verified when the username doesn't exist, so response timing doesn't reveal which usernames exist.
+  private dummyHash?: Promise<string>;
+
   constructor(
     private readonly db: Db,
     private readonly box: SecretBox,
+    private readonly hashCost: PasswordHashCost = PASSWORD_HASH,
   ) {}
 
   count(): number {
@@ -168,7 +170,7 @@ export class UserService {
     const row = {
       id: randomUUID(),
       username,
-      passwordHash: input.password ? await hash(input.password, ARGON) : null,
+      passwordHash: input.password ? await hash(input.password, this.hashCost) : null,
       createdAt: new Date(),
       roleId,
       registeredVia: opts.source ?? null,
@@ -263,8 +265,8 @@ export class UserService {
   async verifyPassword(username: string, password: string): Promise<UserRow | null> {
     const user = this.byUsername(username);
     if (!user?.passwordHash || user.disabled) {
-      dummyHash ??= hash(randomToken(), ARGON);
-      await verify(await dummyHash, password).catch(() => false);
+      this.dummyHash ??= hash(randomToken(), this.hashCost);
+      await verify(await this.dummyHash, password).catch(() => false);
       return null;
     }
     return (await verify(user.passwordHash, password).catch(() => false)) ? user : null;
@@ -278,7 +280,7 @@ export class UserService {
       }
     }
     checkPasswordPolicy(password);
-    const passwordHash = await hash(password, ARGON);
+    const passwordHash = await hash(password, this.hashCost);
     this.db.transaction((tx) => {
       tx.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
       writeAudit(tx, {

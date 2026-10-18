@@ -10,6 +10,7 @@ import { SessionService } from './auth/sessions.js';
 import { LoginThrottle } from './auth/throttle.js';
 import { RoleService } from './auth/roles.js';
 import { UserService } from './auth/users.js';
+import type { PasswordHashCost } from './auth/users.js';
 import type { Config } from './config/env.js';
 import { loadMasterKey, SecretBox } from './crypto/index.js';
 import { openDatabase } from './db/index.js';
@@ -95,6 +96,8 @@ export interface AppOptions {
   log?: Logger;
   /** How long a form prompt waits before its call parks (tests). */
   formFallbackMs?: number;
+  /** Tests only: a cheaper password hash. Never set from the environment or the config. */
+  passwordHashCost?: PasswordHashCost;
 }
 
 export async function createAppContext(config: Config, opts: AppOptions = {}): Promise<AppContext> {
@@ -109,7 +112,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   if (orphans > 0) warnings.push(`Denied ${orphans} approval(s) left pending by the previous run`);
 
   const events = new CoreEvents();
-  const users = new UserService(db, secrets);
+  const users = new UserService(db, secrets, opts.passwordHashCost);
   const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD);
   if (boot === 'created')
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
