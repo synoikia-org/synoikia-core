@@ -30,6 +30,9 @@ const of = (world: SynoikiaWorld) => {
   return s;
 };
 
+/** What the server that a step started as its own process wrote to its log so far. */
+export const serverLog = (world: SynoikiaWorld) => of(world).server?.log ?? '';
+
 const portalOf = (base: string) =>
   browser({ request: (p, init) => fetch(`${base}${String(p)}`, { ...init, redirect: 'manual' }) });
 

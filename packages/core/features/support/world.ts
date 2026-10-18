@@ -13,6 +13,7 @@ import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
 import { createAppContext } from '../../src/app.js';
 import type { AppContext, AppOptions } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
+import { createLogger } from '../../src/log.js';
 import { startServers } from '../../src/server.js';
 import type { RunningServers } from '../../src/server.js';
 import { startFakeHttp } from '../../src/testing/index.js';
@@ -208,6 +209,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
   /** Whether core starts with the World's admin from its start-up settings. */
   bootstrapAdmin = true;
   acme?: AcmeId;
+  /** The lines core wrote to its server log, at every level, across restarts. */
+  serverLog: string[] = [];
 
   async init() {
     await super.init();
@@ -240,6 +243,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         formFallbackMs: FORM_WAIT_MS,
         now: () => new Date(realNow() + this.clockMs),
         oidcAllowInsecure: true,
+        log: createLogger('debug', (line) => this.serverLog.push(line)),
         ...opts,
       },
     );
@@ -1074,16 +1078,20 @@ export class SynoikiaWorld extends QuickPickleWorld {
     );
   }
 
-  /** What the access gateway adds to a request it lets through: an assertion with these claims. */
-  async gatewayAssertion(claims: Record<string, unknown>) {
-    const { privateKey } = await gatewayKey();
-    return new SignJWT(claims)
+  /** What the access gateway adds to a request it lets through: an assertion with these claims. `forge` changes
+   * what a real gateway would send: another team or application, a lifetime (null leaves it out), another key. */
+  async gatewayAssertion(
+    claims: Record<string, unknown>,
+    forge: { team?: string; aud?: string; exp?: string | number | null; iat?: boolean; otherKey?: boolean } = {},
+  ) {
+    const privateKey = forge.otherKey ? (await generateKeyPair('RS256')).privateKey : (await gatewayKey()).privateKey;
+    const jwt = new SignJWT(claims)
       .setProtectedHeader({ alg: 'RS256', kid: 'acme-access-1' })
-      .setIssuer(`https://${GATEWAY.teamDomain}`)
-      .setAudience(GATEWAY.aud)
-      .setIssuedAt()
-      .setExpirationTime('5m')
-      .sign(privateKey);
+      .setIssuer(`https://${forge.team ?? GATEWAY.teamDomain}`)
+      .setAudience(forge.aud ?? GATEWAY.aud);
+    if (forge.iat !== false) jwt.setIssuedAt();
+    if (forge.exp !== null) jwt.setExpirationTime(forge.exp ?? '5m');
+    return jwt.sign(privateKey);
   }
 
   // ── the approval page ──
