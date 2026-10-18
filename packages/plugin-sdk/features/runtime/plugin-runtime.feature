@@ -26,7 +26,7 @@ Feature: Plugin runtime
     Scenario: A plugin error keeps its code
       Given core connected the plugin to Acme Tasks
       When core asks the plugin to resolve the request {path: /nope}
-      Then core gets an unknown-operation error "GET /nope is not an operation of the Acme Tasks API"
+      Then core gets an unknown-operation error "/nope is not an operation of the Acme Tasks API"
 
     Scenario: A description that is not valid reaches core as an upstream error that names Acme Tasks
       Given core connected the plugin to Acme Tasks

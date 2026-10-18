@@ -152,8 +152,8 @@ Feature: OpenAPI catalog
         | {path: /nope}                 | GET /nope is not an operation of the Acme Tasks API       |
 
     Scenario: Core cannot run an operation that is not in the catalog
-      When core runs the operation "GET /nope" of Acme Tasks
-      Then the request is refused with "GET /nope is not an operation of the Acme Tasks API"
+      When core runs the read of "/nope" on Acme Tasks
+      Then the request is refused with "/nope is not an operation of the Acme Tasks API"
 
     Scenario Outline: A request resolves to its operation, and a list of another user to the locked twin
       Given plugin.yaml splits "Delete a list" for "other-user"
