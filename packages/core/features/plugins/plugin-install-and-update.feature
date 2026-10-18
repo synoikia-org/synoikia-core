@@ -125,6 +125,7 @@ Feature: Plugin install and update
 
   Rule: Archives over the limits are refused
 
+    @long-running
     Scenario: An archive with more than 5000 entries is refused
       Given "Acme plugins" offers Acme Tasks 1.0.8 as an archive with 5001 entries
       When the admin installs Acme Tasks 1.0.8 from "Acme plugins"
