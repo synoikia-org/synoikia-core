@@ -368,6 +368,6 @@ A session grant lets one principal run the operations at `ask` on one endpoint w
   - Level `none`, a group at `read` and the access ceiling still refuse.
   - The write rate limit, attestation, target resolution, redaction and the audit still apply.
 - **End.** At its expiry, at a revoke, when the endpoint stops, when the approver is disabled or deleted (§6.1), or at a restart. Core keeps grants in memory only.
-- **Audit.** `config` events `session_grant.created` and `session_grant.ended`, with the reason.
+- **Audit.** `config` events `session_grant.created` and `session_grant.ended`, with the reason. The actor of the creation and of a replacement is the user id of the approver.
 
 Scenarios: [`@id:session-grants`](../../packages/core/features/approvals/session-grants.feature).

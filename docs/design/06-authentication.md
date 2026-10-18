@@ -22,7 +22,7 @@ The Admin listener (port 8081) has its own sign-in.
 
 **OIDC (optional).** The admin configures it on Settings → User auth:
 
-- issuer URL (discovery), client id, client secret (encrypted), scopes;
+- issuer URL (discovery), client id, client secret (encrypted), scopes. Core checks the issuer URL and the client id only while OIDC is on.
 - an allow policy: allowed e-mail addresses, allowed `sub` values, and a required group claim value. An e-mail address counts only if the ID token has `email_verified: true`. A missing claim means "not verified".
   - An e-mail entry is an exact address or `*@domain`. Core compares both without case.
   - A `*@domain` entry accepts an address whose part after the last `@` is that domain. It does not accept subdomains. Core refuses all other wildcard forms.
@@ -183,6 +183,7 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 
 - Their profile, their own bearer tokens and their own OAuth grants.
 - A read-only list of the endpoints of their role, the operations that they can call, and the level in force for each.
+- Also the operations that only their personal level closes, with the reason `own_level`, so that they can open them again.
 - With "See endpoint status" on an endpoint, also the operations that they cannot call. These show as off, with no level to set.
 - With "See other endpoints", a list of the other endpoints. Each shows only its slug, display name, plugin name and plugin description, and the name of their role. An admin has no other endpoints.
 - On each endpoint, the parts that the switches of their role on that endpoint allow. Core refuses the other parts with 403.

@@ -31,6 +31,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 **Sync failure.**
 
 - Core continues to serve the last catalog. It sets `last_sync_status = error` and sends `sync.failed`.
+- "Sync now" answers `502 sync_failed` with the redacted reason that `last_sync_status` shows. A plugin that is not running or does not answer in time gives `503 plugin_unavailable`.
 - An exception: a bundle version that is not the recorded one (see above).
 - An instance without any synced catalog stays in `error`, and its endpoint returns 503.
 
