@@ -239,8 +239,9 @@ export function buildOpenApiCatalog(
   try {
     return buildCatalog(specText, opts);
   } catch (err) {
+    // Each build message already names the service.
     if (!(err instanceof SpecError)) throw err;
-    throw new PluginError(ErrorCodes.UpstreamError, `The ${opts.service} API description is not valid: ${err.message}`);
+    throw new PluginError(ErrorCodes.UpstreamError, err.message);
   }
 }
 
