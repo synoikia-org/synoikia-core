@@ -559,3 +559,45 @@ Then(
     expect([count('for new recovery codes'), count('to turn off the app')]).toEqual([forCodes, forOff]);
   },
 );
+
+// ── wrong current passwords in the profile ──
+
+Given(
+  'user {int} gave a wrong current password {int} times',
+  async (world: SynoikiaWorld, user: number, times: number) => {
+    const who = world.person(person(user));
+    for (let i = 0; i < times; i++) {
+      await keep(
+        world,
+        who.portal!.post('/api/profile/password', {
+          currentPassword: 'not my passphrase',
+          newPassword: 'a new long passphrase',
+        }),
+      );
+      expect(identity(world).answer.status).toBe(400);
+    }
+  },
+);
+
+When(
+  'user {int} changes their password with the right current password',
+  async (world: SynoikiaWorld, user: number) => {
+    const who = world.person(person(user));
+    await keep(
+      world,
+      who.portal!.post('/api/profile/password', {
+        currentPassword: who.password,
+        newPassword: 'a new long passphrase',
+      }),
+    );
+  },
+);
+
+Then(
+  'the audit log shows {int} failed current passwords of user {int}',
+  async (world: SynoikiaWorld, times: number, user: number) => {
+    const { username } = world.person(person(user));
+    const rows = (await authRows(world)).filter((r) => r.decision === 'password_failed');
+    expect(rows.map((r) => r.detail)).toEqual(Array(times).fill({ username, route: '/api/profile/password' }));
+  },
+);
