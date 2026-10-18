@@ -47,12 +47,12 @@ Feature: Scaffold
       And the folder "plugins" is empty
 
       Examples:
-        | id         | namespace | message                         |
-        | Acme       | acme      | Use 2–63 lowercase letters      |
-        | a          | acme      | Use 2–63 lowercase letters      |
-        | acme-tasks | registry  | "registry" is reserved by core  |
-        | acme-tasks | catalog   | "catalog" is reserved by core   |
-        | acme-tasks | acme-box  | Must be a JavaScript identifier |
+        | id         | namespace | message                              |
+        | Acme       | acme      | Plugin id: Use 2–63 lowercase letters |
+        | a          | acme      | Plugin id: Use 2–63 lowercase letters |
+        | acme-tasks | registry  | "registry" is reserved by core       |
+        | acme-tasks | catalog   | "catalog" is reserved by core        |
+        | acme-tasks | acme-box  | Must be a JavaScript identifier      |
 
   Rule: Names and headers cannot break the generated code, and a plugin is never overwritten
 

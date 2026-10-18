@@ -76,10 +76,15 @@ Feature: Repository release
       When plugin author 3 packs, signs and indexes the repository
       Then the index lists "acme-tasks" version "0.1.0" at "https://github.com/acme/plugins/releases/download/acme-tasks-v0.1.0/acme-tasks-0.1.0.tgz"
 
-    Scenario: A remote that is not on GitHub is refused
-      Given the remote "origin" of the repository is "http://local_proxy@127.0.0.1:1/git/acme/plugins"
+    Scenario Outline: A remote that is not on GitHub, or not of the plugin repository, is refused
+      Given <situation>
       When plugin author 3 packs the repository
       Then the pack fails with "Set \"synoikia\": { \"repository\": \"owner/name\" } in package.json, or pass --repository"
+
+      Examples:
+        | situation                                                                                                   |
+        | the remote "origin" of the repository is "http://local_proxy@127.0.0.1:1/git/acme/plugins"                 |
+        | the repository has no git folder of its own, in a checkout whose remote "origin" is "git@github.com:acme/outer.git" |
 
     Scenario: An invalid repository name is refused
       When plugin author 3 packs the repository as "not a repo"

@@ -10,17 +10,17 @@ Feature: OpenAPI catalog
 
   Rule: Only a plausible OpenAPI 3 description is read
 
-    Scenario Outline: A description that is not OpenAPI 3 is refused, and the refusal names Acme Tasks
+    Scenario Outline: A description that is not OpenAPI 3 is refused as an upstream error that names Acme Tasks
       Given Acme Tasks gives <description>
       When plugin author 3 builds the catalog from the description
-      Then the catalog is refused with "<reason>"
+      Then the catalog is refused with the upstream error "<reason>"
 
       Examples:
-        | description                              | reason                                     |
-        | an OpenAPI 2 description                 | The Acme Tasks API spec is not OpenAPI 3.0 |
-        | a description that is not YAML           | The Acme Tasks API spec is not valid YAML  |
-        | an empty description                     | The Acme Tasks API spec is empty           |
-        | an OpenAPI 3.0 description with no paths | The Acme Tasks API spec has no paths       |
+        | description                              | reason                                                                                 |
+        | an OpenAPI 2 description                 | The Acme Tasks API description is not valid: The Acme Tasks API spec is not OpenAPI 3   |
+        | a description that is not YAML           | The Acme Tasks API description is not valid: The Acme Tasks API spec is not valid YAML  |
+        | an empty description                     | The Acme Tasks API description is not valid: The Acme Tasks API spec is empty           |
+        | an OpenAPI 3.0 description with no paths | The Acme Tasks API description is not valid: The Acme Tasks API spec has no paths       |
 
     Scenario: An OpenAPI 3.1 description is read
       Given Acme Tasks gives its description as OpenAPI 3.1
@@ -79,7 +79,7 @@ Feature: OpenAPI catalog
       Examples:
         | situation                                                                | reason                                       |
         | Acme Tasks also describes "Delete a list" at "/lists/{id}/"              | The Acme Tasks API spec has two operations for |
-        | the schema of a task in Acme Tasks fans out 40 ways on 4 levels          | The API spec expands to too many schema nodes |
+        | the schema of a task in Acme Tasks fans out 40 ways on 4 levels          | The Acme Tasks API spec expands to too many schema nodes |
         | the plugin expects at least 50 operations from Acme Tasks                | The Acme Tasks API spec has only 16 operations |
 
     Scenario: A schema that refers to itself stays a reference
@@ -149,7 +149,11 @@ Feature: OpenAPI catalog
         | {path: lists}                 | path must be a string starting with /                     |
         | {path: "/lists?limit=1"}      | Pass query parameters in `query`, not in the path         |
         | {path: /lists, query: limit}  | query must be an object                                   |
-        | {path: /nope}                 | /nope is not a Acme Tasks API operation                   |
+        | {path: /nope}                 | GET /nope is not an operation of the Acme Tasks API       |
+
+    Scenario: Core cannot run an operation that is not in the catalog
+      When core runs the operation "GET /nope" of Acme Tasks
+      Then the request is refused with "GET /nope is not an operation of the Acme Tasks API"
 
     Scenario Outline: A request resolves to its operation, and a list of another user to the locked twin
       Given plugin.yaml splits "Delete a list" for "other-user"

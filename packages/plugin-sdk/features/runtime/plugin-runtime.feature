@@ -26,13 +26,13 @@ Feature: Plugin runtime
     Scenario: A plugin error keeps its code
       Given core connected the plugin to Acme Tasks
       When core asks the plugin to resolve the request {path: /nope}
-      Then core gets an unknown-operation error "/nope is not a Acme Tasks API operation"
+      Then core gets an unknown-operation error "GET /nope is not an operation of the Acme Tasks API"
 
-    Scenario: Any other error is an internal error
+    Scenario: A description that is not valid reaches core as an upstream error that names Acme Tasks
       Given core connected the plugin to Acme Tasks
       And Acme Tasks gives an OpenAPI 2 description
       When core syncs the catalog
-      Then core gets an internal error "The Acme Tasks API spec is not OpenAPI 3.0"
+      Then core gets an upstream error "The Acme Tasks API description is not valid: The Acme Tasks API spec is not OpenAPI 3"
 
   Rule: On an old core the plugin protects result secrets itself
 
