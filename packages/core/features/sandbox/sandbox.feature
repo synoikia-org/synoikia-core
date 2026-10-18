@@ -33,9 +33,9 @@ Feature: Sandbox
   Rule: Waiting on an approval does not use the time limit
 
     Scenario: The code goes on after an approval that took longer than the time limit
-      Given a run on "tasks" may take 1 second
+      Given a run on "tasks" may take 3 seconds
       And agent 7 waits for the admin to approve the add of "butter" to "Groceries"
-      And the add of "butter" still waits after 2 seconds
+      And the add of "butter" still waits after 4 seconds
       When the admin approves the call and agent 7 resumes it
       Then agent 7 gets the new task "butter"
 
