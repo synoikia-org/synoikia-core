@@ -281,7 +281,10 @@ Then('Acme sees a different call id on each of the {int} calls', (world: Synoiki
 });
 
 Then('agent {word} is told that the result of the add is unknown', (world: SynoikiaWorld) => {
-  expect(world.answer).toMatchObject({ error: 'UPSTREAM_TIMEOUT' });
+  expect(world.answer).toEqual({
+    error: 'UPSTREAM_TIMEOUT',
+    message: 'Acme Tasks (World fixture) did not answer in time. The result is unknown: check before you retry',
+  });
 });
 
 Then('the audit log records the add of {string} as timed out', async (world: SynoikiaWorld, title: string) => {

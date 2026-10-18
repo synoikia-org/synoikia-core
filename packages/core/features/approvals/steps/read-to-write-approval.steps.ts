@@ -21,14 +21,24 @@ Given(
 );
 
 Then(
-  'the audit log records the approved count as a read, while the admin sees {string} as a write',
+  'agent {word} is told that {string} changed while it waited for approval',
+  (world: SynoikiaWorld, _agent: string, name: string) => {
+    expect(world.answer).toEqual({
+      error: 'OPERATION_CHANGED',
+      message: `${opKey(name)} changed while it waited for approval; call it again`,
+    });
+  },
+);
+
+Then(
+  'the audit log records the approved count as refused, while the admin sees {string} as a write',
   async (world: SynoikiaWorld, name: string) => {
     const rows = (await world.audit({ kind: 'call', operation: opKey(name) })) as {
       decision: string;
       classification?: string | null;
     }[];
     expect(rows.map((r) => [r.decision, r.classification])).toEqual([
-      ['human-approved', 'read'],
+      ['rejected:operation_changed', 'read'],
       ['awaiting_approval', 'read'],
     ]);
     const op = (await world.operation(world.lastInstance, name)) as unknown as { classification: string };

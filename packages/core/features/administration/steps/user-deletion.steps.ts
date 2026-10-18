@@ -1,6 +1,6 @@
 import { Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { opKey } from '../../support/world.js';
+import { eventually, opKey } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
 import { keep } from '../../identity/steps/identity.js';
 import { admin, auditRows, refusal, sessionGrants } from './administration.js';
@@ -38,6 +38,18 @@ Then(
         detail: expect.objectContaining({ reason: 'user_deleted', tokens: [`agent ${agent}`] }),
       }),
     ]);
+  },
+);
+
+Then(
+  'the audit log shows that the add of {string} was cancelled because user {int} was deleted',
+  async (world: SynoikiaWorld, title: string) => {
+    const denied = async () =>
+      (await auditRows(world, { kind: 'call', operation: opKey('add a task'), decision: 'denied' })).filter((r) =>
+        JSON.stringify(r).includes(title),
+      );
+    await eventually(async () => (await denied()).length > 0, 'the audit of the add');
+    expect((await denied()).map((r) => r.detail)).toEqual([expect.objectContaining({ reason: 'user_deleted' })]);
   },
 );
 

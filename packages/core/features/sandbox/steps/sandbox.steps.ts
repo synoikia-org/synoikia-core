@@ -214,11 +214,14 @@ Then('Acme received no request from agent {word}', (world: SynoikiaWorld) => {
 });
 
 Then('agent {word} is told that the run went over its time limit', (world: SynoikiaWorld) => {
-  // The run limit and the plugin call deadline end together, and either may answer first (plan: Deferred).
-  expect([
-    { error: 'TIMEOUT', message: 'Sandbox time limit exceeded' },
-    { error: 'UPSTREAM_TIMEOUT', message: expect.stringMatching(/^Plugin did not answer invoke within \d+ ms$/) },
-  ]).toContainEqual(world.answer);
+  expect(world.answer).toEqual({ error: 'TIMEOUT', message: 'Sandbox time limit exceeded' });
+});
+
+Then('agent {word} is told that Acme did not answer in time', (world: SynoikiaWorld) => {
+  expect(world.answer).toEqual({
+    error: 'UPSTREAM_TIMEOUT',
+    message: 'Acme Tasks (World fixture) did not answer in time. The result is unknown: check before you retry',
+  });
 });
 
 Then('agent {word} is told that the run went over its memory limit', (world: SynoikiaWorld) => {
