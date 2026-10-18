@@ -619,7 +619,7 @@ export class McpEndpoints {
     const client = auth.identity.label;
     if (!this.ctx.instances.isServing(instance, plugin)) {
       this.refused(c, slug, 503, 'endpoint or its plugin is disabled', { client });
-      return c.json(jsonRpcError(-32002, 'This endpoint is disabled'), 503);
+      return c.json(jsonRpcError(-32002, 'This instance is unavailable'), 503);
     }
 
     const sessionId = c.req.header('mcp-session-id');
