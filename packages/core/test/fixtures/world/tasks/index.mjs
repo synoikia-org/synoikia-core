@@ -236,12 +236,15 @@ const handlers = {
     reply(id);
   },
   async testConnection(id) {
-    try {
-      await upstream('GET', '/lists');
-      reply(id, { ok: true, upstreamVersion: upstreamVersion() });
-    } catch (err) {
-      reply(id, { ok: false, message: String(err.message ?? err) });
-    }
+    // Only a refused token fails the test: the World reaches no address but Acme's.
+    const refused = await upstream('GET', '/lists').then(
+      () => false,
+      (err) => /answered 401/.test(err.message),
+    );
+    reply(
+      id,
+      refused ? { ok: false, message: 'Acme refused the token' } : { ok: true, upstreamVersion: upstreamVersion() },
+    );
   },
   getUpstreamVersion: (id) => reply(id, upstreamVersion()),
   syncCatalog: async (id) => reply(id, { upstreamVersion: upstreamVersion(), operations: await catalog() }),

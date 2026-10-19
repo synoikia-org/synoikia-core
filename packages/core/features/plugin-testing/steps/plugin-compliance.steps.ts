@@ -93,7 +93,7 @@ const BROKEN: Record<
     ],
   },
   'passes the connection test with a wrong API token': {
-    entry: [["      await upstream('GET', '/lists');\n      reply(id, { ok: true", '      reply(id, { ok: true']],
+    entry: [['      refused ? { ok: false', '      false ? { ok: false']],
   },
   'names no network host': {
     manifest: (m) => (m.network.hosts = []),
