@@ -98,6 +98,8 @@ const shared = new WeakMap<
     lockIssues?: string[];
     results?: CallResult[];
     approvals?: LockApproval[];
+    writeApprovals?: { key?: string; shown: string }[];
+    connectionTest?: unknown;
   }
 >();
 
@@ -128,13 +130,15 @@ Given('core synced the catalog of the plugin', async () => {
 
 When('core reads the manifest of the plugin', (world: object) => {
   const manifest: unknown = JSON.parse(readFileSync(path.join(inject('synoikiaPluginDir'), 'manifest.json'), 'utf8'));
-  seen(world).manifestIssues = checkManifest(manifest).filter(
-    (i) => i.startsWith('connection.') || i.startsWith('manifest:'),
-  );
+  seen(world).manifestIssues = checkManifest(manifest);
 });
 
 Then('each secret field is write-only, uses the secret widget and is a sensitive key', (world: object) => {
-  report(seen(world).manifestIssues ?? []);
+  report((seen(world).manifestIssues ?? []).filter((i) => i.startsWith('connection.') || i.startsWith('manifest:')));
+});
+
+Then('the manifest names at least one network host', (world: object) => {
+  report((seen(world).manifestIssues ?? []).filter((i) => i.startsWith('network.')));
 });
 
 Then('the profile has a case for each locked operation', async () => {
@@ -375,4 +379,84 @@ Then('the approval shows the target of each lock case', (world: object) => {
       return a.message.includes(a.target) ? [] : [`the approval of ${a.key} does not show ${JSON.stringify(a.target)}`];
     }),
   );
+});
+
+/** The secret values that must never be seen: those of the profile and the secret fields of the connection. */
+function secretValues({ harness, profile }: Subject): string[] {
+  const props = (harness.manifest.connection.schema.properties ?? {}) as Record<string, { writeOnly?: boolean }>;
+  const fromConnection = Object.entries(props)
+    .filter(([, p]) => p?.writeOnly)
+    .map(([name]) => profile.connection[name])
+    .filter((v): v is string => typeof v === 'string' && v !== '');
+  return [...new Set([...profile.secrets.flatMap((s) => s.values), ...fromConnection])];
+}
+
+const leaks = (text: string, values: string[], where: string) =>
+  values
+    .filter((v) => text.includes(v))
+    .map((v) => `a secret value of the profile reached ${where}: "${v.slice(0, 4)}…"`);
+
+Given('the groups of the secret reads are at level read', async () => {
+  const { harness, profile } = await subjectOf();
+  if (profile.secrets.length === 0) report(['the profile names no secret read']);
+  setGroups(harness, profile.secrets, 'read');
+});
+
+When('the agent makes each secret read', async (world: object) => {
+  await makeCalls(world, (await subjectOf()).profile.secrets);
+});
+
+Then('no secret value of the profile reaches the agent or the audit log', async (world: object) => {
+  const s = await subjectOf();
+  const values = secretValues(s);
+  const results = seen(world).results ?? [];
+  report([
+    ...results.flatMap(({ call, result }) =>
+      result.ok ? [] : [`${call.key} failed at level read (${JSON.stringify(errorOf(result))})`],
+    ),
+    ...leaks(JSON.stringify(results.map((r) => r.result)), values, 'the agent'),
+    ...leaks(JSON.stringify(s.harness.audit()), values, 'the audit log'),
+  ]);
+});
+
+Given('the groups of the sample writes are at level ask', async () => {
+  const { harness, profile } = await subjectOf();
+  if (profile.writes.length === 0) report(['the profile names no sample write']);
+  setGroups(harness, profile.writes, 'ask');
+});
+
+When('the agent makes each sample write, and the human reads the approval', async (world: object) => {
+  const { harness, profile } = await subjectOf();
+  const shown: { key?: string; shown: string }[] = [];
+  for (const call of profile.writes) {
+    await harness.execute(codeOf(harness, call), {
+      onApproval: (a) => {
+        shown.push({ key: call.key, shown: `${a.message}\n${JSON.stringify(a.pending)}` });
+        a.deny();
+      },
+    });
+  }
+  seen(world).writeApprovals = shown;
+});
+
+Then('no secret value of the profile reaches the approval', async (world: object) => {
+  const values = secretValues(await subjectOf());
+  report(
+    (seen(world).writeApprovals ?? []).flatMap((a) =>
+      leaks(a.shown, values, `the approval of ${a.key ?? 'a sample write'}`),
+    ),
+  );
+});
+
+When('an admin tests the connection with the wrong credentials of the profile', async (world: object) => {
+  const { harness, profile } = await subjectOf();
+  if (!profile.connectionTest) report(['the profile names no wrong credentials for the connection test']);
+  seen(world).connectionTest = await harness
+    .testConnection({ ...profile.connection, ...profile.connectionTest!.wrong })
+    .catch((err: unknown) => ({ ok: false, message: String(err) }));
+});
+
+Then('the connection test fails', (world: object) => {
+  const result = seen(world).connectionTest as { ok?: boolean } | undefined;
+  report(result?.ok === false ? [] : ['the connection test passed with the wrong credentials of the profile']);
 });
