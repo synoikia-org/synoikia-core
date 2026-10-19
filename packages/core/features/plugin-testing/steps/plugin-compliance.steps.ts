@@ -46,6 +46,17 @@ const BROKEN: Record<
       ],
     ],
   },
+  'classifies "add a task" as a read': {
+    entry: [["op('tasks.add', 'add a task', 'tasks', 'write', {", "op('tasks.add', 'add a task', 'tasks', 'read', {"]],
+  },
+  'maps an unknown call to "show the open tasks"': {
+    entry: [
+      [
+        "if (!known(key)) return fail(id, 'UNKNOWN_OPERATION', `unknown operation: ${key}`);\n    reply(id, { key, params });",
+        "if (!known(key)) return reply(id, { key: 'lists.tasks', params: { list: 'Groceries' } });\n    reply(id, { key, params });",
+      ],
+    ],
+  },
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
@@ -76,6 +87,8 @@ const FAILURES: Record<string, string> = {
   'the catalog is empty': 'the catalog is empty',
   '"add a task" has no description': `${opKey('add a task')} has no description`,
   'the lock "purge lists" names no operation': 'the lock lists.purge names no operation',
+  '"add a task" ran at level read': `${opKey('add a task')} ran at level read`,
+  'Acme Tasks accepted a call that is not in its catalog': 'the plugin accepted a call that is not in its catalog',
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
@@ -89,6 +102,7 @@ Given(
     authorOf(world).profile = {
       reads: [call(read, { list: 'Groceries' })],
       writes: [call(write, { list: 'Groceries', title: 'butter' })],
+      rejects: [{ fn: 'call', args: ['lists.purge', {}] }],
       locks: { [opKey(locked)]: { ...call(locked, { list }), confirm: list, target: list } },
       secrets: [
         {
