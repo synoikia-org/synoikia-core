@@ -74,9 +74,13 @@ afterAll(async () => {
   if (++run.ended === inject('synoikiaFeatureFiles')) await run.stop();
 });
 
+// Feature files share the plugin, so each scenario starts with every group off and no operation level of its own.
 Before(async () => {
   const s = await subject?.catch(() => undefined);
-  await s?.fake?.reset?.();
+  if (!s) return;
+  for (const op of s.harness.operations()) if (op.levelOverride !== null) s.harness.setOperationLevel(op.key, null);
+  for (const group of new Set(s.harness.operations().map((o) => o.pluginGroup))) s.harness.setGroupLevel(group, 'none');
+  await s.fake?.reset?.();
 });
 
 /** Fails the step with one line for each broken rule, as the verdict lists them. */
@@ -92,7 +96,7 @@ const shared = new WeakMap<
     lockIssues?: string[];
     results?: CallResult[];
     approvals?: LockApproval[];
-    writeApprovals?: { key?: string; shown: string }[];
+    writeApprovals?: { key?: string; shown?: string }[];
     connectionTest?: unknown;
   }
 >();
@@ -103,6 +107,7 @@ type LockApproval = {
   target?: string;
   literal?: string | null;
   message?: string;
+  pending?: string;
   wrongRefused: boolean;
   result: ExecuteResult;
 };
@@ -327,6 +332,8 @@ async function approveLocks(world: object) {
 
 async function runLocks(): Promise<LockApproval[]> {
   const { harness, profile } = await subjectOf();
+  setGroups(harness, lockCases(profile), 'ask');
+  for (const c of lockCases(profile)) harness.setOperationLevel(c.key, 'ask');
   const approvals: LockApproval[] = [];
   for (const c of lockCases(profile)) {
     const seenBy: Partial<LockApproval> = { wrongRefused: false };
@@ -334,6 +341,7 @@ async function runLocks(): Promise<LockApproval[]> {
       onApproval: (a) => {
         seenBy.literal = a.pending.confirmLiteral;
         seenBy.message = a.message;
+        seenBy.pending = JSON.stringify(a.pending);
         try {
           a.approve(`${c.confirm} (wrong)`);
         } catch {
@@ -386,7 +394,9 @@ function secretValues(s: Subject): string[] {
   const fromConnection = secretFields(s)
     .map((name) => profile.connection[name])
     .filter((v): v is string => typeof v === 'string' && v !== '');
-  return [...new Set([...profile.secrets.flatMap((s) => s.values), ...fromConnection])];
+  const values = [...profile.secrets.flatMap((s) => s.values), ...fromConnection];
+  report(values.filter((v) => typeof v !== 'string' || v === '').map(() => 'a secret value of the profile is empty'));
+  return [...new Set(values)];
 }
 
 const leaks = (text: string, values: string[], where: string) =>
@@ -425,25 +435,31 @@ Given('the groups of the sample writes are at level ask', async () => {
 
 When('the agent makes each sample write, and the human reads the approval', async (world: object) => {
   const { harness, profile } = await subjectOf();
-  const shown: { key?: string; shown: string }[] = [];
+  const shown: { key?: string; shown?: string }[] = [];
   for (const call of profile.writes) {
+    const seenBy: { key?: string; shown?: string } = { key: call.key };
     await harness.execute(codeOf(harness, call), {
       onApproval: (a) => {
-        shown.push({ key: call.key, shown: `${a.message}\n${JSON.stringify(a.pending)}` });
+        seenBy.shown = `${a.message}\n${JSON.stringify(a.pending)}`;
         a.deny();
       },
     });
+    shown.push(seenBy);
   }
   seen(world).writeApprovals = shown;
 });
 
 Then('no secret value of the profile reaches the approval', async (world: object) => {
   const values = secretValues(await subjectOf());
-  report(
-    (seen(world).writeApprovals ?? []).flatMap((a) =>
-      leaks(a.shown, values, `the approval of ${a.key ?? 'a sample write'}`),
+  const locks = await (lockRun ??= runLocks());
+  report([
+    ...(seen(world).writeApprovals ?? []).flatMap((a) =>
+      a.shown === undefined
+        ? [`${a.key ?? 'a sample write'} asked for no approval`]
+        : leaks(a.shown, values, `the approval of ${a.key ?? 'a sample write'}`),
     ),
-  );
+    ...locks.flatMap((a) => leaks(`${a.message ?? ''}\n${a.pending ?? ''}`, values, `the approval of ${a.key}`)),
+  ]);
 });
 
 When('an admin tests the connection with the wrong credentials of the profile', async (world: object) => {
