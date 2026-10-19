@@ -16,10 +16,15 @@
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js"
     },
+    "./testing/compliance": {
+      "synoikia-source": "./src/testing/compliance/index.ts",
+      "types": "./dist/testing/compliance/index.d.ts",
+      "import": "./dist/testing/compliance/index.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/testing/compliance/suite','dist/testing/compliance/suite',{recursive:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -39,15 +44,24 @@
     "isolated-vm": "~6.2.0",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",
+    "quickpickle": "1.11.2",
     "semver": "^7.8.5",
     "tar": "^7.5.22",
+    "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/semver": "^7.8.0",
-    "drizzle-kit": "^0.31.11",
-    "quickpickle": "1.11.2"
+    "drizzle-kit": "^0.31.11"
+  },
+  "peerDependencies": {
+    "vitest": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "files": [
     "dist",
