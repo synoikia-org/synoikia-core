@@ -235,7 +235,14 @@ const handlers = {
     if (flag('start-check')) await startCheck();
     reply(id);
   },
-  testConnection: (id) => reply(id, { ok: true, upstreamVersion: upstreamVersion() }),
+  async testConnection(id) {
+    try {
+      await upstream('GET', '/lists');
+      reply(id, { ok: true, upstreamVersion: upstreamVersion() });
+    } catch (err) {
+      reply(id, { ok: false, message: String(err.message ?? err) });
+    }
+  },
   getUpstreamVersion: (id) => reply(id, upstreamVersion()),
   syncCatalog: async (id) => reply(id, { upstreamVersion: upstreamVersion(), operations: await catalog() }),
   syncRegistry: async (id) => reply(id, await registry()),

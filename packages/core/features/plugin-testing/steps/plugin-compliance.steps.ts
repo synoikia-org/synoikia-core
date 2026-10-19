@@ -76,6 +76,28 @@ const BROKEN: Record<
       ],
     ],
   },
+  'shows the share password under the name "code"': {
+    entry: [
+      [
+        "'lists.share': (p, ctx) => upstream('GET', `${listPath(p.list)}/share`, undefined, callHeaders(ctx)),",
+        "'lists.share': async (p, ctx) => ({ list: p.list, code: (await upstream('GET', `${listPath(p.list)}/share`, undefined, callHeaders(ctx))).password }),",
+      ],
+    ],
+  },
+  'shows the API token in the approval of "add a task"': {
+    entry: [
+      [
+        'return p.title ? `${name}: "${p.title}" in ${p.list}`',
+        'return p.title ? `${name}: "${p.title}" in ${p.list} with ${secrets.token}`',
+      ],
+    ],
+  },
+  'passes the connection test with a wrong API token': {
+    entry: [["      await upstream('GET', '/lists');\n      reply(id, { ok: true", '      reply(id, { ok: true']],
+  },
+  'names no network host': {
+    manifest: (m) => (m.network.hosts = []),
+  },
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
@@ -111,12 +133,20 @@ const FAILURES: Record<string, string> = {
   '"delete a list" asks to type "delete" in place of "Chores"': `${opKey('delete a list')} asks to type "delete" in place of "Chores"`,
   '"delete a list" is not off by default': `${opKey('delete a list')} is not off by default`,
   'the approval of "delete a list" does not show "Chores"': `the approval of ${opKey('delete a list')} does not show "Chores"`,
+  'the share password reached the sandbox': `a secret value of the profile reached the agent: "${'groceries-share-7'.slice(0, 4)}…"`,
+  'the API token reached the approval': `a secret value of the profile reached the approval of ${opKey('add a task')}: "${API_TOKEN.slice(0, 4)}…"`,
+  'the connection test accepted a wrong API token':
+    'the connection test passed with the wrong credentials of the profile',
+  'the manifest names no network host': 'network.hosts: names no host',
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
 };
 
-type ManifestJson = { connection: { schema: { properties: Record<string, { writeOnly?: boolean }> } } };
+type ManifestJson = {
+  connection: { schema: { properties: Record<string, { writeOnly?: boolean }> } };
+  network: { hosts: string[] };
+};
 
 Given(
   'the profile of Acme Tasks names {string}, {string}, the lock {string} of {string} and the share password',
@@ -125,6 +155,7 @@ Given(
       reads: [call(read, { list: 'Groceries' })],
       writes: [call(write, { list: 'Groceries', title: 'butter' })],
       rejects: [{ fn: 'call', args: ['lists.purge', {}] }],
+      connectionTest: { wrong: { token: 'acme-tok-wrong' } },
       locks: { [opKey(locked)]: { ...call(locked, { list }), confirm: list, target: list } },
       secrets: [
         {
