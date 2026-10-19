@@ -30,17 +30,20 @@ export function tasksCopy(world: SynoikiaWorld, change: (dir: string) => void = 
   return dir;
 }
 
+/** Replaces each `from` by its `to` in the entry file of the copy of "Acme Tasks" in `dir`. */
+export function editEntry(dir: string, edits: [from: string, to: string][]) {
+  const file = path.join(dir, 'index.mjs');
+  let code = readFileSync(file, 'utf8');
+  for (const [from, to] of edits) {
+    if (!code.includes(from)) throw new Error(`Acme Tasks has no "${from}" to change`);
+    code = code.replace(from, to);
+  }
+  writeFileSync(file, code);
+}
+
 /** A build of "Acme Tasks" whose entry file has each `from` replaced by its `to`. */
 export function tasksVariant(world: SynoikiaWorld, edits: [from: string, to: string][]) {
-  return tasksCopy(world, (dir) => {
-    const file = path.join(dir, 'index.mjs');
-    let code = readFileSync(file, 'utf8');
-    for (const [from, to] of edits) {
-      if (!code.includes(from)) throw new Error(`Acme Tasks has no "${from}" to change`);
-      code = code.replace(from, to);
-    }
-    writeFileSync(file, code);
-  });
+  return tasksCopy(world, (dir) => editEntry(dir, edits));
 }
 
 /** Starts the harness on `pluginDir`, as plugin author 3's test does, and stops it when the scenario ends. */

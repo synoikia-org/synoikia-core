@@ -7,7 +7,7 @@ import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { API_TOKEN, opKey } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
-import { tasksCopy } from './plugin-test-harness.steps.js';
+import { editEntry, tasksCopy } from './plugin-test-harness.steps.js';
 
 const RUN_CONFIG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../support/compliance-run.config.ts');
 const VITEST = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
@@ -76,13 +76,7 @@ async function runSuite(world: SynoikiaWorld, breaks?: string) {
   const fault = breaks === undefined ? {} : BROKEN[breaks];
   if (!fault) throw new Error(`The World has no build of Acme Tasks that ${breaks}`);
   const dir = tasksCopy(world, (copy) => {
-    const entry = path.join(copy, 'index.mjs');
-    let code = readFileSync(entry, 'utf8');
-    for (const [from, to] of fault.entry ?? []) {
-      if (!code.includes(from)) throw new Error(`Acme Tasks has no "${from}" to change`);
-      code = code.replace(from, to);
-    }
-    writeFileSync(entry, code);
+    editEntry(copy, fault.entry ?? []);
     const manifestFile = path.join(copy, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as ManifestJson;
     fault.manifest?.(manifest);
