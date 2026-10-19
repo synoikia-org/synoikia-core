@@ -1,4 +1,4 @@
-@id:plugin-compliance
+@id:plugin-compliance @long-running
 Feature: Plugin compliance suite
   Core decides if a plugin is fit for production. The compliance suite of the core testing package runs the built plugin in the real core against its fake upstream service.
   The plugin author gives only a compliance profile: the connection, sample calls, a case for each locked operation and the secret values of the fake.
