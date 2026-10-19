@@ -15,6 +15,8 @@ title: "System context"
 graph TB
   Admin@{ icon: "fa:user", shape: rounded, label: "Admin" }
   User@{ icon: "fa:user", shape: rounded, label: "User" }
+  PluginAuthor@{ icon: "fa:user", shape: rounded, label: "Plugin author" }
+  PluginSource@{ shape: rectangle, label: "Plugin source" }
   ExternalProvider@{ shape: rectangle, label: "External provider" }
   McpClient@{ shape: rectangle, label: "MCP client" }
   Synoikia@{ shape: rectangle, label: "Synoikia" }
@@ -26,9 +28,12 @@ graph TB
 settings`" .-> Synoikia
   User -. "`asks for work`" .-> McpClient
   User -. "`[...]`" .-> Synoikia
+  PluginAuthor -. "`adds to the vitest config of a plugin`" .-> Synoikia
   McpClient -. "`calls search, execute and resume`" .-> Synoikia
   Synoikia -. "`calls the upstream API`" .-> Upstream
-  Synoikia -. "`downloads indexes and bundles from`" .-> PluginRepository
+  PluginSource -. "`builds its fake upstream with`" .-> Synoikia
+  Synoikia -. "`[...]`" .-> PluginSource
+  Synoikia -. "`[...]`" .-> PluginRepository
   Synoikia -. "`signs users in with`" .-> IdentityProvider
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia
   Synoikia -. "`sends events to`" .-> NotificationReceiver
@@ -45,11 +50,15 @@ title: "Containers"
 graph TB
   Admin@{ icon: "fa:user", shape: rounded, label: "Admin" }
   User@{ icon: "fa:user", shape: rounded, label: "User" }
+  PluginAuthor@{ icon: "fa:user", shape: rounded, label: "Plugin author" }
   McpClient@{ shape: rectangle, label: "MCP client" }
+  PluginSource@{ shape: rectangle, label: "Plugin source" }
   ExternalProvider@{ shape: rectangle, label: "External provider" }
   subgraph Synoikia["`Synoikia`"]
     Synoikia.AdminPortal@{ shape: rectangle, label: "Admin portal" }
+    Synoikia.CoreTesting@{ shape: rectangle, label: "Core testing" }
     Synoikia.Core@{ shape: rectangle, label: "Core" }
+    Synoikia.PluginSdk@{ shape: rectangle, label: "Plugin SDK" }
     Synoikia.Sandbox@{ shape: rectangle, label: "Sandbox" }
     Synoikia.Instance@{ shape: rectangle, label: "Instance" }
     Synoikia.Database@{ shape: disk, label: "Database" }
@@ -63,7 +72,9 @@ graph TB
 settings`" .-> Synoikia.AdminPortal
   User -. "`decides approvals on the approval page`" .-> Synoikia.Core
   User -. "`sets personal levels and grants`" .-> Synoikia.AdminPortal
+  PluginAuthor -. "`adds to the vitest config of a plugin`" .-> Synoikia.CoreTesting
   McpClient -. "`calls search, execute and resume`" .-> Synoikia.Core
+  PluginSource -. "`builds its fake upstream with`" .-> Synoikia.CoreTesting
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia.Core
   Synoikia.Core -. "`runs model code in`" .-> Synoikia.Sandbox
   Synoikia.Core -. "`sends operation calls to`" .-> Synoikia.Instance
@@ -71,11 +82,17 @@ settings`" .-> Synoikia.AdminPortal
   Synoikia.Core -. "`installs bundles into`" .-> Synoikia.Bundles
   Synoikia.Sandbox -. "`sends binding calls to`" .-> Synoikia.Core
   Synoikia.AdminPortal -. "`reads and changes configuration`" .-> Synoikia.Core
+  Synoikia.CoreTesting -. "`boots in process, with the gate, 
+approvals, redaction and audit log`" .-> Synoikia.Core
   Synoikia.Instance -. "`loads its own bundle, read only`" .-> Synoikia.Bundles
+  Synoikia.CoreTesting -. "`checks the manifest and the handlers 
+with`" .-> Synoikia.PluginSdk
   Synoikia.Core -. "`downloads indexes and bundles from`" .-> PluginRepository
   Synoikia.Core -. "`signs users in with`" .-> IdentityProvider
   Synoikia.Core -. "`sends events to`" .-> NotificationReceiver
   Synoikia.Instance -. "`calls the upstream API`" .-> Upstream
+  Synoikia.CoreTesting -. "`[...]`" .-> PluginSource
+  Synoikia.CoreTesting -. "`downloads and verifies a release from`" .-> PluginRepository
 ```
 
 ### Core components
@@ -134,6 +151,45 @@ in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.CatalogSync -. "`stores catalogs in`" .-> SynoikiaDatabase
   SynoikiaCore.Notify -. "`sends events to`" .-> NotificationReceiver
   SynoikiaCore.Audit -. "`appends to`" .-> SynoikiaDatabase
+```
+
+### Core testing components
+
+The parts of the core testing package that a plugin author uses.
+
+```mermaid
+---
+title: "Core testing components"
+---
+graph TB
+  PluginAuthor@{ icon: "fa:user", shape: rounded, label: "Plugin author" }
+  PluginSource@{ shape: rectangle, label: "Plugin source" }
+  subgraph SynoikiaCoreTesting["`Core testing`"]
+    SynoikiaCoreTesting.ComplianceProject@{ shape: rectangle, label: "Compliance project" }
+    SynoikiaCoreTesting.FakeHttp@{ shape: rectangle, label: "Fake HTTP" }
+    SynoikiaCoreTesting.ReleaseCheck@{ shape: rectangle, label: "Release check" }
+    SynoikiaCoreTesting.ComplianceSuite@{ shape: rectangle, label: "Compliance suite" }
+    SynoikiaCoreTesting.ComplianceSteps@{ shape: rectangle, label: "Compliance steps" }
+    SynoikiaCoreTesting.ProfileLoader@{ shape: rectangle, label: "Profile loader" }
+    SynoikiaCoreTesting.Harness@{ shape: rectangle, label: "Plugin harness" }
+  end
+  PluginRepository@{ shape: rectangle, label: "Plugin repository" }
+  SynoikiaPluginSdk@{ shape: rectangle, label: "Plugin SDK" }
+  SynoikiaCore@{ shape: rectangle, label: "Core" }
+  PluginAuthor -. "`adds to the vitest config of a plugin`" .-> SynoikiaCoreTesting.ComplianceProject
+  PluginSource -. "`builds its fake upstream with`" .-> SynoikiaCoreTesting.FakeHttp
+  SynoikiaCoreTesting.ComplianceSuite -. "`is run by`" .-> SynoikiaCoreTesting.ComplianceSteps
+  SynoikiaCoreTesting.ComplianceProject -. "`runs`" .-> SynoikiaCoreTesting.ComplianceSuite
+  SynoikiaCoreTesting.ComplianceSteps -. "`gets the profile from`" .-> SynoikiaCoreTesting.ProfileLoader
+  SynoikiaCoreTesting.ComplianceSteps -. "`drives the plugin through`" .-> SynoikiaCoreTesting.Harness
+  SynoikiaCoreTesting.ComplianceSteps -. "`checks the manifest and the handlers 
+with`" .-> SynoikiaPluginSdk
+  SynoikiaCoreTesting.ProfileLoader -. "`reads test/compliance.yaml and starts 
+the fake upstream module from`" .-> PluginSource
+  SynoikiaCoreTesting.Harness -. "`stages the built bundle from`" .-> PluginSource
+  SynoikiaCoreTesting.Harness -. "`boots in process, with the gate, 
+approvals, redaction and audit log`" .-> SynoikiaCore
+  SynoikiaCoreTesting.ReleaseCheck -. "`downloads and verifies a release from`" .-> PluginRepository
 ```
 
 ### execute through the gate
@@ -240,5 +296,6 @@ title: "Deployment"
 graph TB
   Internet@{ shape: rectangle, label: "Internet" }
   Lan@{ shape: rectangle, label: "LAN or VPN" }
+  PluginCi@{ shape: rectangle, label: "Plugin repository CI" }
 ```
 
