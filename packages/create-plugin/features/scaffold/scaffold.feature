@@ -109,3 +109,14 @@ Feature: Scaffold
         | a REST service without a spec           | an API key     |
         | a remote procedure service on WebSocket | a bearer token |
         | a plugin to fill in by hand             | no sign-in     |
+
+    @long-running
+    Scenario Outline: A new plugin of each kind with a fake upstream is fit for production
+      When plugin author 3 adds the plugin "acme-box" for <kind> that uses <auth>
+      Then the compliance suite of core certifies "acme-box" 0.1.0 for production
+
+      Examples:
+        | kind                                    | auth                |
+        | a service with an OpenAPI description   | a user and password |
+        | a REST service without a spec           | no sign-in          |
+        | a remote procedure service on WebSocket | a bearer token      |
