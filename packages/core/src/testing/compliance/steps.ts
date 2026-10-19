@@ -376,11 +376,15 @@ Then('the approval shows the target of each lock case', (world: object) => {
 });
 
 /** The secret values that must never be seen: those of the profile and the secret fields of the connection. */
-function secretValues({ harness, profile }: Subject): string[] {
-  const props = (harness.manifest.connection.schema.properties ?? {}) as Record<string, { writeOnly?: boolean }>;
-  const fromConnection = Object.entries(props)
+const secretFields = ({ harness }: Subject) =>
+  Object.entries((harness.manifest.connection.schema.properties ?? {}) as Record<string, { writeOnly?: boolean }>)
     .filter(([, p]) => p?.writeOnly)
-    .map(([name]) => profile.connection[name])
+    .map(([name]) => name);
+
+function secretValues(s: Subject): string[] {
+  const { profile } = s;
+  const fromConnection = secretFields(s)
+    .map((name) => profile.connection[name])
     .filter((v): v is string => typeof v === 'string' && v !== '');
   return [...new Set([...profile.secrets.flatMap((s) => s.values), ...fromConnection])];
 }
@@ -443,8 +447,13 @@ Then('no secret value of the profile reaches the approval', async (world: object
 });
 
 When('an admin tests the connection with the wrong credentials of the profile', async (world: object) => {
-  const { harness, profile } = await subjectOf();
-  if (!profile.connectionTest) report(['the profile names no wrong credentials for the connection test']);
+  const s = await subjectOf();
+  const { harness, profile } = s;
+  if (!profile.connectionTest) {
+    // A connection with no secret field has no credentials that the upstream could refuse.
+    if (secretFields(s).length === 0) return void (seen(world).connectionTest = { ok: false });
+    report(['the profile names no wrong credentials for the connection test']);
+  }
   seen(world).connectionTest = await harness
     .testConnection({ ...profile.connection, ...profile.connectionTest!.wrong })
     .catch((err: unknown) => ({ ok: false, message: String(err) }));

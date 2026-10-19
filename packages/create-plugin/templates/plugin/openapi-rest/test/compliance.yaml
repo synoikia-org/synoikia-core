@@ -1,0 +1,17 @@
+# What core's compliance suite needs to certify {{name}} against the fake: docs/plugin-authoring.md.
+fake: test/fake.ts
+connection:
+  baseUrl: ${fake.url}{{credentials}}
+reads:
+  - { fn: request, args: [{ path: /items }], key: GET /items }
+writes:
+  - { fn: request, args: [{ method: POST, path: /items, body: { name: Second item } }], key: POST /items }
+rejects:
+  - { fn: request, args: [{ path: /nope }] }
+# One case for each locked operation: the call, the literal an approver types and the target the approval names.
+locks:
+  'DELETE /items/{itemId}':
+    { fn: request, args: [{ method: DELETE, path: /items/1 }], confirm: First item, target: /items/1 }
+# Reads whose upstream answer holds secrets that must never reach the agent.
+secrets:
+  - { fn: request, args: [{ path: /settings }], key: GET /settings, values: ['${fake.secret}'] }{{connectionTest}}
