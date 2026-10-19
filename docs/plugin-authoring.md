@@ -31,7 +31,7 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 | `plugin.yaml`     | What the plugin tells core about its operations, as data (below)                                          |
 | `src/plugin.ts`   | `definePlugin(…)`: the client, the version, discovery, and decisions that need logic                      |
 | `src/auth.ts`     | How each request authenticates                                                                            |
-| `test/`           | A fake upstream, `checkConformance` unit tests, `checkPluginContract` e2e tests on core's harness         |
+| `test/`           | `compliance.yaml`, a fake upstream, and unit tests in `test/unit/` (below)                                |
 
 `synoikia-plugin build` bundles everything, `plugin.yaml` included (validated and inlined at build time), into one self-contained `dist/index.js`. At runtime the plugin runs as a permission-confined child: it can read nothing outside its package directory, and can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration the admin reviews before enabling the plugin (an update that changes it arrives disabled again), not something core enforces; container egress policy is the mitigation (design §4.4, §14). List exactly the hosts the plugin connects to.
 
@@ -149,14 +149,68 @@ A field set by several matching rules takes the **first** rule's value, except `
 | Declared catalog                       | `staticCatalog`, `staticHttpBinding`                                                                                  |
 | Rules                                  | `parsePluginSettings`, `compileRules` (`describe`, `confirmLiteral`, `maskEmbeddedResult`, …)                         |
 | Errors                                 | `PluginError`, `upstreamError`, `statusKind`                                                                          |
-| Tests                                  | `checkConformance`, `checkManifest`; `startFakeHttp`, `checkPluginContract` (`@synoikia/core/testing`)                |
+| Tests                                  | `complianceConfig` (`@synoikia/core/testing/compliance`), `startFakeHttp`, `checkManifest`, `checkConformance`        |
 
 ## Rules every plugin keeps
 
-- Every credential connection field is `writeOnly`, uses the `secret` widget and is in `sensitiveKeys`; so is every secret field the upstream returns (or it gets a `sensitiveResult` rule). `synoikia-plugin check` enforces the first part, and the e2e `secrets` contract check the second.
+- Every credential connection field is `writeOnly`, uses the `secret` widget and is in `sensitiveKeys`. `synoikia-plugin check` enforces it.
+- Every secret field that the upstream returns is in `sensitiveKeys` or has a `sensitiveResult` rule. The compliance suite checks it.
 - Model-supplied arguments never change the host, scheme or port, never set auth headers, and path parameters are encoded. The operation core gated is the one invoked.
 - Approval summaries and confirmation literals show exactly what is affected, and never secrets.
 - No plugin-side allow/deny lists, approval prompts or secret handling: that is core's job. If a plugin needs something core doesn't offer, change core first.
+
+## The compliance suite
+
+Core's compliance suite certifies a plugin for production (design §4.5). The plugin's `vitest.config.ts` runs it:
+
+```ts
+export default mergeConfig(shared, complianceConfig({ pluginDir: import.meta.dirname }));
+```
+
+`test/compliance.yaml` tells the suite how to drive the plugin against its fake upstream:
+
+```yaml
+fake: test/fake.ts # exports start(): { url, close(), reset?() } and any value that ${fake.<name>} names
+connection: { baseUrl: '${fake.url}', token: '${fake.token}' }
+reads: [{ fn: request, args: [{ path: /items }], key: GET /items }]
+writes: [{ fn: request, args: [{ method: POST, path: /items, body: { name: x } }], key: POST /items }]
+rejects: [{ fn: request, args: [{ path: /nope }] }]
+locks:
+  'DELETE /items/{itemId}':
+    { fn: request, args: [{ method: DELETE, path: /items/1 }], confirm: First item, target: /items/1 }
+secrets: [{ fn: request, args: [{ path: /settings }], key: GET /settings, values: ['${fake.secret}'] }]
+connectionTest: { wrong: { token: wrong-token } }
+calls:
+  list the items: { fn: request, args: [{ path: /items }], key: GET /items }
+```
+
+- Give a case in `locks` for each locked operation and each split twin. A lock with no case fails the suite.
+- List in `secrets` each upstream value that must never reach the agent.
+- Name in `calls` the calls that the plugin's own feature files use.
+
+Plugin-specific behavior goes in `features/*.feature`, with the steps of the suite:
+
+```gherkin
+Scenario: The approval names the item
+  Given the operation of "delete the first item" is at level ask
+  When the agent runs "delete the first item", and the human types "First item"
+  Then the approval shows "/items/1"
+```
+
+| Step                                                               | What it does                                |
+| ------------------------------------------------------------------ | ------------------------------------------- |
+| `Given the group of "<call>" is at level <none\|read\|ask\|write>` | Sets the group of the call's operation      |
+| `Given the operation of "<call>" is at level <level>`              | Sets the operation's own level              |
+| `When the agent runs "<call>"`                                     | Runs the call with no human                 |
+| `When the agent runs "<call>", and the human approves it`          | Approves the call                           |
+| `When the agent runs "<call>", and the human types "<literal>"`    | Approves the call with a typed literal      |
+| `When the agent runs "<call>", and the human denies it`            | Denies the call                             |
+| `Then the agent gets a result that contains "<text>"`              | The call ran, and its result holds the text |
+| `Then core refuses the call with the code "<code>"`                | The call failed with that error code        |
+| `Then the approval shows "<text>"`                                 | The approval prompt holds the text          |
+| `Then the approval asks to type "<literal>"`                       | The approval asks for that literal          |
+
+A step file of the plugin gets the harness, the profile and the fake from `complianceSubject()`. Pure functions get unit tests in `test/unit/`.
 
 ## Testing a build on your instance
 

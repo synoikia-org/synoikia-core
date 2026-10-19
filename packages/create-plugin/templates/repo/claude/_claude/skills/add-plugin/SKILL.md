@@ -29,7 +29,7 @@ This writes `plugins/<id>/` (manifest, `plugin.yaml`, `src/`, a fake upstream, u
 
 ## 4. Tests
 
-Extend `test/fake-upstream.ts` to answer what the plugin calls, including responses with secrets. Keep `checkPluginContract` in `test/e2e.test.ts` passing, and add unit tests for every rule that locks or masks something.
+Extend `test/fake-upstream.ts` to answer what the plugin calls, including responses with secrets. Fill in `test/compliance.yaml`: a case for each locked operation, and each secret the fake returns. Core's compliance suite must print that the plugin is fit for production. Specify plugin-specific behavior in `features/*.feature` with the suite's steps (`docs/plugin-authoring.md`).
 
 ```sh
 pnpm --filter ./plugins/<id> test
