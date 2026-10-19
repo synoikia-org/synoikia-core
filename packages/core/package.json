@@ -44,22 +44,31 @@
     "isolated-vm": "~6.2.0",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",
-    "quickpickle": "1.11.2",
     "semver": "^7.8.5",
     "tar": "^7.5.22",
-    "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/semver": "^7.8.0",
-    "drizzle-kit": "^0.31.11"
+    "drizzle-kit": "^0.31.11",
+    "quickpickle": "1.11.2",
+    "vitest": "^5.0.2",
+    "yaml": "^2.9.1"
   },
   "peerDependencies": {
-    "vitest": "^5.0.0"
+    "quickpickle": "^1.11.2",
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
   },
   "peerDependenciesMeta": {
+    "quickpickle": {
+      "optional": true
+    },
     "vitest": {
+      "optional": true
+    },
+    "yaml": {
       "optional": true
     }
   },
