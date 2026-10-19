@@ -96,9 +96,16 @@
       },
       "required": ["url"]
     },
-    "ui": {}
+    "ui": {
+      "token": {
+        "widget": "secret"
+      },
+      "webhookSecret": {
+        "widget": "secret"
+      }
+    }
   },
-  "sensitiveKeys": [],
+  "sensitiveKeys": ["token", "webhookSecret"],
   "network": {
     "hosts": ["127.0.0.1"]
   }
