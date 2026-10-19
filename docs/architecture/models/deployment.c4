@@ -20,4 +20,16 @@ deployment {
       }
     }
   }
+  zone pluginCi 'Plugin repository CI' {
+    host runner 'CI runner or author machine' {
+      runtime vitest 'vitest' {
+        technology 'Node.js, --no-node-snapshot'
+        suite = instanceOf synoikia.coreTesting
+        testCore = instanceOf synoikia.core
+        testIsolates = instanceOf synoikia.sandbox
+        testChild = instanceOf synoikia.instance
+        testDb = instanceOf synoikia.database
+      }
+    }
+  }
 }

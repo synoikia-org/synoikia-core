@@ -7,6 +7,11 @@ specification {
   element system
   element container
   element component
+  element library {
+    style {
+      shape component
+    }
+  }
   element store {
     style {
       shape storage
@@ -30,11 +35,18 @@ model {
     description 'A person whose MCP client calls an endpoint and who decides the approvals of those calls.'
   }
 
+  pluginAuthor = actor 'Plugin author' {
+    description 'A person who writes a plugin and proves with the core testing package that it is fit for production.'
+  }
+
   mcpClient = external 'MCP client' {
     description 'An AI agent or automation that calls an endpoint over MCP Streamable HTTP.'
   }
   upstream = external 'Upstream' {
     description 'A self-hosted service that a plugin connects to.'
+  }
+  pluginSource = external 'Plugin source' {
+    description 'The source folder of one plugin: its manifest, plugin.yaml, built bundle, and in test/ its compliance profile and fake upstream.'
   }
   pluginRepository = external 'Plugin repository' {
     description 'A published index of plugin bundles, signed with minisign when the publisher signs it.'
@@ -71,6 +83,14 @@ model {
     database = store 'Database' {
       technology 'SQLite, Drizzle'
       description 'Configuration, catalogs, approvals, sessions, encrypted secrets and the audit log.'
+    }
+    coreTesting = library 'Core testing' {
+      technology '@synoikia/core/testing, vitest, quickpickle'
+      description 'The published package that runs a built plugin in the real core and certifies it for production.'
+    }
+    pluginSdk = library 'Plugin SDK' {
+      technology '@synoikia/plugin-sdk'
+      description 'The published package that plugins are built from, with the manifest schema and the conformance checks.'
     }
     bundles = store 'Plugin bundles' {
       technology 'Files in DATA_DIR/plugins'

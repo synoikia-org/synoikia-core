@@ -1,0 +1,44 @@
+model {
+  extend synoikia.coreTesting {
+    complianceSuite = component 'Compliance suite' {
+      technology 'testing/compliance/*.feature'
+      description 'The feature files that state each rule of core a plugin must keep for production.'
+    }
+    complianceSteps = component 'Compliance steps' {
+      technology 'testing/compliance/steps'
+      description 'The step definitions and the World that the compliance suite and the own feature files of a plugin share.'
+    }
+    complianceProject = component 'Compliance project' {
+      technology 'testing/compliance/project.ts'
+      description 'The vitest project that runs the compliance suite and the own feature files of a plugin.'
+    }
+    profileLoader = component 'Profile loader' {
+      technology 'testing/compliance/profile.ts, zod'
+      description 'Reads and validates test/compliance.yaml of a plugin, and starts the fake upstream module that it names.'
+    }
+    harness = component 'Plugin harness' {
+      technology 'testing/index.ts'
+      description 'Boots the real core on one staged copy of the built plugin and drives it as an MCP client does.'
+    }
+    fakeHttp = component 'Fake HTTP' {
+      technology 'testing/fake-http.ts'
+      description 'A fake upstream server that answers only the routes a test declares.'
+    }
+    releaseCheck = component 'Release check' {
+      technology 'testing/repository.ts'
+      description 'Installs each plugin of a release with the pinned key and starts it.'
+    }
+  }
+
+  pluginAuthor -> synoikia.coreTesting.complianceProject 'adds to the vitest config of a plugin'
+  synoikia.coreTesting.complianceProject -> synoikia.coreTesting.complianceSuite 'runs'
+  synoikia.coreTesting.complianceSuite -> synoikia.coreTesting.complianceSteps 'is run by'
+  synoikia.coreTesting.complianceSteps -> synoikia.coreTesting.profileLoader 'gets the profile from'
+  synoikia.coreTesting.profileLoader -> pluginSource 'reads test/compliance.yaml and starts the fake upstream module from'
+  synoikia.coreTesting.complianceSteps -> synoikia.pluginSdk 'checks the manifest and the handlers with'
+  synoikia.coreTesting.complianceSteps -> synoikia.coreTesting.harness 'drives the plugin through'
+  synoikia.coreTesting.harness -> pluginSource 'stages the built bundle from'
+  synoikia.coreTesting.harness -> synoikia.core 'boots in process, with the gate, approvals, redaction and audit log'
+  synoikia.coreTesting.releaseCheck -> pluginRepository 'downloads and verifies a release from'
+  pluginSource -> synoikia.coreTesting.fakeHttp 'builds its fake upstream with'
+}
