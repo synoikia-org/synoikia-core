@@ -229,7 +229,8 @@ export default defineConfig({
   plugins: [pluginFiles()],
   resolve: { conditions },
   ssr: { resolve: { conditions } },
-  test: { include: ['test/**/*.test.ts'], execArgv: ['--no-node-snapshot'], testTimeout: 60000, hookTimeout: 60000 },
+  // The unit tests only: a kind with a fake upstream has none, and the compliance suite has its own scenario.
+  test: { include: ['test/**/*.test.ts'], passWithNoTests: true, execArgv: ['--no-node-snapshot'], testTimeout: 60000, hookTimeout: 60000 },
 });
 `,
     );
