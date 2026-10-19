@@ -41,7 +41,6 @@ Feature: Plugin compliance suite
 
   Rule: Access levels decide each call of the plugin
 
-    @backlog
     Scenario Outline: The suite refuses access that <breaks>
       When plugin author 3 runs the compliance suite on a build of Acme Tasks that <breaks>
       Then the suite does not certify Acme Tasks, because <failure>
