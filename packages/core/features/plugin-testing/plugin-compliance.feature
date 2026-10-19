@@ -24,7 +24,7 @@ Feature: Plugin compliance suite
         | breaks                                              | failure                                                       |
         | also locks "archive a list"                         | "archive a list" is locked and the profile has no case for it |
         | shows the API token field as plain text             | the API token is a secret that is not write-only              |
-        | declares the guide "lists" and does not ship it     | the guide "lists" is not provided                             |
+        | does not ship the guide of "import tasks"           | the guide of "import tasks" is not provided                   |
 
   Rule: The catalog of the plugin is valid
 
