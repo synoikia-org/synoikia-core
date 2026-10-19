@@ -41,11 +41,6 @@ export function editEntry(dir: string, edits: [from: string, to: string][]) {
   writeFileSync(file, code);
 }
 
-/** A build of "Acme Tasks" whose entry file has each `from` replaced by its `to`. */
-export function tasksVariant(world: SynoikiaWorld, edits: [from: string, to: string][]) {
-  return tasksCopy(world, (dir) => editEntry(dir, edits));
-}
-
 /** Starts the harness on `pluginDir`, as plugin author 3's test does, and stops it when the scenario ends. */
 export async function startHarness(world: SynoikiaWorld, pluginDir = TASKS_SOURCE) {
   const harness = await startPluginHarness({ pluginDir, connection: { url: world.upstream!.url, token: API_TOKEN } });
