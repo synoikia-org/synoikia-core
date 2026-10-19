@@ -28,7 +28,13 @@ const call = (name: string, params: unknown) => ({ fn: 'call', args: [opKey(name
 /** The builds of Acme Tasks that break a rule: edits of its entry file or its manifest. */
 const BROKEN: Record<
   string,
-  { entry?: [string, string][]; manifest?: (m: ManifestJson) => void; files?: Record<string, string> }
+  {
+    entry?: [string, string][];
+    manifest?: (m: ManifestJson) => void;
+    files?: Record<string, string>;
+    /** Extra vitest arguments, such as a file filter. */
+    args?: string[];
+  }
 > = {
   'throws "boom" when it loads': {
     entry: [
@@ -101,6 +107,23 @@ const BROKEN: Record<
   'names no network host': {
     manifest: (m) => (m.network.hosts = []),
   },
+  'runs only the access rule of the suite': { args: ['access.feature'] },
+  'shows the API token in the approval of "delete a list"': {
+    entry: [
+      [
+        ': `${name}: ${p.list}`;',
+        ": key === 'lists.delete' ? `${name}: ${p.list} ${secrets.token}` : `${name}: ${p.list}`;",
+      ],
+    ],
+  },
+  'cannot summarize "add a task"': {
+    entry: [
+      [
+        '  summarize: (id, { key, params }) =>\n',
+        "  summarize: (id, { key, params }) =>\n    key === 'tasks.add' ? fail(id, 'UPSTREAM_ERROR', 'no summary') :\n",
+      ],
+    ],
+  },
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
@@ -141,6 +164,9 @@ const FAILURES: Record<string, string> = {
   'the connection test accepted a wrong API token':
     'the connection test passed with the wrong credentials of the profile',
   'the manifest names no network host': 'network.hosts: names no host',
+  'the suite did not run every rule': 'the suite file locks.feature did not run',
+  'the API token reached the approval of "delete a list"': `a secret value of the profile reached the approval of ${opKey('delete a list')}: "${API_TOKEN.slice(0, 4)}…"`,
+  '"add a task" asked for no approval': `${opKey('add a task')} asked for no approval`,
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
@@ -204,7 +230,7 @@ async function runSuite(world: SynoikiaWorld, breaks?: string) {
   authorOf(world).output = await new Promise<string>((resolve) => {
     execFile(
       process.execPath,
-      [VITEST, 'run', '--config', RUN_CONFIG, '--root', dir],
+      [VITEST, 'run', '--config', RUN_CONFIG, '--root', dir, ...(fault.args ?? [])],
       { env: { ...env, SYNOIKIA_COMPLIANCE_PLUGIN: dir, NO_COLOR: '1' }, maxBuffer: 16 * 1024 * 1024 },
       (_err, stdout, stderr) => resolve(`${stdout}\n${stderr}`),
     );
