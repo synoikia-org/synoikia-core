@@ -236,3 +236,35 @@ export default defineConfig({
     world.must(process.execPath, [VITEST, 'run', '--root', dir, '--config', world.file('vitest.features.mts')], dir);
   },
 );
+
+Then(
+  'the compliance suite of core certifies {string} {word} for production',
+  (world: PluginAuthorWorld, id: string, version: string) => {
+    const dir = world.file(`plugins/${id}`);
+    world.must('synoikia-plugin', ['build', '--conditions', 'synoikia-source'], dir);
+    // The plugin's vitest.config.ts, with core and the plugin-files loader taken from this checkout.
+    writeFileSync(
+      world.file('vitest.compliance.mts'),
+      `import { defineConfig, mergeConfig } from 'vitest/config';
+import { complianceConfig } from ${JSON.stringify(path.join(PACKAGE_DIR, '../core/src/testing/compliance/index.ts'))};
+import { pluginFiles } from ${JSON.stringify(path.join(PACKAGE_DIR, 'src/vitest.ts'))};
+const conditions = ['synoikia-source', 'module', 'node', 'development|production'];
+export default mergeConfig(
+  defineConfig({ plugins: [pluginFiles()], resolve: { conditions }, ssr: { resolve: { conditions } } }),
+  complianceConfig({ pluginDir: ${JSON.stringify(dir)} }),
+);
+`,
+    );
+    const r = world.run(
+      process.execPath,
+      [VITEST, 'run', '--root', dir, '--config', world.file('vitest.compliance.mts')],
+      {
+        cwd: dir,
+        env: { NO_COLOR: '1' },
+      },
+    );
+    const name = (JSON.parse(world.read(`plugins/${id}/manifest.json`)) as { name: string }).name;
+    const output = `${r.stdout}\n${r.stderr}`;
+    expect(output, output).toContain(`${name} ${version} is fit for production.`);
+  },
+);
