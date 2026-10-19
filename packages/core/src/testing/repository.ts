@@ -72,7 +72,7 @@ export async function verifyPluginRepository(opts: VerifyRepositoryOptions): Pro
 }
 
 /** Starts an installed bundle as core does and asks it to shut down (no `init`, so no upstream). */
-async function startsAndAnswers(dir: string, entry: string, label: string) {
+export async function startsAndAnswers(dir: string, entry: string, label: string) {
   const proc = new PluginProcess({ dir, entry, instanceId: 'repository-check', defaultTimeoutMs: 10_000 });
   const stderr: string[] = [];
   proc.on('log', (level, message) => level === 'error' && stderr.push(message));
