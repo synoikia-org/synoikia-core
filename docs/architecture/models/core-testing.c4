@@ -1,16 +1,16 @@
 model {
   extend synoikia.coreTesting {
     complianceSuite = component 'Compliance suite' {
-      technology 'testing/compliance/*.feature'
+      technology 'testing/compliance/suite/*.feature'
       description 'The feature files that state each rule of core a plugin must keep for production.'
     }
     complianceSteps = component 'Compliance steps' {
-      technology 'testing/compliance/steps'
+      technology 'testing/compliance/steps.ts'
       description 'The step definitions and the World that the compliance suite and the own feature files of a plugin share.'
     }
     complianceProject = component 'Compliance project' {
-      technology 'testing/compliance/project.ts'
-      description 'The vitest project that runs the compliance suite and the own feature files of a plugin.'
+      technology 'testing/compliance/config.ts'
+      description 'The vitest configuration that runs the compliance suite, the own feature files of a plugin and the verdict reporter.'
     }
     profileLoader = component 'Profile loader' {
       technology 'testing/compliance/profile.ts, zod'
