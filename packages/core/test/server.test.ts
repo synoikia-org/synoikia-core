@@ -41,43 +41,6 @@ afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-describe('listeners', () => {
-  it('bind two different ports', () => {
-    expect(servers.mcp.port).not.toBe(servers.admin.port);
-  });
-
-  it.each([
-    ['mcp', () => mcp],
-    ['admin', () => admin],
-  ])('%s serves /healthz', async (_name, base) => {
-    const res = await fetch(`${base()}/healthz`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'ok' });
-  });
-});
-
-describe('port separation', () => {
-  it('does not expose the Admin API or auth on the MCP port', async () => {
-    for (const p of ['/api/session', '/api/instances', '/auth/login']) {
-      const res = await fetch(`${mcp}${p}`, { method: p.startsWith('/auth') ? 'POST' : 'GET' });
-      expect(res.status, p).toBe(404);
-    }
-  });
-
-  it('does not expose MCP endpoints or OAuth on the admin port', async () => {
-    const post = await fetch(`${admin}/acme`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
-    });
-    expect(post.status).toBe(404);
-    for (const p of ['/.well-known/oauth-authorization-server', '/oauth/token']) {
-      const res = await fetch(`${admin}${p}`, { method: p.startsWith('/oauth') ? 'POST' : 'GET' });
-      expect(res.status, p).toBe(404);
-    }
-  });
-});
-
 describe('mcp listener', () => {
   it('answers an unknown slug like any endpoint that needs credentials (review L16)', async () => {
     const res = await fetch(`${mcp}/nope`, { method: 'POST' });

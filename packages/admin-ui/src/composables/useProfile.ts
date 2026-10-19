@@ -55,3 +55,10 @@ export function useConfirmTotp() {
     http.post<{ recoveryCodes: string[] }>('/api/profile/totp/confirm', { code }),
   );
 }
+
+// Like enrollment: the profile refreshes once the person saved the new codes.
+export function useRotateRecoveryCodes() {
+  return useApiMutation((code: string) =>
+    http.post<{ recoveryCodes: string[] }>('/api/profile/totp/recovery-codes', { code }),
+  );
+}

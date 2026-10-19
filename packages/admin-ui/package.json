@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit && vue-tsc -p features/tsconfig.json --noEmit",
+    "test": "vitest run --project unit",
+    "test:features": "vitest run --project features"
   },
   "dependencies": {
     "@fontsource/fraunces": "^5.3.0",
@@ -19,9 +20,12 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
+    "@synoikia/core": "workspace:*",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^30.1.1",
+    "playwright": "1.56.1",
+    "quickpickle": "1.11.2",
     "vite": "^8.3.1",
     "vue-tsc": "^3.3.11"
   }

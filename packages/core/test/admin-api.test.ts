@@ -2,8 +2,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { base32Decode, currentStep, totpAt } from '../src/auth/totp.js';
-import { signPayload } from '../src/auth/tokens.js';
 import { writeAudit } from '../src/audit.js';
 import { applyRegistrySync } from '../src/catalog/registry.js';
 import {
@@ -48,121 +46,6 @@ async function signedIn(t: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe('setup, login and sessions', () => {
-  it('creates the first account once and signs it in', async () => {
-    const t = await setup();
-    const b = await t.client();
-    expect(await (await b.get('/api/session')).json()).toMatchObject({
-      authenticated: false,
-      setupRequired: true,
-      localLoginEnabled: true,
-    });
-    expect((await b.post('/api/setup', { username: 'admin', password: 'short' })).status).toBe(400);
-    expect((await b.post('/api/setup', { username: 'admin', password: PASSWORD })).status).toBe(200);
-    expect(await (await b.get('/api/session')).json()).toMatchObject({
-      authenticated: true,
-      user: { username: 'admin' },
-    });
-    expect((await (await t.client()).post('/api/setup', { username: 'x', password: PASSWORD })).status).toBe(409);
-  });
-
-  it('requires the CSRF token and a same-origin Origin on state-changing requests', async () => {
-    const t = await setup();
-    const b = await t.client();
-    expect(
-      (await b.post('/api/setup', { username: 'admin', password: PASSWORD }, { 'x-csrf-token': 'nope' })).status,
-    ).toBe(403);
-    const noCsrf = browser(t.app, { csrf: false });
-    await noCsrf.init();
-    expect((await noCsrf.post('/api/setup', { username: 'admin', password: PASSWORD })).status).toBe(403);
-    expect(
-      (await b.post('/api/setup', { username: 'admin', password: PASSWORD }, { origin: 'https://evil.example' }))
-        .status,
-    ).toBe(403);
-    expect(
-      (await b.post('/api/setup', { username: 'admin', password: PASSWORD }, { origin: 'http://localhost' })).status,
-    ).toBe(200);
-  });
-
-  it('logs in and out, and locks a username after repeated failures', async () => {
-    const t = await setup();
-    await signedIn(t);
-    const b = await t.client();
-    expect((await b.get('/api/instances')).status).toBe(401);
-    expect((await b.post('/auth/login', { username: 'admin', password: 'wrong password!' })).status).toBe(401);
-    expect(await (await b.post('/auth/login', { username: 'admin', password: PASSWORD })).json()).toMatchObject({
-      status: 'ok',
-    });
-    expect((await b.get('/api/instances')).status).toBe(200);
-    await b.post('/auth/logout');
-    expect((await b.get('/api/instances')).status).toBe(401);
-
-    for (let i = 0; i < 5; i++) await b.post('/auth/login', { username: 'admin', password: 'wrong password!' });
-    const locked = await b.post('/auth/login', { username: 'admin', password: PASSWORD });
-    expect(locked.status).toBe(429);
-    expect(await locked.json()).toMatchObject({ error: 'locked' });
-  });
-
-  it('adds a TOTP step after enrollment and blocks code replay', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const { secret } = (await (await b.post('/api/profile/totp/begin')).json()) as { secret: string };
-    expect(base32Decode(secret)).toHaveLength(20);
-    const step = currentStep();
-    const confirm = await b.post('/api/profile/totp/confirm', { code: totpAt(secret, step) });
-    expect(((await confirm.json()) as { recoveryCodes: string[] }).recoveryCodes).toHaveLength(10);
-    await b.post('/auth/logout');
-
-    expect(await (await b.post('/auth/login', { username: 'admin', password: PASSWORD })).json()).toEqual({
-      status: 'totp_required',
-    });
-    expect((await b.get('/api/instances')).status).toBe(401);
-    expect((await b.post('/auth/totp', { code: totpAt(secret, step) })).status).toBe(401); // replay of the enrollment code
-    expect((await b.post('/auth/totp', { code: totpAt(secret, step + 1) })).status).toBe(200);
-    expect((await b.get('/api/instances')).status).toBe(200);
-  });
-
-  it('forces TOTP enrollment when required, allowing only enrollment routes', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    expect((await b.put('/api/settings/security', { requireTotp: true })).status).toBe(200);
-    expect(await (await b.get('/api/session')).json()).toMatchObject({ mustEnrollTotp: true });
-    expect(await (await b.get('/api/instances')).json()).toMatchObject({ error: 'totp_enrollment_required' });
-    expect((await b.post('/api/profile/totp/begin')).status).toBe(200);
-  });
-
-  it('refuses to disable local login without working SSO', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    expect(await (await b.put('/api/settings/security', { disableLocalLogin: true })).json()).toMatchObject({
-      error: 'oidc_required',
-    });
-  });
-
-  it('keeps single sign-on usable while local login is off (review L18)', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const sso = (await (
-      await b.post('/api/users', { username: 'sso', password: PASSWORD, roleId: 'admin' })
-    ).json()) as { id: string };
-    t.ctx.db
-      .update(users)
-      .set({ oidcIssuer: 'https://idp.example.com', oidcSubject: 'sub-1' })
-      .where(eq(users.id, sso.id))
-      .run();
-    const ssoClient = await t.client();
-    expect((await ssoClient.post('/auth/login', { username: 'sso', password: PASSWORD })).status).toBe(200);
-    updateSettings(t.ctx.db, 'security', { disableLocalLogin: true });
-
-    const refused = { error: 'local_login_disabled' };
-    expect(await (await b.patch(`/api/users/${sso.id}`, { disabled: true })).json()).toMatchObject(refused);
-    expect(await (await b.put('/api/settings/oidc', { enabled: false })).json()).toMatchObject(refused);
-    expect(await (await ssoClient.post('/api/profile/oidc/unlink')).json()).toMatchObject(refused);
-    expect(t.ctx.users.get(sso.id)).toMatchObject({ disabled: false, oidcSubject: 'sub-1' });
-
-    updateSettings(t.ctx.db, 'security', { disableLocalLogin: false });
-    expect((await b.patch(`/api/users/${sso.id}`, { disabled: true })).status).toBe(200);
-  });
-
   it('links an OIDC identity through a same-site hop, since the IdP redirect carries no session cookie', async () => {
     const t = await setup();
     const b = await signedIn(t);
@@ -214,45 +97,6 @@ describe('setup, login and sessions', () => {
     const res = await (await t.client()).get('/auth/oidc/callback?code=c&state=s');
     expect(res.headers.get('location')).toBe('/login?error=wrong_flow');
     expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
-  });
-
-  it('refuses a link token that is tampered, expired or signed for another purpose', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const { user } = (await (await b.get('/api/session')).json()) as { user: { id: string } };
-    const link = { purpose: 'oidc_link', userId: user.id, issuer: 'https://idp.example.com', subject: 'sub-1' };
-    const finish = async (token: string) =>
-      (await b.get(`/auth/oidc/link/finish?t=${encodeURIComponent(token)}`)).headers.get('location');
-    const good = signPayload(t.ctx.keys.state, link, 60_000);
-
-    expect(await finish(`${good}x`)).toBe('/profile?error=session_changed');
-    expect(await finish(signPayload(t.ctx.keys.state, link, -1))).toBe('/profile?error=session_changed');
-    expect(await finish(signPayload(t.ctx.keys.state, { mfaUser: user.id }, 60_000))).toBe(
-      '/profile?error=session_changed',
-    );
-    expect(await finish(signPayload(t.ctx.keys.state, { ...link, purpose: 'other' }, 60_000))).toBe(
-      '/profile?error=session_changed',
-    );
-    expect(t.ctx.users.get(user.id).oidcSubject).toBeNull();
-    expect(await finish(good)).toBe('/profile?linked=1');
-  });
-
-  it('manages users; password changes sign out other sessions', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const created = (await (
-      await b.post('/api/users', { username: 'second', password: PASSWORD, roleId: 'admin' })
-    ).json()) as {
-      id: string;
-    };
-    const other = await t.client();
-    await other.post('/auth/login', { username: 'second', password: PASSWORD });
-    expect((await other.get('/api/instances')).status).toBe(200);
-    await b.patch(`/api/users/${created.id}`, { password: 'a brand new password' });
-    expect((await other.get('/api/instances')).status).toBe(401);
-
-    const me = (await (await b.get('/api/profile')).json()) as { id: string };
-    expect((await b.patch(`/api/users/${me.id}`, { disabled: true })).status).toBe(409);
   });
 });
 
@@ -352,47 +196,6 @@ describe('deleting users', () => {
     expect(csv).toContain(`,user,${id},gone,`);
   });
 
-  it('ends the session grants the user approved, so a new user with the name gets none', async () => {
-    const t = await withVictim();
-    const grant = (createdBy: string, principal: string) =>
-      t.ctx.grants.create({
-        instanceId: 'i1',
-        principal,
-        createdBy,
-        approvalId: 'a1',
-        expiresAt: new Date(Date.now() + 3_600_000),
-      });
-    const bob = await t.add('bob');
-    grant('bob', 'external:bob');
-    grant('admin', 'external:admin');
-    expect((await t.b.patch(`/api/users/${bob}`, { disabled: true })).status).toBe(200);
-    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
-
-    grant('bob', 'external:bob');
-    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: bob });
-    expect((await t.b.del(`/api/users/${bob}`)).status).toBe(204);
-    const again = await t.add('bob');
-    expect(t.ctx.grants.active('i1', 'external:bob')).toBeUndefined();
-    expect(t.ctx.grants.active('i1', 'external:admin')).toBeDefined();
-
-    // Audit rows of the deleted bob and the new bob stay apart.
-    type Row = { actorId: string; actorName: string; actorDeleted: boolean };
-    const rows = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
-    const by = (id: string) => [
-      ...new Set(rows.filter((r) => r.actorId === id).map((r) => [r.actorName, r.actorDeleted].join())),
-    ];
-    expect(by(bob)).toEqual(['bob,true']);
-    expect(by(again)).toEqual([]);
-    writeAudit(t.ctx.db, { kind: 'config', decision: 'probe', actorKind: 'user', actorId: again });
-    const now = ((await (await t.b.get('/api/audit?actor=bob')).json()) as { rows: Row[] }).rows;
-    expect(now.filter((r) => r.actorId === again).map((r) => r.actorDeleted)).toEqual([false]);
-    expect(now.filter((r) => r.actorId === bob).map((r) => r.actorDeleted)).toEqual([true]);
-    const csv = await (await t.b.get('/api/audit/export.csv?decision=probe')).text();
-    expect(csv.split('\n')[0]).toContain(',actorName,actorDeleted,');
-    expect(csv).toContain(`,user,${again},bob,false,`);
-    expect(csv).toContain(`,user,${bob},bob,true,`);
-  });
-
   it('refuses a direct delete while the user still owns a live approval', async () => {
     const t = await withVictim();
     const id = await t.add('gone');
@@ -472,42 +275,6 @@ describe('audit log', () => {
     const csv = (await (await b.get('/api/audit/export.csv?decision=probe_user')).text()).split('\n');
     expect(csv[0]).toContain(',actorKind,actorId,actorName,actorDeleted,decidedBy,');
     expect(csv[1]).toContain(`,user,${admin.id},admin,`);
-  });
-});
-
-describe('approval browsers and session grants', () => {
-  it('lists and signs out approval browsers, and lists and revokes session grants', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const admin = t.ctx.db.select().from(users).get()!;
-    t.ctx.sessions.create(admin.id, 'approval_ui', { idleMs: 60_000, absoluteMs: 60_000 }, { userAgent: 'Firefox' });
-    expect(await (await b.get('/api/profile/approval-sessions')).json()).toEqual([
-      expect.objectContaining({ userAgent: 'Firefox' }),
-    ]);
-    expect(await (await b.post('/api/profile/approval-sessions/revoke', {})).json()).toEqual({ revoked: 1 });
-    expect(await (await b.get('/api/profile/approval-sessions')).json()).toEqual([]);
-    // The admin session itself stays.
-    expect((await b.get('/api/profile')).status).toBe(200);
-    // A TOTP reset signs approval browsers out: their proof was made with the old authenticator.
-    t.ctx.sessions.create(admin.id, 'approval_ui', { idleMs: 60_000, absoluteMs: 60_000 });
-    expect((await b.post(`/api/users/${admin.id}/reset-totp`, {})).status).toBe(200);
-    expect(t.ctx.sessions.listKind(admin.id, 'approval_ui')).toEqual([]);
-
-    const instance = await t.ctx.instances.create({ pluginId: 'echo', slug: 'echo', connection: {} });
-    const grant = t.ctx.grants.create({
-      instanceId: instance.id,
-      principal: 'token:x',
-      client: 'token:Chat',
-      createdBy: 'admin',
-      approvalId: 'a1',
-      expiresAt: new Date(Date.now() + 60_000),
-    });
-    expect(await (await b.get(`/api/instances/${instance.id}/session-grants`)).json()).toEqual([
-      expect.objectContaining({ id: grant.id, client: 'token:Chat', createdBy: 'admin' }),
-    ]);
-    expect((await b.del(`/api/instances/${instance.id}/session-grants/${grant.id}`)).status).toBe(204);
-    expect((await b.del(`/api/instances/${instance.id}/session-grants/${grant.id}`)).status).toBe(404);
-    expect(t.ctx.grants.list()).toEqual([]);
   });
 });
 
@@ -726,104 +493,5 @@ describe('instances and access', () => {
       (await t.b.post('/api/instances', { pluginId: 'echo', slug: 'echo-2', connection: {}, authMode: 'bearer' }))
         .status,
     ).toBe(400);
-  });
-
-  it('refuses client auth settings with no method, or external auth without its provider', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const put = (body: unknown) => b.put('/api/settings/mcp', body);
-    const none = await put({ clientAuth: { bearer: false, oauth: false, external: false } });
-    expect(none.status).toBe(400);
-    expect(await none.json()).toMatchObject({ error: 'invalid_settings' });
-    expect((await put({ clientAuth: { external: true } })).status).toBe(400);
-    expect(
-      (await put({ clientAuth: { external: true }, cfAccess: { teamDomain: 'team.example', aud: '' } })).status,
-    ).toBe(400);
-    expect((await put({ external: { provider: 'other' } })).status).toBe(400);
-    const ok = await put({ clientAuth: { external: true }, cfAccess: { teamDomain: 'team.example', aud: 'tag' } });
-    expect(await ok.json()).toMatchObject({
-      clientAuth: { bearer: true, oauth: true, external: true },
-      external: { provider: 'cloudflare' },
-    });
-    // The provider can't lose its configuration while external auth is on.
-    expect((await put({ cfAccess: { teamDomain: '', aud: '' } })).status).toBe(400);
-    // A partial save keeps the methods and provider fields it leaves out.
-    expect((await put({ clientAuth: { bearer: false } })).status).toBe(200);
-    const partial = await put({ clientAuth: { external: true }, cfAccess: { aud: 'tag-2' } });
-    expect(await partial.json()).toMatchObject({
-      clientAuth: { bearer: false, oauth: true, external: true },
-      cfAccess: { teamDomain: 'team.example', aud: 'tag-2' },
-    });
-    for (const retired of [{ defaultAuthMode: 'bearer' }, { trustedIdentityHeader: 'remote-user' }])
-      expect(await (await put(retired)).json()).toMatchObject({ error: 'invalid_settings' });
-  });
-
-  it('validates the client policy and lists the clients seen at initialize', async () => {
-    const t = await setup();
-    const b = await signedIn(t);
-    const put = (clientPolicy: unknown) => b.put('/api/settings/mcp', { clientPolicy });
-    expect(await (await b.get('/api/settings')).json()).toMatchObject({
-      mcp: { clientPolicy: { mode: 'off', names: [] } },
-    });
-    const saved = await put({ mode: 'allow', names: [' Client-A ', 'client-a', 'other'] });
-    expect(await saved.json()).toMatchObject({ clientPolicy: { mode: 'allow', names: ['Client-A', 'other'] } });
-    expect(await (await put({ mode: 'deny' })).json()).toMatchObject({
-      clientPolicy: { mode: 'deny', names: ['Client-A', 'other'] },
-    });
-    for (const bad of [
-      { mode: 'maybe' },
-      { mode: 'allow', names: [] },
-      { names: [''] },
-      { names: ['x'.repeat(101)] },
-      { names: Array.from({ length: 51 }, (_, i) => `c${i}`) },
-    ])
-      expect(await (await put(bad)).json()).toMatchObject({ error: 'invalid_settings' });
-
-    t.ctx.seenClients.record('client-a', '1.0');
-    t.ctx.seenClients.record('client-b', '2.0');
-    t.ctx.seenClients.record('CLIENT-A', '1.1');
-    for (let i = 0; i < 60; i++) t.ctx.seenClients.record(`bulk-${i}`);
-    const seen = (await (await b.get('/api/settings/mcp/clients-seen')).json()) as { name: string; version: string }[];
-    expect(seen).toHaveLength(50);
-    expect(seen[0]).toMatchObject({ name: 'bulk-59', version: '' });
-    t.ctx.seenClients.record('CLIENT-A', '1.1');
-    const latest = (await (await b.get('/api/settings/mcp/clients-seen')).json()) as { name: string }[];
-    expect(latest[0]).toMatchObject({ name: 'CLIENT-A', version: '1.1' });
-    expect(latest.filter((c) => c.name.toLowerCase() === 'client-a')).toHaveLength(1);
-    expect((await (await t.client()).get('/api/settings/mcp/clients-seen')).status).toBe(401);
-  });
-
-  it('issues MCP bearer tokens once and never lists their value', async () => {
-    const t = await withInstance();
-    const created = (await (await t.b.post('/api/tokens', { name: 'claude code', scope: [t.id] })).json()) as {
-      id: string;
-      token: string;
-    };
-    expect(created.token).toMatch(/^syn_/);
-    const listed = await (await t.b.get('/api/tokens')).text();
-    expect(listed).not.toContain(created.token);
-    expect(t.ctx.tokens.verify(created.token)?.id).toBe(created.id);
-    expect((await t.b.post('/api/tokens', { name: 'x', scope: ['not-an-instance'] })).status).toBe(400);
-    expect((await t.b.del(`/api/tokens/${created.id}`)).status).toBe(204);
-    expect(t.ctx.tokens.verify(created.token)).toBeNull();
-  });
-
-  it('deletes an endpoint only with the typed slug', async () => {
-    const t = await withInstance();
-    expect((await t.b.del(`/api/instances/${t.id}`, { confirm: 'nope' })).status).toBe(409);
-    expect((await t.b.del(`/api/instances/${t.id}`, { confirm: 'echo' })).status).toBe(204);
-    expect(await (await t.b.get('/api/instances')).json()).toEqual([]);
-  });
-
-  it('streams live events over SSE', async () => {
-    const t = await withInstance();
-    const res = await t.b.get('/api/events');
-    expect(res.headers.get('content-type')).toContain('text/event-stream');
-    const reader = res.body!.getReader();
-    t.ctx.events.emit('sync.failed', { instanceId: t.id, slug: 'echo', error: 'boom' });
-    let text = '';
-    while (!text.includes('sync.failed')) text += new TextDecoder().decode((await reader.read()).value);
-    expect(text).toContain('"error":"boom"');
-    await reader.cancel();
   });
 });

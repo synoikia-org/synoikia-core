@@ -144,7 +144,7 @@ async function authenticateExternal(ctx: AppContext, c: Context, instanceId: str
   const provider = externalProvider(settings);
   if (!provider.configured(settings))
     return refuse(401, 'unauthorized', 'Authentication required', `${provider.name} is not configured`);
-  const found = await provider.identify(c.req.raw.headers, settings);
+  const found = await provider.identify(c.req.raw.headers, settings, ctx.externalKeys);
   // Every call belongs to a user (design §6.4): a caller the provider didn't name is refused.
   if (!found.ok) return refuse(401, 'unauthorized', `${provider.name} did not identify the caller`, found.reason);
   const who = found.identity;

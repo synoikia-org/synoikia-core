@@ -146,7 +146,7 @@ export interface LevelView {
 }
 
 /** The levels one role (and, with `userId`, one user) has on an endpoint. `reachableOnly` leaves out
- * what the user can't call: a non-admin sees only that. */
+ * what the role keeps from the user: a non-admin sees only the rest. */
 export function levelView(
   db: DbLike,
   instanceId: string,
@@ -175,6 +175,9 @@ export function levelView(
     const cap = caps?.(op);
     const roleMax = cap?.role ? capLevel(input, endpointLevel, cap.role) : cap ? 'none' : endpointLevel;
     const access = effectiveAccess(input, group, principal, cap);
+    // Closed by the user's own level alone: shown, so the user can open it again (§6.4).
+    const ownClosed =
+      !access.reachable && !!cap?.own && effectiveAccess(input, group, principal, { role: cap.role }).reachable;
     return {
       id: op.id,
       key: op.key,
@@ -191,10 +194,10 @@ export function levelView(
       level: access.reachable ? access.level : 'none',
       reachable: access.reachable,
       mode: access.reachable ? access.mode : null,
-      reason: access.reachable ? null : access.reason,
+      reason: access.reachable ? null : ownClosed ? 'own_level' : access.reason,
     };
   });
-  const visible = opts.reachableOnly ? opRows.filter((o) => o.reachable) : opRows;
+  const visible = opts.reachableOnly ? opRows.filter((o) => o.reachable || o.reason === 'own_level') : opRows;
   const shownGroups = new Set(visible.map((o) => o.group));
   const groupLayer = (g: GroupRow, pick: 'role' | 'own') => {
     const cap = caps?.({ id: '', groupId: g.id });

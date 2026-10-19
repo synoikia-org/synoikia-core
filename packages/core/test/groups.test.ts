@@ -15,7 +15,7 @@ import { applyCatalogSync } from '../src/catalog/sync.js';
 import { createRule, updateRule } from '../src/catalog/rules.js';
 import { evaluatePreApproval } from '../src/gate/preapproval.js';
 import { auditLog, operationGroupAliases, operations, preApprovalRules } from '../src/db/schema.js';
-import { ConflictError, NotFoundError, ValidationError } from '../src/errors.js';
+import { NotFoundError, ValidationError } from '../src/errors.js';
 import { catalog, op, seedInstance } from './helpers.js';
 
 function setup() {
@@ -37,23 +37,6 @@ function setup() {
 }
 
 describe('setGroupLevel', () => {
-  it('raises to Write without a confirmation, acknowledging the writes it lets run', () => {
-    const { db, instanceId } = setup();
-    const group = setGroupLevel(db, instanceId, 'app', 'write', { actor: { userId: undefined } });
-    expect(group).toMatchObject({
-      level: 'write',
-      counts: { read: 1, write: 2, locked: 1, pendingReview: 0, overridden: 0 },
-    });
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toEqual({ reachable: true, mode: 'auto', level: 'write' });
-    expect(resolveAccess(db, instanceId, 'app.delete')).toEqual({ reachable: false, reason: 'locked_not_opted_in' });
-    const event = db
-      .select()
-      .from(auditLog)
-      .all()
-      .find((a) => a.decision === 'group_level_changed');
-    expect(event?.detail).toMatchObject({ to: 'write', acknowledged: ['app.stop', 'app.upgrade'] });
-  });
-
   it('lowers levels without acknowledgement and audits every change', () => {
     const { db, instanceId } = setup();
     setGroupLevel(db, instanceId, 'app', 'none');
@@ -153,57 +136,6 @@ describe('listOperations and updateGroup', () => {
 });
 
 describe('updateOperation', () => {
-  it('gives an operation its own level, which wins over its group until the group is set again', () => {
-    const { db, instanceId, id } = setup();
-    setGroupLevel(db, instanceId, 'app', 'write');
-    updateOperation(db, instanceId, id('app.stop'), { level: 'none' });
-    expect(resolveAccess(db, instanceId, 'app.stop')).toEqual({ reachable: false, reason: 'level_none' });
-    expect(listGroups(db, instanceId).find((g) => g.key === 'app')?.counts.overridden).toBe(1);
-
-    // Upward too: one write can run without asking while the rest of its group asks.
-    setGroupLevel(db, instanceId, 'app', 'ask');
-    updateOperation(db, instanceId, id('app.stop'), { level: 'write' });
-    expect(resolveAccess(db, instanceId, 'app.stop')).toEqual({ reachable: true, mode: 'auto', level: 'write' });
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toMatchObject({ mode: 'approve', level: 'ask' });
-
-    updateOperation(db, instanceId, id('app.stop'), { level: null });
-    expect(resolveAccess(db, instanceId, 'app.stop')).toMatchObject({ mode: 'approve', level: 'ask' });
-
-    // Setting the group's level again resets every operation in it to follow, and says which.
-    updateOperation(db, instanceId, id('app.stop'), { level: 'none' });
-    updateOperation(db, instanceId, id('app.query'), { level: 'ask' });
-    setGroupLevel(db, instanceId, 'app', 'ask');
-    expect(resolveAccess(db, instanceId, 'app.stop')).toMatchObject({ mode: 'approve', level: 'ask' });
-    expect(resolveAccess(db, instanceId, 'app.query')).toMatchObject({ mode: 'run', level: 'read' });
-    expect(listGroups(db, instanceId).find((g) => g.key === 'app')?.counts.overridden).toBe(0);
-    const last = db
-      .select()
-      .from(auditLog)
-      .all()
-      .filter((a) => a.decision === 'group_level_changed')
-      .at(-1);
-    expect(last?.detail).toMatchObject({ from: 'ask', to: 'ask', reset: ['app.query', 'app.stop'] });
-  });
-
-  it('makes a read with its own Ask need approval while its group lets other reads run', () => {
-    const { db, instanceId, id } = setup();
-    updateOperation(db, instanceId, id('app.query'), { level: 'ask' });
-    expect(resolveAccess(db, instanceId, 'app.query')).toEqual({ reachable: true, mode: 'approve', level: 'ask' });
-    expect(resolveAccess(db, instanceId, 'store.query')).toEqual({ reachable: true, mode: 'run', level: 'read' });
-  });
-
-  it('opens a locked operation only with its own Ask, and never lets it auto-run', () => {
-    const { db, instanceId, id } = setup();
-    setGroupLevel(db, instanceId, 'app', 'write');
-    expect(resolveAccess(db, instanceId, 'app.delete')).toEqual({ reachable: false, reason: 'locked_not_opted_in' });
-    expect(() => updateOperation(db, instanceId, id('app.delete'), { level: 'write' })).toThrow(ConflictError);
-    updateOperation(db, instanceId, id('app.delete'), { level: 'ask' });
-    expect(resolveAccess(db, instanceId, 'app.delete')).toEqual({ reachable: true, mode: 'approve', level: 'ask' });
-    // Setting the group again closes it: it needs its own Ask again.
-    setGroupLevel(db, instanceId, 'app', 'read');
-    expect(resolveAccess(db, instanceId, 'app.delete')).toEqual({ reachable: false, reason: 'locked_not_opted_in' });
-  });
-
   it('only accepts the levels an operation’s kind allows, and has no classification override', () => {
     const { db, instanceId, id } = setup();
     expect(() => updateOperation(db, instanceId, id('app.query'), { level: 'write' })).toThrow(
@@ -221,34 +153,6 @@ describe('updateOperation', () => {
     updateOperation(db, instanceId, id('app.query'), { classification: 'write' } as never);
     expect(db.select().from(operations).where(eq(operations.key, 'app.query')).get()?.classification).toBe('read');
   });
-
-  it('treats its own Write level as acknowledgement', () => {
-    const { db, instanceId, id } = setup();
-    updateOperation(db, instanceId, id('store.volume.create'), { level: 'write' });
-    expect(resolveAccess(db, instanceId, 'store.volume.create')).toMatchObject({ mode: 'auto' });
-  });
-
-  it('keeps writes found by a later sync off until an admin opens them', () => {
-    const { db, instanceId } = setup();
-    setGroupLevel(db, instanceId, 'app', 'write');
-    applyCatalogSync(
-      db,
-      instanceId,
-      catalog(
-        op('app.query'),
-        op('app.upgrade'),
-        op('app.stop'),
-        op('app.delete', { locked: true }),
-        op('app.redeploy'),
-        op('store.query'),
-        op('store.volume.create'),
-      ),
-    );
-    expect(resolveAccess(db, instanceId, 'app.redeploy')).toEqual({ reachable: false, reason: 'level_none' });
-    // Setting the group to Write again resets it to follow, and acknowledges it with the rest.
-    setGroupLevel(db, instanceId, 'app', 'write');
-    expect(resolveAccess(db, instanceId, 'app.redeploy')).toMatchObject({ mode: 'auto' });
-  });
 });
 
 describe('re-sync of changed operations (review M14)', () => {
@@ -262,32 +166,6 @@ describe('re-sync of changed operations (review M14)', () => {
       op('store.query'),
       ...(drop ? [] : [op('store.volume.create')]),
     );
-
-  it('asks again when an acknowledged write changes or returns from stale, not on a plain re-sync', () => {
-    const { db, instanceId, id } = setup();
-    applyCatalogSync(db, instanceId, all());
-    setGroupLevel(db, instanceId, 'app', 'write');
-    setGroupLevel(db, instanceId, 'store.volume', 'write');
-
-    expect(applyCatalogSync(db, instanceId, all()).pendingReview).toEqual([]);
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toMatchObject({ mode: 'auto' });
-
-    const changed = applyCatalogSync(db, instanceId, all({ paramsSchema: { type: 'object', required: ['force'] } }));
-    expect(changed.pendingReview).toEqual(['app.upgrade']);
-    expect(resolveAccess(db, instanceId, 'app.upgrade')).toMatchObject({ mode: 'approve', pendingReview: true });
-    expect(resolveAccess(db, instanceId, 'app.stop')).toMatchObject({ mode: 'auto' });
-
-    updateOperation(db, instanceId, id('app.upgrade'), { acknowledged: true });
-    expect(applyCatalogSync(db, instanceId, all({ kind: 'endpoint' })).pendingReview).toEqual(['app.upgrade']);
-
-    applyCatalogSync(db, instanceId, all({ kind: 'endpoint' }, true));
-    const back = applyCatalogSync(db, instanceId, all({ kind: 'endpoint' }));
-    expect(back.pendingReview).toContain('store.volume.create');
-    expect(resolveAccess(db, instanceId, 'store.volume.create')).toMatchObject({
-      mode: 'approve',
-      pendingReview: true,
-    });
-  });
 
   it('lets an admin turn the attestation requirement off, and remembers it across syncs (review L13)', () => {
     const { db, instanceId, id } = setup();
@@ -464,19 +342,6 @@ describe('rules on $targets (design §3.4)', () => {
 });
 
 describe('regrouping', () => {
-  it('merges into the lowest level, keeps aliases, and survives re-sync', () => {
-    const { db, instanceId } = setup();
-    setGroupLevel(db, instanceId, 'store', 'none');
-    setGroupLevel(db, instanceId, 'store.volume', 'write');
-
-    const merged = mergeGroups(db, instanceId, { from: ['store.volume'], into: 'store', label: 'Storage' });
-    expect(merged).toMatchObject({ key: 'store', label: 'Storage', level: 'none' });
-    expect(db.select().from(operationGroupAliases).all()).toEqual([
-      { instanceId, pluginGroup: 'store.volume', groupKey: 'store' },
-    ]);
-    expect(listGroups(db, instanceId).map((g) => g.key)).toEqual(['app', 'store']);
-  });
-
   it('merges into a brand-new group and repoints existing aliases', () => {
     const { db, instanceId } = setup();
     mergeGroups(db, instanceId, { from: ['store.volume'], into: 'store' });

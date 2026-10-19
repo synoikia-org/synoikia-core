@@ -18,17 +18,35 @@ export type ApprovalChannel = 'form' | 'url' | 'link' | 'card';
 /** How the approval page knew the approver (design §5.3). */
 export type ApproverSignIn = 'session' | 'external';
 
-export interface Decision {
+interface DecisionBase {
   outcome: DecisionOutcome;
   via?: DecisionChannel;
   channel?: ApprovalChannel;
   decidedBy?: string;
+  /** The approver's user id, for decisions on the approval page. */
+  decidedById?: string;
   /** Set for decisions on the approval page. */
   signIn?: ApproverSignIn;
   reason?: string;
-  /** The approver also granted this client the endpoint's Ask operations until then (§5.8). */
-  sessionGrantUntil?: Date;
 }
+
+/** An approval that also grants this client the endpoint's Ask operations until `sessionGrantUntil` (§5.8). It
+ * names its approver, so the grant ends with that user. */
+interface GrantingDecision extends DecisionBase {
+  decidedBy: string;
+  decidedById: string;
+  sessionGrantUntil: Date;
+}
+
+export type Decision = (DecisionBase & { sessionGrantUntil?: undefined }) | GrantingDecision;
+
+/** The approval page's input: a session grant needs the approver's user id. */
+export type PageDecisionInput = {
+  approve: boolean;
+  confirm?: string;
+  decidedBy: string;
+  signIn?: ApproverSignIn;
+} & ({ decidedById?: string; sessionGrantUntil?: undefined } | { decidedById: string; sessionGrantUntil?: Date });
 
 export interface UrlPromptRequest {
   approvalId: string;
@@ -318,21 +336,22 @@ export class ApprovalService {
   }
 
   /** The approval page's decision. A wrong typed confirmation is rejected so the approver can retry. */
-  decide(
-    id: string,
-    input: { approve: boolean; confirm?: string; decidedBy: string; signIn?: ApproverSignIn; sessionGrantUntil?: Date },
-  ): Decision {
+  decide(id: string, input: PageDecisionInput): Decision {
     const live = this.open(id);
     if (input.approve && live.row.confirmLiteral && input.confirm !== live.row.confirmLiteral) {
       throw new ValidationError('confirmation_mismatch', `Type "${live.row.confirmLiteral}" exactly to approve`);
     }
-    const decision: Decision = {
+    const base = {
       outcome: input.approve ? 'approved' : 'denied',
       via: 'url',
       decidedBy: input.decidedBy,
+      ...(input.decidedById ? { decidedById: input.decidedById } : {}),
       ...(input.signIn ? { signIn: input.signIn } : {}),
-      ...(input.approve && input.sessionGrantUntil ? { sessionGrantUntil: input.sessionGrantUntil } : {}),
-    };
+    } as const;
+    const decision: Decision =
+      input.approve && input.sessionGrantUntil
+        ? { ...base, decidedById: input.decidedById, sessionGrantUntil: input.sessionGrantUntil }
+        : base;
     live.settle(decision);
     return decision;
   }

@@ -31,10 +31,13 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 **Sync failure.**
 
 - Core continues to serve the last catalog. It sets `last_sync_status = error` and sends `sync.failed`.
+- "Sync now" answers `502 sync_failed` with the redacted reason that `last_sync_status` shows. A plugin that is not running or does not answer in time gives `503 plugin_unavailable`.
 - An exception: a bundle version that is not the recorded one (see above).
 - An instance without any synced catalog stays in `error`, and its endpoint returns 503.
 
-**Repository index refresh.** Each day (§4.2). It shows available updates and key changes. It never installs anything.
+Scenarios: [`@id:catalog-sync-schedule`](../../packages/core/features/maintenance/catalog-sync-schedule.feature), [`@id:catalog-sync`](../../packages/core/features/instances/catalog-sync.feature), [`@id:catalog-access-on-sync`](../../packages/core/features/access/catalog-access-on-sync.feature).
+
+**Repository index refresh.** Each day (§4.2). It shows available updates and key changes. It never installs anything. Scenarios: [`@id:plugin-repositories`](../../packages/core/features/plugins/plugin-repositories.feature).
 
 **Housekeeping** (each hour, idempotent):
 
@@ -42,3 +45,5 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 - Delete expired sessions, OAuth codes, OAuth tokens and approval-page tokens.
 - Delete decided approvals older than 7 days. The audit log keeps their record.
 - Delete `audit_log` rows older than `audit.retentionDays`. The default is 90 days, and the minimum is 7. When the admin clears it, core keeps the audit log forever. Core audits a change to this setting and each purge.
+
+Scenarios: [`@id:housekeeping`](../../packages/core/features/maintenance/housekeeping.feature).

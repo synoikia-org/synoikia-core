@@ -6,7 +6,7 @@ import { writeAudit } from '../../audit.js';
 import type { SessionLimits } from '../../auth/sessions.js';
 import { randomToken, safeEqual, signPayload, verifyPayload } from '../../auth/tokens.js';
 import type { UserRow } from '../../auth/users.js';
-import { ConflictError } from '../../errors.js';
+import { ConflictError, ServiceError } from '../../errors.js';
 import { getSettings } from '../../settings.js';
 import { clientIp, isSecure, readJson, requestOrigin } from '../common.js';
 
@@ -125,6 +125,37 @@ function adminCallbackUrl(c: Context, ctx: AppContext): string {
   return new URL('/auth/oidc/callback', base).toString();
 }
 
+const lockedAnswer = (lockedFor: number) => ({
+  error: 'locked',
+  message: `Too many failed attempts; try again in ${Math.ceil(lockedFor / 60)} min`,
+});
+
+/** A wrong second-factor code counts toward the name's lock (§6.1), announces a new lock and is audited. */
+function codeFailed(ctx: AppContext, username: string, detail: Record<string, unknown> = {}) {
+  if (ctx.throttle.fail(username)) ctx.events.emit('auth.lockout', { username });
+  writeAudit(ctx.db, { kind: 'auth', decision: 'totp_failed', actorKind: 'system', detail: { username, ...detail } });
+}
+
+/** A profile change that needs a current code: the sign-in lock of the name covers it too (§6.1). */
+async function withProfileCode<T>(
+  c: Context<AdminEnv>,
+  ctx: AppContext,
+  verify: (user: UserRow, code: string) => T | null | false,
+  done: (result: T) => Response,
+): Promise<Response> {
+  const { code } = await readJson(c, z.object({ code: z.string().max(32) }));
+  const user = c.get('user');
+  const lockedFor = ctx.throttle.lockedFor(user.username);
+  if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
+  const result = verify(user, code);
+  if (!result) {
+    codeFailed(ctx, user.username, { route: c.req.path });
+    return c.json({ error: 'invalid_code', message: 'Invalid code' }, 401);
+  }
+  ctx.throttle.succeed(user.username);
+  return done(result);
+}
+
 const safeReturnTo = (v: string | undefined) => (v && v.startsWith('/') && !v.startsWith('//') ? v : '/');
 
 export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
@@ -192,12 +223,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!localLoginEnabled(ctx)) return c.json({ error: 'local_login_disabled', message: 'Use single sign-on' }, 403);
     const body = await readJson(c, LoginBody);
     const lockedFor = ctx.throttle.lockedFor(body.username);
-    if (lockedFor > 0) {
-      return c.json(
-        { error: 'locked', message: `Too many failed attempts; try again in ${Math.ceil(lockedFor / 60)} min` },
-        429,
-      );
-    }
+    if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
     const user = await ctx.users.verifyPassword(body.username, body.password);
     if (!user) {
       const locked = ctx.throttle.fail(body.username);
@@ -211,7 +237,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       return c.json({ error: 'invalid_credentials', message: 'Invalid username or password' }, 401);
     }
     if (user.totpEnabled) {
-      setCookie(c, MFA_COOKIE, signPayload(ctx.keys.state, { mfaUser: user.id }, MFA_TTL_MS), {
+      setCookie(c, MFA_COOKIE, signPayload(ctx.keys.state, { mfaUser: user.id }, MFA_TTL_MS, ctx.now().getTime()), {
         httpOnly: true,
         secure: isSecure(c, ctx.config.TRUST_PROXY),
         sameSite: 'Strict',
@@ -226,21 +252,17 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   });
 
   app.post('/auth/totp', async (c) => {
+    if (!ctx.throttle.allowIp(clientIp(c, ctx.config.TRUST_PROXY)))
+      return c.json({ error: 'rate_limited', message: 'Too many attempts; try again later' }, 429);
     const { code } = await readJson(c, z.object({ code: z.string().min(1).max(32) }));
-    const pending = verifyPayload<{ mfaUser: string }>(ctx.keys.state, getCookie(c, MFA_COOKIE));
+    const pending = verifyPayload<{ mfaUser: string }>(ctx.keys.state, getCookie(c, MFA_COOKIE), ctx.now().getTime());
     if (!pending) return c.json({ error: 'mfa_expired', message: 'Sign in again' }, 401);
     const user = ctx.users.get(pending.mfaUser);
     if (ctx.throttle.lockedFor(user.username) > 0)
       return c.json({ error: 'locked', message: 'Too many failed attempts' }, 429);
     const factor = ctx.users.verifySecondFactor(user.id, code);
     if (!factor) {
-      if (ctx.throttle.fail(user.username)) ctx.events.emit('auth.lockout', { username: user.username });
-      writeAudit(ctx.db, {
-        kind: 'auth',
-        decision: 'totp_failed',
-        actorKind: 'system',
-        detail: { username: user.username },
-      });
+      codeFailed(ctx, user.username);
       return c.json({ error: 'invalid_code', message: 'Invalid code' }, 401);
     }
     deleteCookie(c, MFA_COOKIE, { path: '/auth' });
@@ -314,6 +336,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         ctx.keys.state,
         { purpose: 'oidc_link', userId: state.userId, issuer: identity.issuer, subject: identity.subject },
         LINK_TTL_MS,
+        ctx.now().getTime(),
       );
       const next = `/auth/oidc/link/finish?t=${encodeURIComponent(token)}`;
       c.header('Cache-Control', 'no-store');
@@ -341,7 +364,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.get('/auth/oidc/link/finish', (c) => {
     const session = ctx.sessions.validate(readSessionCookie(c), 'admin', sessionLimits(ctx));
     if (!session) return c.redirect('/login?error=session_changed');
-    const link = LinkTokenSchema.safeParse(verifyPayload(ctx.keys.state, c.req.query('t'))).data;
+    const link = LinkTokenSchema.safeParse(verifyPayload(ctx.keys.state, c.req.query('t'), ctx.now().getTime())).data;
     if (!link || link.userId !== session.user.id) return c.redirect('/profile?error=session_changed');
     try {
       ctx.users.linkOidc(session.user.id, link.issuer, link.subject);
@@ -354,15 +377,32 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
 }
 
 export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
-  app.get('/api/profile', (c) => c.json(ctx.users.toPublic(ctx.users.get(c.get('user').id))));
+  app.get('/api/profile', (c) => c.json(ctx.users.profile(c.get('user').id)));
 
   app.post('/api/profile/password', async (c) => {
     const body = await readJson(c, z.object({ currentPassword: z.string().optional(), newPassword: z.string() }));
     const user = c.get('user');
-    await ctx.users.setPassword(user.id, body.newPassword, {
-      currentPassword: body.currentPassword ?? '',
-      actorId: user.id,
-    });
+    // The current password is a guess like a sign-in: it counts toward the name's lock (§6.1).
+    const lockedFor = ctx.throttle.lockedFor(user.username);
+    if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
+    try {
+      await ctx.users.setPassword(user.id, body.newPassword, {
+        currentPassword: body.currentPassword ?? '',
+        actorId: user.id,
+      });
+    } catch (err) {
+      if (err instanceof ServiceError && err.code === 'wrong_password') {
+        if (ctx.throttle.fail(user.username)) ctx.events.emit('auth.lockout', { username: user.username });
+        writeAudit(ctx.db, {
+          kind: 'auth',
+          decision: 'password_failed',
+          actorKind: 'system',
+          detail: { username: user.username, route: c.req.path },
+        });
+      }
+      throw err;
+    }
+    ctx.throttle.succeed(user.username);
     ctx.sessions.revokeUser(user.id, c.get('sessionRaw'));
     ctx.oauth.revokeUserGrants(user.id, 'password_changed', { userId: user.id });
     return c.json({ status: 'ok' });
@@ -385,13 +425,26 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json({ recoveryCodes });
   });
 
-  app.post('/api/profile/totp/disable', async (c) => {
-    const { code } = await readJson(c, z.object({ code: z.string() }));
-    const user = c.get('user');
-    if (!ctx.users.disableOwnTotp(user, code)) return c.json({ error: 'invalid_code', message: 'Invalid code' }, 401);
-    ctx.sessions.revokeKind(user.id, 'approval_ui');
-    return c.json({ status: 'ok' });
-  });
+  app.post('/api/profile/totp/disable', (c) =>
+    withProfileCode(
+      c,
+      ctx,
+      (user, code) => ctx.users.disableOwnTotp(user, code),
+      () => {
+        ctx.sessions.revokeKind(c.get('user').id, 'approval_ui');
+        return c.json({ status: 'ok' });
+      },
+    ),
+  );
+
+  app.post('/api/profile/totp/recovery-codes', (c) =>
+    withProfileCode(
+      c,
+      ctx,
+      (user, code) => ctx.users.rotateRecoveryCodes(user.id, code),
+      (recoveryCodes) => c.json({ recoveryCodes }),
+    ),
+  );
 
   app.post('/api/profile/oidc/unlink', (c) => {
     ctx.users.unlinkOwnOidc(c.get('user'));

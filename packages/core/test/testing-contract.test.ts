@@ -1,62 +1,7 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { checkPluginContract, startFakeHttp, startPluginHarness } from '../src/testing/index.js';
-import type { PluginHarness } from '../src/testing/index.js';
+import { describe, expect, it } from 'vitest';
+import { startFakeHttp } from '../src/testing/index.js';
 
-/** The plugin contract checks and the fake HTTP upstream of `@synoikia/core/testing`, on the echo fixture. */
-
-const ECHO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/plugins/echo');
-
-let h: PluginHarness;
-
-beforeAll(async () => {
-  h = await startPluginHarness({ pluginDir: ECHO, connection: { token: 'tok-secret' }, slug: 'echo-contract' });
-}, 30_000);
-
-afterAll(async () => {
-  await h?.stop();
-});
-
-describe('checkPluginContract', () => {
-  it('passes for a plugin that keeps the contract', async () => {
-    expect(
-      await checkPluginContract(h, {
-        read: { key: 'echo.query', code: `return await echo.call('echo.query', { n: 1 });` },
-        write: { key: 'echo.set', code: `return await echo.call('echo.set', { name: 'a' });` },
-        locked: { key: 'echo.delete', code: `return await echo.call('echo.delete', { name: 'box' });`, confirm: 'box' },
-        secrets: { code: `return await echo.call('echo.query', {});`, values: ['tok-secret'] },
-      }),
-    ).toEqual([]);
-  });
-
-  it('reports what breaks the contract', async () => {
-    const issues = await checkPluginContract(h, {
-      read: { key: 'echo.set', code: `return await echo.call('echo.set', {});` },
-      write: { key: 'echo.query', code: `return await echo.call('echo.query', {});` },
-      locked: { key: 'echo.delete', code: `return await echo.call('echo.delete', { name: 'box' });`, confirm: 'other' },
-      secrets: { code: `return { leaked: 'echo-' + 'leak' };`, values: ['echo-leak'] },
-    });
-    expect(issues).toEqual(
-      expect.arrayContaining([
-        'echo.set: expected a read',
-        'echo.query: expected a write',
-        expect.stringMatching(/^write echo.query: expected OPERATION_DISABLED/),
-        expect.stringMatching(/^locked echo.delete: confirmation literal is "box"/),
-        expect.stringMatching(/^secrets: "echo"… reached the sandbox/),
-      ]),
-    );
-  });
-
-  it('reports an unknown operation', async () => {
-    expect(
-      await checkPluginContract(h, {
-        read: { key: 'echo.nope', code: '' },
-        write: { key: 'echo.set', code: '' },
-      }),
-    ).toEqual(['read: No operation echo.nope in the synced catalog']);
-  });
-});
+/** The fake HTTP upstream of `@synoikia/core/testing`. */
 
 describe('startFakeHttp', () => {
   it('routes by method and path params, records requests and answers 404 otherwise', async () => {

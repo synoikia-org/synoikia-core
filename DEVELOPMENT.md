@@ -27,7 +27,7 @@ Admin UI with hot reload: run `pnpm start` in one shell and `pnpm --filter @syno
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs these, in this order, plus a Docker build:
+CI (`.github/workflows/ci.yml`) runs the same commands, plus a Docker build. The `check` job runs the checks and the build. The `features` job splits core's scenarios across four runners. The `e2e-ui` job runs the portal's scenarios in Chromium. The `test` job runs every other test. Locally, run them in this order:
 
 ```sh
 pnpm lint
@@ -35,6 +35,16 @@ pnpm format:check   # pnpm format to fix
 pnpm typecheck
 pnpm build
 pnpm test           # all packages; workspace deps resolve to TS sources, no build needed
+```
+
+The whole core suite takes about three minutes. While you work, run only the feature folders you change. Run the whole suite before you push, or let CI run it.
+
+```sh
+pnpm --filter @synoikia/core test:features features/identity                 # one folder
+pnpm --filter @synoikia/core test:features features/identity features/approvals   # several folders
+pnpm --filter @synoikia/admin-ui test:features                              # the portal in Chromium, against a real core
+pnpm --filter @synoikia/plugin-sdk test:features                            # the plugin SDK, as a plugin author uses it
+pnpm --filter @synoikia/create-plugin test:features                         # the plugin tool, run as commands by a plugin author
 ```
 
 The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
@@ -55,6 +65,12 @@ pnpm --filter @synoikia/core test:coverage                        # enforces the
 ## Feature files
 
 Core's feature files are in `packages/core/features/`. Quickpickle runs them in vitest, in the `features` project of `packages/core/vitest.config.ts`. `features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
+
+The portal's feature files are in `packages/admin-ui/features/`. Their World builds the portal once and starts core with it for each scenario. Steps drive the portal in Chromium through Playwright, by roles, labels and visible text. CI installs Chromium with `pnpm --filter @synoikia/admin-ui exec playwright install --with-deps chromium`.
+
+The plugin SDK's feature files are in `packages/plugin-sdk/features/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
+
+The feature files of `@synoikia/create-plugin` are in `packages/create-plugin/features/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
 
 ## Architecture model
 

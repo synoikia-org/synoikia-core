@@ -1,3 +1,4 @@
+import type { JWTVerifyGetKey } from 'jose';
 import type { Settings } from '../settings.js';
 import { cloudflareAccess } from './external-cloudflare.js';
 
@@ -9,6 +10,9 @@ export type ExternalProviderId = (typeof EXTERNAL_PROVIDER_IDS)[number];
 
 export type McpSettings = Settings<'mcp'>;
 
+/** The key set of a provider's domain, in place of the one it publishes (tests); undefined fetches it. */
+export type ExternalKeys = (domain: string) => JWTVerifyGetKey | undefined;
+
 export type ExternalIdentity = { ok: true; identity: string } | { ok: false; reason: string };
 
 export interface ExternalProvider {
@@ -17,8 +21,9 @@ export interface ExternalProvider {
   name: string;
   /** The settings this provider needs are present. */
   configured(settings: McpSettings): boolean;
-  /** The user the request comes from, or why none; `reason` is for the server log only. */
-  identify(headers: Headers, settings: McpSettings): Promise<ExternalIdentity>;
+  /** The user the request comes from, or why none; `reason` is for the server log only. `keys` replaces the
+   * provider's published key set (tests). */
+  identify(headers: Headers, settings: McpSettings, keys?: ExternalKeys): Promise<ExternalIdentity>;
 }
 
 const PROVIDERS: Record<ExternalProviderId, ExternalProvider> = {

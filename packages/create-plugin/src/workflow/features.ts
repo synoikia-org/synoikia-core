@@ -16,7 +16,7 @@ export interface ParsedScenario {
   backlog: boolean;
 }
 
-const ALLOWED_TAG = /^@(?:id:[a-z0-9]+(?:-[a-z0-9]+)*|backlog|long-running)$/;
+const ALLOWED_TAG = /^@(?:id:[a-z0-9]+(?:-[a-z0-9]+)*|backlog|long-running|exclusive)$/;
 /** Words that put a solution in the spec: screens, wire formats and storage. */
 const SOLUTION_WORDS = [
   /\b(?:click|tap|press)(?:s|es|ed)?\b/i,
@@ -146,7 +146,7 @@ export function checkFeatures(files: readonly SourceFile[]): string[] {
     for (const tag of allTags)
       if (!ALLOWED_TAG.test(tag.name))
         issues.push(
-          `${at(tag.location.line)}: ${tag.name} is not allowed. Use @id:<kebab-case>, @backlog or @long-running`,
+          `${at(tag.location.line)}: ${tag.name} is not allowed. Use @id:<kebab-case>, @backlog, @long-running or @exclusive`,
         );
   }
   return issues;

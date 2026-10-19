@@ -33,15 +33,23 @@ const AllowPolicySchema = z
   })
   .prefault({});
 
-const OidcSettingsSchema = z.object({
-  enabled: z.boolean().default(false),
-  issuer: z.url(),
-  clientId: z.string().min(1),
-  scopes: z.string().default('openid email profile'),
-  label: z.string().default('SSO'),
-  allowPolicy: AllowPolicySchema,
-  autoProvision: z.boolean().default(false),
-});
+// The issuer and the client count only while single sign-on is on, so it saves as off without them.
+const OidcSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: z.string().default(''),
+    clientId: z.string().default(''),
+    scopes: z.string().default('openid email profile'),
+    label: z.string().default('SSO'),
+    allowPolicy: AllowPolicySchema,
+    autoProvision: z.boolean().default(false),
+  })
+  .superRefine((s, ctx) => {
+    if (!s.enabled) return;
+    if (!z.url().safeParse(s.issuer).success)
+      ctx.addIssue({ code: 'custom', path: ['issuer'], message: 'Invalid URL' });
+    if (!s.clientId) ctx.addIssue({ code: 'custom', path: ['clientId'], message: 'Required while it is on' });
+  });
 export type OidcSettings = z.infer<typeof OidcSettingsSchema>;
 
 // The state key also signs other payloads, so a verified token must still have this shape.
@@ -92,6 +100,7 @@ export class OidcService {
     private readonly stateKey: Buffer,
     /** Allow http:// issuers (tests, lab IdPs on a trusted LAN). */
     private readonly allowInsecure = false,
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   private row() {
@@ -206,7 +215,7 @@ export class OidcService {
       state: state.state,
       nonce: state.nonce,
     });
-    return { url: url.toString(), stateToken: signPayload(this.stateKey, state, STATE_TTL_MS) };
+    return { url: url.toString(), stateToken: signPayload(this.stateKey, state, STATE_TTL_MS, this.now().getTime()) };
   }
 
   /** Validates the callback query (state, PKCE, nonce, ID token) and returns the identity plus the flow state. */
@@ -214,7 +223,7 @@ export class OidcService {
     callbackQuery: string,
     stateToken: string | undefined,
   ): Promise<{ identity: OidcIdentity; state: OidcState }> {
-    const state = OidcStateSchema.safeParse(verifyPayload(this.stateKey, stateToken)).data;
+    const state = OidcStateSchema.safeParse(verifyPayload(this.stateKey, stateToken, this.now().getTime())).data;
     if (!state) throw new OidcError('oidc_state', 'Sign-in session expired or invalid; try again');
     const config = await this.configuration();
     // The token request's redirect_uri must equal the one sent to the IdP, not the URL a proxy forwarded.

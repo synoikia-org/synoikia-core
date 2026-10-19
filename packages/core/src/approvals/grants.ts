@@ -12,7 +12,10 @@ export interface SessionGrant {
   principal: string;
   /** The client's audit label, for display. */
   client?: string;
+  /** The approver's username, for display. */
   createdBy: string;
+  /** The approver's user id: the actor of the grant's audit rows, and how the grant ends with that user. */
+  createdById: string;
   approvalId: string;
   createdAt: Date;
   expiresAt: Date;
@@ -42,7 +45,7 @@ export class SessionGrantService {
   create(input: Omit<SessionGrant, 'id' | 'createdAt'>): SessionGrant {
     // One grant per client and endpoint: a new one replaces the old.
     const old = this.active(input.instanceId, input.principal);
-    if (old) this.end(old, 'replaced', input.createdBy, 'user');
+    if (old) this.end(old, 'replaced', input.createdById, 'user');
     const grant: SessionGrant = { ...input, id: randomUUID(), createdAt: this.now() };
     this.grants.set(grant.id, grant);
     writeAudit(
@@ -52,7 +55,7 @@ export class SessionGrantService {
         instanceId: grant.instanceId,
         decision: 'session_grant.created',
         actorKind: 'user',
-        actorId: grant.createdBy,
+        actorId: grant.createdById,
         detail: {
           grantId: grant.id,
           client: grant.client,
@@ -94,8 +97,8 @@ export class SessionGrantService {
   }
 
   /** Ends the grants a user approved (disabled or deleted): a principal can outlive the user, e.g. `external`. */
-  endForUser(username: string, reason: string): void {
-    for (const g of this.list()) if (g.createdBy === username) this.end(g, reason);
+  endForUser(userId: string, reason: string): void {
+    for (const g of this.list()) if (g.createdById === userId) this.end(g, reason);
   }
 
   private sweep() {

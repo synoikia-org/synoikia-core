@@ -22,8 +22,8 @@ import type { SlidingWindowLimiter } from './rate-limit.js';
 import { redactDiff, redactPaths, redactResult } from './redact.js';
 import type { Redactor } from './redact.js';
 
-/** The permission gate (design §5.2), the only path from sandboxed code to `invoke`: resolve → attest →
- * access → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
+/** The permission gate (design §5.2), the only path from sandboxed code to `invoke`: resolve → access →
+ * attest → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
 
 export interface GateDeps {
   db: Db;
@@ -73,10 +73,25 @@ export interface CallerContext {
 
 type OperationRow = typeof operations.$inferSelect;
 
+/** How an approved call runs besides its classification: a sync must not change it during the wait (§5.3). */
+const runRules = (op: OperationRow) =>
+  canonicalJson({
+    typedConfirmation: op.typedConfirmation,
+    sensitiveParams: [...(op.sensitiveParams ?? [])].sort(),
+    sensitiveResult:
+      op.sensitiveResult && op.sensitiveResult !== 'whole'
+        ? { ...op.sensitiveResult, keys: [...op.sensitiveResult.keys].sort() }
+        : (op.sensitiveResult ?? null),
+  });
+
 /** What per-principal limits are keyed on: the stable principal, never the display name. */
 export const principalKey = (caller: CallerContext) => caller.client.key ?? caller.client.id ?? 'anonymous';
 
 const MAX_ERROR_MESSAGE = 500;
+// `invoke` times out this long before the run does, so the agent learns that the result is unknown.
+const INVOKE_MARGIN_MS = 500;
+// A shorter deadline can miss even a fast answer, so the run ends with its time limit instead.
+const MIN_INVOKE_MS = 100;
 const PASSTHROUGH_PLUGIN_CODES = new Set([
   'UNKNOWN_OPERATION',
   'INVALID_PARAMS',
@@ -120,6 +135,7 @@ const DENIAL_MESSAGES: Record<string, string> = {
   prompt_failed: 'needs approval, but the client could not show the approval prompt',
   confirmation_mismatch: 'was denied (confirmation mismatch)',
   endpoint_stopped: 'was cancelled: the endpoint was stopped or reconfigured while it waited for approval',
+  user_deleted: 'was cancelled: the owner of this credential was deleted',
   park_refused:
     'needs approval, and an earlier approval of this execution was not given or it reached its approval limit; call execute again',
   too_many_parked:
@@ -216,29 +232,7 @@ export function createGateBindings(
       const redactParams = <T>(p: T): T => redactPaths(rt.redact(p), op?.sensitiveParams);
       audit.params = redactParams(resolved.params);
 
-      // 1. Attestation, before anything else about the op is revealed.
-      if (op && !op.stale && op.attestationRequired) {
-        const presented = (resolved.params as { best_practice_key?: unknown } | null)?.best_practice_key;
-        if (
-          !verifyAttestationKey(deps.db, deps.attestationKey, {
-            instanceId: rt.instanceId,
-            operationId: op.id,
-            opKey: op.key,
-            mcpSessionId: caller.mcpSessionId,
-            presented,
-          })
-        ) {
-          reject(
-            'rejected:attestation_required',
-            new BindingError(
-              'ATTESTATION_REQUIRED',
-              `Call search() for the ${op.key} guide first and pass its best_practice_key`,
-            ),
-          );
-        }
-      }
-
-      // 2. Access level (operation's own, else its group's) under the principal's ceiling. Unknown or
+      // 1. Access level (operation's own, else its group's) under the principal's ceiling. Unknown or
       //    stale ops fail here too.
       const access = resolveAccess(deps.db, rt.instanceId, resolved.key, caller.principal);
       if (!access.reachable || !op) {
@@ -255,6 +249,31 @@ export function createGateBindings(
         );
       }
       const operation = op!;
+      // The row that redacts the result: re-read after a human approval.
+      let resultRules = operation;
+
+      // 2. Attestation (design §5.2), for an operation this caller can reach.
+      if (operation.attestationRequired) {
+        const presented = (resolved.params as { best_practice_key?: unknown } | null)?.best_practice_key;
+        if (
+          !verifyAttestationKey(deps.db, deps.attestationKey, {
+            instanceId: rt.instanceId,
+            operationId: operation.id,
+            opKey: operation.key,
+            mcpSessionId: caller.mcpSessionId,
+            presented,
+          })
+        ) {
+          reject(
+            'rejected:attestation_required',
+            new BindingError(
+              'ATTESTATION_REQUIRED',
+              `Call search() for the ${operation.key} guide first and pass its best_practice_key`,
+            ),
+          );
+        }
+      }
+
       const mode = access.reachable ? access.mode : 'run';
       // A read at its own Ask needs a decision too, but only writes use the write budget or prepareWrite.
       const needsDecision = mode !== 'run';
@@ -410,6 +429,7 @@ export function createGateBindings(
           if (approval.channel) audit.detail.approvalChannel = approval.channel;
           if (approval.outcome === 'cancelled' && signal.aborted) ensureRunning();
           if (approval.outcome !== 'approved') {
+            if (approval.reason) audit.detail.reason = approval.reason;
             const label = approval.outcome === 'timed_out' ? 'timed-out' : 'denied';
             reject(
               label,
@@ -430,6 +450,22 @@ export function createGateBindings(
               new BindingError('OPERATION_DISABLED', `${operation.key} was disabled while waiting for approval`),
             );
           }
+          // The human approved one classification and its run rules; a sync during the wait may change them (§5.3).
+          const opNow = deps.db.select().from(operations).where(eq(operations.id, operation.id)).get();
+          if (
+            !opNow ||
+            (opNow.locked ? 'locked' : opNow.classification) !== audit.classification ||
+            runRules(opNow) !== runRules(operation)
+          ) {
+            reject(
+              'rejected:operation_changed',
+              new BindingError(
+                'OPERATION_CHANGED',
+                `${operation.key} changed while it waited for approval; call it again`,
+              ),
+            );
+          }
+          resultRules = opNow!;
           decision = 'human-approved';
           const maxHours = rt.settings.sessionGrantMaxHours;
           if (
@@ -445,7 +481,8 @@ export function createGateBindings(
               instanceId: rt.instanceId,
               principal: principalKey(caller),
               client: caller.client.id,
-              createdBy: approval.decidedBy ?? 'unknown',
+              createdBy: approval.decidedBy,
+              createdById: approval.decidedById,
               approvalId: request.id,
               expiresAt: new Date(Math.min(approval.sessionGrantUntil.getTime(), cap)),
             });
@@ -481,27 +518,38 @@ export function createGateBindings(
       }
 
       // 9. The real upstream call, within what's left of the sandbox budget.
+      const remaining = budget.remainingMs() - INVOKE_MARGIN_MS;
+      if (remaining < MIN_INVOKE_MS)
+        reject('rejected:time_limit', new BindingError('TIMEOUT', 'Sandbox time limit exceeded'));
       if (isWrite && !deps.limiter.take(writeBucket, rt.settings.writesPerMinute, 60_000)) overWriteBudget();
-      const remaining = Math.max(1, budget.remainingMs());
-      const result = await rt.plugin().call(
-        'invoke',
-        {
-          key: operation.key,
-          params,
-          context: {
-            callId: randomUUID(),
-            expectedHash,
-            deadlineMs: remaining,
-            ...(rt.manifest.capabilities.targets ? { targets } : {}),
+      const result = await rt
+        .plugin()
+        .call(
+          'invoke',
+          {
+            key: operation.key,
+            params,
+            context: {
+              callId: randomUUID(),
+              expectedHash,
+              deadlineMs: remaining,
+              ...(rt.manifest.capabilities.targets ? { targets } : {}),
+            },
           },
-        },
-        remaining,
-      );
+          remaining,
+        )
+        .catch((err: unknown) => {
+          if (!(err instanceof PluginTimeoutError)) throw err;
+          throw new BindingError(
+            'UPSTREAM_TIMEOUT',
+            `${rt.manifest.name} did not answer in time. The result is unknown: check before you retry`,
+          );
+        });
 
       // 10–11. Redact (the operation's declared result secrets first, then by key name and secret
       // value), audit, hand back. Nothing past this point sees the plugin's raw result.
       finish(decision, { resultStatus: 'ok' });
-      return rt.redact(redactResult(result, operation.sensitiveResult));
+      return rt.redact(redactResult(result, resultRules.sensitiveResult));
     } catch (err) {
       const raw = toBindingError(err);
       // Plugin and upstream messages are free text: scrub the instance's secret values out of them.

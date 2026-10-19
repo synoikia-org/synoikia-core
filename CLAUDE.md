@@ -14,7 +14,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `packages/admin-ui`         | Admin portal: Vue 3, Pinia, Vite                                                                                                                                                                                   |
 | `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and `checkPluginContract` plugin repos test against. Published API                                                                                   |
 
-Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. SDK code is bundled into every plugin, so `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` decide what plugins tell core: treat changes there as security changes. `create-plugin` templates use only published SDK and core APIs and are smoke-tested by `packages/create-plugin/test/smoke.test.ts`.
+Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. SDK code is bundled into every plugin, so `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` decide what plugins tell core: treat changes there as security changes. `create-plugin` templates use only published SDK and core APIs and are built and tested by the scaffold scenarios in `packages/create-plugin/features/scaffold` and by `packages/create-plugin/test/smoke.test.ts`.
 
 Each security-critical directory under `packages/core/src` (`gate/`, `sandbox/`, `plugins/`, `auth/`) has a short `README.md` with its pipeline and design sections. Read it before changing that module.
 
@@ -31,6 +31,7 @@ Node 22.12+ or 24 (`.nvmrc` pins 22), pnpm 10.
 ```sh
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test   # what CI runs, in that order
 pnpm --filter @synoikia/core exec vitest run test/gate.test.ts                # one test file
+pnpm --filter @synoikia/core test:features features/identity               # one feature folder (the whole suite takes ~3 min)
 pnpm --filter @synoikia/core test:coverage                                      # enforces coverage floors
 pnpm format                                                                     # fix formatting
 pnpm hooks:install                                                              # once per clone: the workflow git hooks

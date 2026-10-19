@@ -291,7 +291,7 @@ export class McpEndpoints {
   }
 
   private sweep() {
-    const cutoff = Date.now() - SESSION_IDLE_MS;
+    const cutoff = this.ctx.now().getTime() - SESSION_IDLE_MS;
     for (const [id, s] of this.sessions) if (s.lastSeen < cutoff) void this.closeSession(id);
   }
 
@@ -525,7 +525,7 @@ export class McpEndpoints {
   private refused(c: Context, slug: string, status: number, reason: string, fields: LogFields = {}) {
     const ip = clientIp(c, this.ctx.config.TRUST_PROXY);
     const level = presentsCredential(c) ? 'warn' : 'debug';
-    const suppressed = this.refusals.admit(`${level}|${ip}|${status}`, Date.now());
+    const suppressed = this.refusals.admit(`${level}|${ip}|${status}`, this.ctx.now().getTime());
     if (suppressed === null) return;
     this.ctx.log[level]('MCP request refused', {
       method: c.req.method,
@@ -619,7 +619,7 @@ export class McpEndpoints {
     const client = auth.identity.label;
     if (!this.ctx.instances.isServing(instance, plugin)) {
       this.refused(c, slug, 503, 'endpoint or its plugin is disabled', { client });
-      return c.json(jsonRpcError(-32002, 'This endpoint is disabled'), 503);
+      return c.json(jsonRpcError(-32002, 'This instance is unavailable'), 503);
     }
 
     const sessionId = c.req.header('mcp-session-id');
@@ -642,7 +642,7 @@ export class McpEndpoints {
         await this.closeSession(sessionId);
         return refusal;
       }
-      s.lastSeen = Date.now();
+      s.lastSeen = this.ctx.now().getTime();
       const response = await s.transport.handleRequest(c.req.raw);
       await this.logTransportError(c, slug, response, client);
       return response;
@@ -690,7 +690,7 @@ export class McpEndpoints {
           instanceId: instance.id,
           principal: auth.identity.principal,
           clientName,
-          lastSeen: Date.now(),
+          lastSeen: this.ctx.now().getTime(),
         });
       },
       onsessionclosed: (id) => void this.closeSession(id),

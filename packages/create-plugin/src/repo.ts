@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkPlugin } from './check.js';
@@ -66,11 +75,14 @@ function resolveRepository(root: string, explicit?: string): string {
   const pkg = readJson<{ synoikia?: { repository?: string } }>(path.join(root, 'package.json'));
   if (pkg.synoikia?.repository) return pkg.synoikia.repository;
   try {
-    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' });
-    const repo = repositoryFromRemote(remote);
-    if (repo) return repo;
+    // Git searches parent folders, so take the remote only of a checkout that starts at the root.
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim();
+    if (realpathSync(git('rev-parse', '--show-toplevel')) === realpathSync(root)) {
+      const repo = repositoryFromRemote(git('remote', 'get-url', 'origin'));
+      if (repo) return repo;
+    }
   } catch {
-    // no git remote
+    // no git checkout or remote
   }
   throw new Error('Set "synoikia": { "repository": "owner/name" } in package.json, or pass --repository');
 }

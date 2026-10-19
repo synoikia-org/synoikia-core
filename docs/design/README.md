@@ -9,6 +9,7 @@ This document set is the software design description (SDD) of Synoikia core. It 
 - Code names (`syncCatalog`, `plugin_instances`) and file paths are technical names. They do not change.
 - The documents describe the current design. They do not describe earlier designs, changes, or migrations.
 - Section numbers do not change. Code comments refer to them, for example `design §5.2`.
+- The feature files specify the behavior (§13). A section describes the design and links the feature files of its behavior, by their `@id`. A code comment on behavior that no section describes cites the `@id`.
 
 ## Sections
 
@@ -26,7 +27,7 @@ This document set is the software design description (SDD) of Synoikia core. It 
 | §10     | [10-maintenance.md](10-maintenance.md)           | Catalog sync and housekeeping                                               |
 | §11     | [11-deployment.md](11-deployment.md)             | Image, proxy, environment, server log                                       |
 | §12     | [12-security.md](12-security.md)                 | Trust boundaries and remaining risks                                        |
-| §13     | [13-verification.md](13-verification.md)         | Test areas and coverage                                                     |
+| §13     | [13-verification.md](13-verification.md)         | Feature files and coverage floors                                           |
 | §14     | [14-open-items.md](14-open-items.md)             | Items that are not in the design yet                                        |
 
 The architecture model is in [`../architecture/`](../architecture/README.md). Its views show the structure of the system. The plugin author guide is [`../plugin-authoring.md`](../plugin-authoring.md).

@@ -9,3 +9,4 @@ data/
 master.key
 packages/plugin-sdk/plugin-settings.schema.json
 packages/create-plugin/.smoke/
+!packages/core/features/data/

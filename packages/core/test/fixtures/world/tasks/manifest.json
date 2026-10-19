@@ -2,22 +2,104 @@
   "id": "tasks",
   "name": "Acme Tasks (World fixture)",
   "version": "1.0.0",
+  "description": "Keeps the to-do lists of Acme Tasks.",
   "sdk": "^0.2.0",
   "entry": "index.mjs",
   "binding": {
     "namespace": "tasks",
-    "functions": ["call"]
+    "functions": ["call"],
+    "searchApis": ["registry", "guides"]
+  },
+  "capabilities": {
+    "targets": true,
+    "attestation": true,
+    "configTransform": true,
+    "registry": true
+  },
+  "targets": {
+    "label": "List",
+    "scopes": [
+      {
+        "key": "list",
+        "label": "List",
+        "registryKind": "list"
+      }
+    ],
+    "registryKind": "task"
+  },
+  "matchProfiles": {
+    "list": [
+      {
+        "field": "/list",
+        "label": "List",
+        "op": "eq",
+        "widget": "text"
+      }
+    ],
+    "task": [
+      {
+        "field": "/list",
+        "label": "List",
+        "op": "prefix",
+        "widget": "text"
+      },
+      {
+        "field": "/title",
+        "label": "Task",
+        "op": "eq",
+        "widget": "text"
+      },
+      {
+        "field": "/tags",
+        "label": "Tags",
+        "op": "in",
+        "widget": "text"
+      },
+      {
+        "field": "/priority",
+        "label": "Priority",
+        "op": "range",
+        "widget": "text"
+      },
+      {
+        "field": "/starred",
+        "label": "Starred",
+        "op": "bool",
+        "widget": "text"
+      }
+    ],
+    "done": [
+      {
+        "field": "$targets",
+        "label": "Tasks",
+        "widget": "registry-picker",
+        "covers": ["/list", "/title"]
+      }
+    ]
   },
   "connection": {
     "schema": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "format": "uri" }
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "token": {
+          "type": "string",
+          "writeOnly": true
+        },
+        "webhookSecret": {
+          "type": "string",
+          "writeOnly": true
+        }
       },
       "required": ["url"]
     },
     "ui": {}
   },
   "sensitiveKeys": [],
-  "network": { "hosts": ["127.0.0.1"] }
+  "network": {
+    "hosts": ["127.0.0.1"]
+  }
 }

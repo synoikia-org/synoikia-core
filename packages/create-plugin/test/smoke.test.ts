@@ -9,8 +9,7 @@ import { PACKAGE_DIR } from '../src/repo-root.js';
 import { createRepo, newPlugin } from '../src/scaffold.js';
 import type { Archetype, AuthKind } from '../src/scaffold.js';
 
-/** Every template scaffolded fresh must pass check, typecheck, build and its own unit and e2e tests,
- * against this commit's SDK and core sources. */
+// The pairs that no @long-running scaffold scenario builds. Every template scaffolded fresh passes check, typecheck, build and its own tests.
 
 const SMOKE = path.join(PACKAGE_DIR, '.smoke');
 const require = createRequire(import.meta.url);
@@ -19,13 +18,9 @@ const VITEST = path.join(path.dirname(require.resolve('vitest/package.json')), '
 const RANGES = { sdk: 'workspace:*', core: 'workspace:*', cli: 'workspace:*' };
 
 const CASES: [Archetype, AuthKind][] = [
-  ['openapi-rest', 'bearer'],
   ['openapi-rest', 'api-key'],
   ['openapi-rest', 'basic'],
   ['openapi-rest', 'none'],
-  ['static-rest', 'api-key'],
-  ['websocket-rpc', 'bearer'],
-  ['blank', 'none'],
 ];
 
 const only = process.env.SMOKE_ONLY;

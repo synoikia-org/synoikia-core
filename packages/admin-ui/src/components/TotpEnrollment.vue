@@ -2,9 +2,10 @@
 import { computed, ref } from 'vue';
 import { latestError } from '../composables/useApiMutation';
 import { useBeginTotp, useConfirmTotp } from '../composables/useProfile';
+import RecoveryCodes from './RecoveryCodes.vue';
 
 /** TOTP enrollment: show the secret/otpauth URI, confirm with a code, show recovery codes once. */
-const emit = defineEmits<{ enrolled: [] }>();
+const emit = defineEmits<{ confirmed: []; enrolled: [] }>();
 
 const beginTotp = useBeginTotp();
 const confirmTotp = useConfirmTotp();
@@ -14,19 +15,15 @@ const recovery = computed(() => confirmTotp.data.value?.recoveryCodes);
 const error = computed(() => latestError([beginTotp, confirmTotp]));
 
 const begin = () => beginTotp.mutate();
-const confirm = () => confirmTotp.mutate(code.value.trim(), { onSettled: () => (code.value = '') });
+const confirm = () =>
+  confirmTotp.mutate(code.value.trim(), { onSuccess: () => emit('confirmed'), onSettled: () => (code.value = '') });
 </script>
 
 <template>
   <div class="stack">
     <template v-if="recovery">
       <div class="alert ok" role="status">Two-factor authentication is on.</div>
-      <p class="small">
-        Save these recovery codes somewhere safe. Each works once if you lose your authenticator. They are not shown
-        again.
-      </p>
-      <pre class="code recovery">{{ recovery.join('\n') }}</pre>
-      <div><button class="btn btn-primary" type="button" @click="emit('enrolled')">I saved them</button></div>
+      <RecoveryCodes :codes="recovery" @saved="emit('enrolled')" />
     </template>
     <template v-else-if="secret">
       <p class="small">
@@ -70,8 +67,5 @@ const confirm = () => confirmTotp.mutate(code.value.trim(), { onSettled: () => (
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   font-size: 14px;
-}
-.recovery {
-  columns: 2;
 }
 </style>

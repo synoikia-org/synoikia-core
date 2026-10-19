@@ -72,9 +72,17 @@ const rename = async (r: RoleRow) => {
 const remove = async (r: RoleRow) => {
   if (await confirm({ title: `Delete the role ${r.name}?`, action: 'Delete', danger: true })) del.mutate(r.id);
 };
-const toggleEndpoint = (r: RoleRow, id: string) => {
+const toggleEndpoint = async (r: RoleRow, i: { id: string; slug: string }, box: HTMLInputElement) => {
   const ids = r.endpoints.map((e) => e.instanceId);
-  setInstances.mutate({ id: r.id, instanceIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
+  if (!ids.includes(i.id)) return setInstances.mutate({ id: r.id, instanceIds: [...ids, i.id] });
+  const removing = await confirm({
+    title: `Remove /${i.slug} from ${r.name}?`,
+    message: `${r.name} loses its maximum levels on /${i.slug}. Its users lose their personal levels and own rules there.`,
+    action: 'Remove',
+    danger: true,
+  });
+  if (removing) setInstances.mutate({ id: r.id, instanceIds: ids.filter((x) => x !== i.id) });
+  else box.checked = true;
 };
 </script>
 
@@ -131,7 +139,11 @@ const toggleEndpoint = (r: RoleRow, id: string) => {
           <li v-for="i in instances" :key="i.id" class="endpoint" :data-endpoint="i.slug">
             <div class="row">
               <label class="row small check">
-                <input type="checkbox" :checked="!!endpointOf(r, i.id)" @change="toggleEndpoint(r, i.id)" />
+                <input
+                  type="checkbox"
+                  :checked="!!endpointOf(r, i.id)"
+                  @change="toggleEndpoint(r, i, $event.target as HTMLInputElement)"
+                />
                 <span :id="`${uid}-${r.id}-${i.id}`" class="mono">/{{ i.slug }}</span>
               </label>
               <RouterLink

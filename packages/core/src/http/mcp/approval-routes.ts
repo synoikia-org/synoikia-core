@@ -52,7 +52,7 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
     const settings = getSettings(ctx.db, 'mcp');
     const provider = externalProvider(settings);
     if (!provider.configured(settings)) return null;
-    const found = await provider.identify(c.req.raw.headers, settings);
+    const found = await provider.identify(c.req.raw.headers, settings, ctx.externalKeys);
     if (!found.ok) {
       ctx.log.debug('Approval page: external provider did not identify the browser', { reason: found.reason });
       return null;
@@ -138,6 +138,7 @@ export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
         approve,
         confirm: typeof body.confirm === 'string' ? body.confirm : undefined,
         decidedBy: who.user.username,
+        decidedById: who.user.id,
         signIn: who.signIn,
         sessionGrantUntil,
       });
