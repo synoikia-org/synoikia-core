@@ -336,6 +336,8 @@ async function runLocks(): Promise<LockApproval[]> {
   for (const c of lockCases(profile)) harness.setOperationLevel(c.key, 'ask');
   const approvals: LockApproval[] = [];
   for (const c of lockCases(profile)) {
+    // Each case starts from the fake's seed: an earlier case may have changed what this one acts on.
+    await (await subjectOf()).fake?.reset?.();
     const seenBy: Partial<LockApproval> = { wrongRefused: false };
     const result = await harness.execute(codeOf(harness, c), {
       onApproval: (a) => {
