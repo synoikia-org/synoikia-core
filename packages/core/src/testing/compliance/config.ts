@@ -54,6 +54,8 @@ export function complianceConfig(opts: ComplianceOptions): ViteUserConfig {
             // One process runs the feature files one after another, so the plugin boots once for the run.
             isolate: false,
             fileParallelism: false,
+            // Its own group, after the plugin's other projects: vitest needs one for a project of one worker.
+            sequence: { groupOrder: 1 },
             // isolated-vm requires --no-node-snapshot on Node >= 20.
             execArgv: ['--no-node-snapshot'],
             testTimeout: 120_000,
