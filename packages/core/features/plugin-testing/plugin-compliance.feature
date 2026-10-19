@@ -64,7 +64,6 @@ Feature: Plugin compliance suite
 
   Rule: No secret reaches the agent, the approver or the audit log
 
-    @backlog
     Scenario Outline: The suite refuses a secret that <breaks>
       When plugin author 3 runs the compliance suite on a build of Acme Tasks that <breaks>
       Then the suite does not certify Acme Tasks, because <failure>
