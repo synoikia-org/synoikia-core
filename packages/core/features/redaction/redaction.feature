@@ -143,6 +143,7 @@ Feature: Redaction
     Scenario: A change to a declared secret parameter is hidden
       When agent 7 renames "Groceries" to "Food" with the lock code "2468"
       Then the approval page shows the lock code as [REDACTED]
+      And the approval page never shows "2468"
 
     Scenario: A change of the whole list hides the lock code inside it
       Given Acme Tasks reports a rename as one change of the whole list
