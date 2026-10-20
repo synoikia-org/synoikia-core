@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Reporter, TestModule, Vitest } from 'vitest/node';
 
@@ -24,12 +24,19 @@ export class VerdictReporter implements Reporter {
     };
     const suite = testModules.filter((m) => m.moduleId.startsWith(this.suiteDir + path.sep));
     const failures = new Set<string>();
+    // A filtered run is not a verdict: each suite file must run, and each of its scenarios.
+    const loaded = new Set(suite.map((m) => path.basename(m.moduleId)));
+    for (const file of globSync('*.feature', { cwd: this.suiteDir }))
+      if (!loaded.has(file)) failures.add(`the suite file ${file} did not run`);
     let ran = 0;
     for (const module of suite) {
       for (const error of module.errors()) failures.add(`${path.basename(module.moduleId)}: ${error.message}`);
       for (const test of module.children.allTests()) {
         const result = test.result();
-        if (result.state === 'skipped' || result.state === 'pending') continue;
+        if (result.state === 'skipped' || result.state === 'pending') {
+          failures.add(`${test.name} did not run`);
+          continue;
+        }
         ran++;
         if (result.state !== 'failed') continue;
         const lines = (result.errors ?? []).flatMap((e) => (e.message ?? '').split('\n'));

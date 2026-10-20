@@ -45,12 +45,17 @@ export function complianceConfig(opts: ComplianceOptions): ViteUserConfig {
             name: 'compliance',
             root: pluginDir,
             include: [path.join(SUITE_DIR, '*.feature'), ...features],
-            exclude: [],
+            // Only feature files: the repo's own include of test files would run them in this process too.
+            exclude: ['**/*.test.ts', '**/*.spec.ts'],
             setupFiles: [STEPS, ...(opts.steps ?? []).map((s) => path.resolve(pluginDir, s))],
             provide: { synoikiaPluginDir: pluginDir, synoikiaFeatureFiles: files.length },
+            // Vitest runs the suite's own modules, so the fake module the profile names loads like a test file.
+            server: { deps: { inline: [/@synoikia[\\/]core[\\/]dist[\\/]testing[\\/]compliance/] } },
             // One process runs the feature files one after another, so the plugin boots once for the run.
             isolate: false,
             fileParallelism: false,
+            // Its own group, after the plugin's other projects: vitest needs one for a project of one worker.
+            sequence: { groupOrder: 1 },
             // isolated-vm requires --no-node-snapshot on Node >= 20.
             execArgv: ['--no-node-snapshot'],
             testTimeout: 120_000,

@@ -259,5 +259,5 @@ export { verifyPluginRepository } from './repository.js';
 export type { VerifiedPlugin, VerifyRepositoryOptions } from './repository.js';
 export { startFakeHttp } from './fake-http.js';
 export type { FakeHttp, FakeHttpOptions, FakeRequest, FakeResponse, FakeRoute } from './fake-http.js';
-export { checkPluginContract } from './contract.js';
-export type { ContractCall, PluginContractOptions } from './contract.js';
+export { complianceSubject } from './compliance/run.js';
+export type { ComplianceSubject } from './compliance/run.js';

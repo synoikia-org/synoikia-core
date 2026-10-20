@@ -21,10 +21,11 @@ Feature: Plugin compliance suite
       Then the suite does not certify Acme Tasks, because <failure>
 
       Examples:
-        | breaks                                              | failure                                                       |
-        | also locks "archive a list"                         | "archive a list" is locked and the profile has no case for it |
-        | shows the API token field as plain text             | the API token is a secret that is not write-only              |
-        | does not ship the guide of "import tasks"           | the guide of "import tasks" is not provided                   |
+        | breaks                                    | failure                                                       |
+        | also locks "archive a list"               | "archive a list" is locked and the profile has no case for it |
+        | shows the API token field as plain text   | the API token is a secret that is not write-only              |
+        | does not ship the guide of "import tasks" | the guide of "import tasks" is not provided                   |
+        | runs only the access rule of the suite    | the suite did not run every rule                              |
 
   Rule: The catalog of the plugin is valid
 
@@ -46,9 +47,9 @@ Feature: Plugin compliance suite
       Then the suite does not certify Acme Tasks, because <failure>
 
       Examples:
-        | breaks                                           | failure                                                       |
-        | classifies "add a task" as a read                | "add a task" ran at level read                                |
-        | maps an unknown call to "show the open tasks"    | Acme Tasks accepted a call that is not in its catalog         |
+        | breaks                                        | failure                                               |
+        | classifies "add a task" as a read             | "add a task" ran at level read                        |
+        | maps an unknown call to "show the open tasks" | Acme Tasks accepted a call that is not in its catalog |
 
   Rule: A locked operation runs only with its typed confirmation
 
@@ -57,10 +58,10 @@ Feature: Plugin compliance suite
       Then the suite does not certify Acme Tasks, because <failure>
 
       Examples:
-        | breaks                                           | failure                                                |
-        | asks to type "delete" to delete a list           | "delete a list" asks to type "delete" in place of "Chores" |
-        | does not lock "delete a list"                    | "delete a list" is not off by default                  |
-        | does not name the list in the approval of "delete a list" | the approval of "delete a list" does not show "Chores" |
+        | breaks                                                    | failure                                                    |
+        | asks to type "delete" to delete a list                    | "delete a list" asks to type "delete" in place of "Chores" |
+        | does not lock "delete a list"                             | "delete a list" is not off by default                      |
+        | does not name the list in the approval of "delete a list" | the approval of "delete a list" does not show "Chores"     |
 
   Rule: No secret reaches the agent, the approver or the audit log
 
@@ -69,11 +70,13 @@ Feature: Plugin compliance suite
       Then the suite does not certify Acme Tasks, because <failure>
 
       Examples:
-        | breaks                                           | failure                                            |
-        | shows the share password under the name "code"   | the share password reached the sandbox             |
-        | shows the API token in the approval of "add a task" | the API token reached the approval              |
-        | passes the connection test with a wrong API token | the connection test accepted a wrong API token    |
-        | names no network host                            | the manifest names no network host                 |
+        | breaks                                                 | failure                                               |
+        | shows the share password under the name "code"         | the share password reached the sandbox                |
+        | shows the API token in the approval of "add a task"    | the API token reached the approval                    |
+        | passes the connection test with a wrong API token      | the connection test accepted a wrong API token        |
+        | names no network host                                  | the manifest names no network host                    |
+        | shows the API token in the approval of "delete a list" | the API token reached the approval of "delete a list" |
+        | cannot summarize "add a task"                          | "add a task" asked for no approval                    |
 
   Rule: A plugin author specifies behavior of the plugin with the steps of the suite
 

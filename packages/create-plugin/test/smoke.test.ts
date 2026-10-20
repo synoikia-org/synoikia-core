@@ -9,7 +9,7 @@ import { PACKAGE_DIR } from '../src/repo-root.js';
 import { createRepo, newPlugin } from '../src/scaffold.js';
 import type { Archetype, AuthKind } from '../src/scaffold.js';
 
-// The pairs that no @long-running scaffold scenario builds. Every template scaffolded fresh passes check, typecheck, build and its own tests.
+// The pairs that no @long-running scaffold scenario builds. Every template scaffolded fresh passes check, typecheck, build and the compliance suite.
 
 const SMOKE = path.join(PACKAGE_DIR, '.smoke');
 const require = createRequire(import.meta.url);
@@ -48,29 +48,31 @@ describe.each(CASES.filter(([a, auth]) => !only || only === `${a}-${auth}`))('%s
     );
     await buildPlugin({ dir, conditions: ['synoikia-source'] });
 
-    // The repository's own vitest.shared.ts, with the plugin-files loader taken from this checkout.
+    // The plugin's vitest.config.ts: the compliance suite, with core and the plugin-files loader from this checkout.
     const config = path.join(root, 'vitest.smoke.mts');
     writeFileSync(
       config,
-      `import { defineConfig } from 'vitest/config';
+      `import { defineConfig, mergeConfig } from 'vitest/config';
+import { complianceConfig } from ${JSON.stringify(path.join(PACKAGE_DIR, '../core/src/testing/compliance/index.ts'))};
 import { pluginFiles } from ${JSON.stringify(path.join(PACKAGE_DIR, 'src/vitest.ts'))};
 const conditions = ['synoikia-source', 'module', 'node', 'development|production'];
-export default defineConfig({
-  plugins: [pluginFiles()],
-  resolve: { conditions },
-  ssr: { resolve: { conditions } },
-  test: { include: ['test/**/*.test.ts'], execArgv: ['--no-node-snapshot'], testTimeout: 60000, hookTimeout: 60000 },
-});
+export default mergeConfig(
+  defineConfig({ plugins: [pluginFiles()], resolve: { conditions }, ssr: { resolve: { conditions } } }),
+  complianceConfig({ pluginDir: ${JSON.stringify(dir)} }),
+);
 `,
     );
+    let output: string;
     try {
-      execFileSync(process.execPath, [VITEST, 'run', '--root', dir, '--config', config], {
+      output = execFileSync(process.execPath, [VITEST, 'run', '--root', dir, '--config', config], {
         stdio: 'pipe',
         encoding: 'utf8',
+        env: { ...process.env, NO_COLOR: '1' },
       });
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
       throw new Error(`generated tests failed:\n${e.stdout ?? ''}\n${e.stderr ?? ''}`, { cause: err });
     }
+    expect(output).toContain('Acme Box 0.1.0 is fit for production.');
   });
 });

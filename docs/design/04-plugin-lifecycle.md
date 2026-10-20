@@ -121,7 +121,21 @@ await h.execute(`return await acme.call('scene.delete', { id: 'evening' })`, {
 | Upstream   | `testConnection(connection)`, `syncNow()`                                                                                                                                                                                                                                                                    |
 | Lifecycle  | `stop()` stops core and removes the temporary directory                                                                                                                                                                                                                                                      |
 
-The same package has `startFakeHttp` (a fake HTTP upstream) and `checkPluginContract` (the end-to-end checks that each plugin repeats).
+The same package has `startFakeHttp`, a fake HTTP upstream that answers only the routes a test declares.
+
+**Compliance suite.** Core decides if a plugin is fit for production. `complianceConfig({ pluginDir })` from `@synoikia/core/testing/compliance` is the vitest config of a plugin. It runs the feature files that core ships, then the plugin's own feature files, in the harness above. The plugin gives only `test/compliance.yaml` and a fake upstream module.
+
+| Rule    | The suite checks                                                                                                                                                                                                                  |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog | The plugin starts and syncs operations. Each operation has a description. Each lock of `plugin.yaml` names an operation                                                                                                           |
+| Access  | Each sample read runs at level read. Each sample write is off at level read. Each unknown call is refused                                                                                                                         |
+| Locks   | The profile has a case for each locked operation. It is off at the level of its group, asks for its literal, refuses a wrong one and names its target                                                                             |
+| Secrets | Each secret connection field is write-only, hidden and sensitive. No secret value of the profile reaches a result, an approval or the audit log. Wrong credentials fail the connection test. The manifest names its network hosts |
+| Guides  | Each operation that requires a guide gets one                                                                                                                                                                                     |
+
+The feature files of a run share one process, so the plugin boots once. A failed scenario names each broken rule. At the end the suite prints `<name> <version> is fit for production.` or `<name> <version> is not fit for production.`, with one `Failed rule:` line for each rule. The verdict is the plugin author's own test result. Core does not check it at install time.
+
+The plugin's own feature files use the steps of the suite on the named `calls` of the profile. `complianceSubject()` gives their step files the harness, the profile and the fake.
 
 **Repository release check.** `verifyPluginRepository({ index, assets, publicKey })` checks a built repository before it is published:
 

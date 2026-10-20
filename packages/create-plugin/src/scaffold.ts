@@ -192,6 +192,17 @@ function fakeAuthModule(auth: AuthKind, header: string): string {
 ${AUTH[auth].fake(header)}`;
 }
 
+/** The sign-in lines of test/compliance.yaml: the fake's credentials, and a wrong secret for the connection test. */
+function complianceVars(spec: AuthSpec): { credentials: string; connectionTest: string } {
+  const fields = [...(spec.user ? ['username'] : []), ...(spec.secret ? [spec.secret.name] : [])];
+  return {
+    credentials: fields.map((f) => `\n  ${f}: \${fake.${f}}`).join(''),
+    connectionTest: spec.secret
+      ? `\n# Credentials the upstream refuses: the connection test must fail with them.\nconnectionTest:\n  wrong: { ${spec.secret.name}: wrong-${spec.secret.name} }`
+      : '',
+  };
+}
+
 /** The generated manifest: connection form, secrets, network hosts and binding. */
 export function manifestFor(opts: NewPluginOptions, namespace: string): Record<string, unknown> {
   const spec = AUTH[opts.auth];
@@ -251,6 +262,9 @@ function packageFor(opts: NewPluginOptions): Record<string, unknown> {
     devDependencies: {
       '@synoikia/core': range('core', '@synoikia/core'),
       '@synoikia/create-plugin': range('cli', '@synoikia/create-plugin'),
+      // The compliance suite of @synoikia/core runs on these.
+      quickpickle: '1.11.2',
+      yaml: '^2.9.1',
       ...(ws ? { '@types/ws': '^8.18.1' } : {}),
     },
   };
@@ -281,6 +295,7 @@ export function newPlugin(opts: NewPluginOptions): string[] {
     description: opts.description ?? `${opts.name} for Synoikia.`,
     fn: opts.archetype === 'openapi-rest' ? 'request' : 'call',
     archetype: opts.archetype,
+    ...complianceVars(AUTH[opts.auth]),
   };
   const written: string[] = [];
   renderTemplate(path.join(TEMPLATES_DIR, 'plugin', 'common'), dir, vars, written);
