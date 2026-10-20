@@ -5,19 +5,15 @@ import * as quickpickle from 'quickpickle';
 import { afterAll, inject } from 'vitest';
 import { parse } from 'yaml';
 import { startPluginHarness } from '../index.js';
-import type { ExecuteResult, PluginHarness } from '../index.js';
+import type { ExecuteResult, HarnessApproval, PluginHarness } from '../index.js';
 import { startsAndAnswers } from '../repository.js';
 import { loadProfile } from './profile.js';
-import type { ComplianceCall, ComplianceFake, ComplianceProfile } from './profile.js';
+import type { ComplianceCall, ComplianceProfile } from './profile.js';
+import { currentRun, startRun } from './run.js';
+import type { ComplianceSubject } from './run.js';
 import { FAILED_RULE } from './verdict.js';
 
-/** The plugin under test, booted once for the whole run: its profile, its fake and core's harness. */
-interface Subject {
-  pluginDir: string;
-  profile: ComplianceProfile;
-  fake?: ComplianceFake;
-  harness: PluginHarness;
-}
+type Subject = ComplianceSubject;
 
 let subject: Promise<Subject> | undefined;
 
@@ -58,17 +54,16 @@ const subjectOf = () => (subject ??= boot());
 
 // The feature files share one process (config.ts), and this file loads once for each of them. The first load
 // registers the steps and owns the plugin; the last feature file to end stops it.
-const RUN = Symbol.for('synoikia.compliance.run');
-const run = globalThis as { [RUN]?: { ended: number; stop(): Promise<void> } };
-const firstLoad = !run[RUN];
-run[RUN] ??= {
+const firstLoad = !currentRun();
+const run = startRun({
   ended: 0,
+  subject: subjectOf,
   async stop() {
     const s = await subject?.catch(() => undefined);
     await s?.harness.stop();
     await s?.fake?.close();
   },
-};
+});
 const once = <F>(define: F): F => (firstLoad ? define : ((() => undefined) as F));
 const Given = once(quickpickle.Given);
 const When = once(quickpickle.When);
@@ -76,8 +71,7 @@ const Then = once(quickpickle.Then);
 const Before = once(quickpickle.Before);
 
 afterAll(async () => {
-  const state = run[RUN]!;
-  if (++state.ended === inject('synoikiaFeatureFiles')) await state.stop();
+  if (++run.ended === inject('synoikiaFeatureFiles')) await run.stop();
 });
 
 Before(async () => {
@@ -459,4 +453,89 @@ When('an admin tests the connection with the wrong credentials of the profile', 
 Then('the connection test fails', (world: object) => {
   const result = seen(world).connectionTest as { ok?: boolean } | undefined;
   report(result?.ok === false ? [] : ['the connection test passed with the wrong credentials of the profile']);
+});
+
+// ── Steps for a plugin's own feature files, on the named calls of the profile ──
+
+const own = new WeakMap<object, { result?: ExecuteResult; message?: string; literal?: string | null }>();
+const ownOf = (world: object) => {
+  let o = own.get(world);
+  if (!o) own.set(world, (o = {}));
+  return o;
+};
+
+async function namedCall(name: string) {
+  const s = await subjectOf();
+  const call = s.profile.calls[name];
+  if (!call) throw new Error(`test/compliance.yaml names no call "${name}" under calls`);
+  return { ...s, call };
+}
+
+const LEVELS = ['none', 'read', 'ask', 'write'] as const;
+const levelOf = (level: string) => {
+  if (!(LEVELS as readonly string[]).includes(level)) throw new Error(`"${level}" is not one of ${LEVELS.join(', ')}`);
+  return level as (typeof LEVELS)[number];
+};
+
+Given('the group of {string} is at level {word}', async (_world: object, name: string, level: string) => {
+  const { harness, call } = await namedCall(name);
+  if (!call.key) throw new Error(`the call "${name}" names no operation key`);
+  harness.setGroupLevel(harness.operation(call.key).pluginGroup, levelOf(level));
+});
+
+Given('the operation of {string} is at level {word}', async (_world: object, name: string, level: string) => {
+  const { harness, call } = await namedCall(name);
+  if (!call.key) throw new Error(`the call "${name}" names no operation key`);
+  harness.setOperationLevel(call.key, levelOf(level));
+});
+
+async function runNamed(world: object, name: string, decide?: (a: HarnessApproval) => void) {
+  const { harness, call } = await namedCall(name);
+  const o = ownOf(world);
+  o.result = await harness.execute(codeOf(harness, call), {
+    onApproval: decide
+      ? (a) => {
+          o.message = a.message;
+          o.literal = a.pending.confirmLiteral;
+          decide(a);
+        }
+      : undefined,
+  });
+}
+
+When('the agent runs {string}', (world: object, name: string) => runNamed(world, name));
+
+When('the agent runs {string}, and the human approves it', (world: object, name: string) =>
+  runNamed(world, name, (a) => a.approve()),
+);
+
+When('the agent runs {string}, and the human types {string}', (world: object, name: string, literal: string) =>
+  runNamed(world, name, (a) => a.approve(literal)),
+);
+
+When('the agent runs {string}, and the human denies it', (world: object, name: string) =>
+  runNamed(world, name, (a) => a.deny()),
+);
+
+Then('the agent gets a result that contains {string}', (world: object, text: string) => {
+  const { result } = ownOf(world);
+  if (!result?.ok) throw new Error(`the call failed: ${JSON.stringify(result && errorOf(result))}`);
+  if (!JSON.stringify(result.value).includes(text)) throw new Error(`the result does not contain "${text}"`);
+});
+
+Then('core refuses the call with the code {string}', (world: object, code: string) => {
+  const { result } = ownOf(world);
+  if (result?.ok) throw new Error('the call ran');
+  if (errorOf(result!)?.code !== code) throw new Error(`the call failed with ${JSON.stringify(errorOf(result!))}`);
+});
+
+Then('the approval shows {string}', (world: object, text: string) => {
+  const { message } = ownOf(world);
+  if (message === undefined) throw new Error('no approval was asked');
+  if (!message.includes(text)) throw new Error(`the approval "${message}" does not show "${text}"`);
+});
+
+Then('the approval asks to type {string}', (world: object, literal: string) => {
+  const { literal: asked } = ownOf(world);
+  if (asked !== literal) throw new Error(`the approval asks to type ${JSON.stringify(asked ?? null)}`);
 });

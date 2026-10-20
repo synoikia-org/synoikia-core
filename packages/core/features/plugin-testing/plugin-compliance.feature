@@ -77,8 +77,7 @@ Feature: Plugin compliance suite
 
   Rule: A plugin author specifies behavior of the plugin with the steps of the suite
 
-    @backlog
     Scenario: A feature of Acme Tasks runs in the same harness as the compliance suite
-      Given plugin author 3 writes a feature of Acme Tasks for "show the done tasks" with the steps of the compliance suite
+      Given plugin author 3 writes a feature of Acme Tasks for "show the open tasks" with the steps of the compliance suite
       When plugin author 3 runs that feature
       Then the feature passes against the fake Acme in the plugin harness

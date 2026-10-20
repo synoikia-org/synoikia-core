@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,10 @@ const RUN_CONFIG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const VITEST = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
 
 /** Plugin author 3's compliance profile of Acme Tasks, and what the last run of the suite printed. */
-const authored = new WeakMap<SynoikiaWorld, { profile?: Record<string, unknown>; output?: string }>();
+const authored = new WeakMap<
+  SynoikiaWorld,
+  { profile?: Record<string, unknown>; output?: string; ownFeature?: { file: string; text: string } }
+>();
 const authorOf = (world: SynoikiaWorld) => {
   let a = authored.get(world);
   if (!a) authored.set(world, (a = {}));
@@ -177,6 +180,13 @@ async function runSuite(world: SynoikiaWorld, breaks?: string) {
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as ManifestJson;
     fault.manifest?.(manifest);
     for (const [name, body] of Object.entries(fault.files ?? {})) writeFileSync(path.join(copy, name), body);
+    const own = authorOf(world).ownFeature;
+    if (own) {
+      // A plugin repository has the testing packages installed, as core has them.
+      symlinkSync(path.resolve(path.dirname(RUN_CONFIG), '../../node_modules'), path.join(copy, 'node_modules'));
+      mkdirSync(path.join(copy, 'features'));
+      writeFileSync(path.join(copy, 'features', own.file), own.text);
+    }
     writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
     mkdirSync(path.join(copy, 'test'));
     writeFileSync(
@@ -229,4 +239,35 @@ Then('the suite does not certify Acme Tasks, because {}', (world: SynoikiaWorld,
   expect(output).toContain(`Failed rule: ${message}`);
   const shown = /shows "(.+)"$/.exec(failure)?.[1];
   if (shown) expect(output.split('\n').find((l) => l.startsWith(`Failed rule: ${message}`))).toContain(shown);
+});
+
+Given(
+  'plugin author {int} writes a feature of Acme Tasks for {string} with the steps of the compliance suite',
+  (world: SynoikiaWorld, _author: number, name: string) => {
+    const a = authorOf(world);
+    const callName = `${name} of Groceries`;
+    a.profile = { ...a.profile, calls: { [callName]: call(name, { list: 'Groceries' }) } };
+    a.ownFeature = {
+      file: 'open-tasks.feature',
+      text: [
+        'Feature: Open tasks',
+        '  Rule: An agent sees the open tasks of a list',
+        '    Scenario: The agent sees the open tasks of Groceries',
+        `      Given the group of "${callName}" is at level read`,
+        `      When the agent runs "${callName}"`,
+        '      Then the agent gets a result that contains "milk"',
+        '',
+      ].join('\n'),
+    };
+  },
+);
+
+When('plugin author {int} runs that feature', async (world: SynoikiaWorld) => {
+  await runSuite(world);
+});
+
+Then('the feature passes against the fake Acme in the plugin harness', (world: SynoikiaWorld) => {
+  const output = authorOf(world).output!;
+  expect(output, output).toMatch(/✓ \|compliance\| features\/open-tasks\.feature/);
+  expect(output).toContain('Acme Tasks (World fixture) 1.0.0 is fit for production.');
 });
