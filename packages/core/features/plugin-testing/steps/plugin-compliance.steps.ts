@@ -301,13 +301,20 @@ Given('the profile of Acme Tasks names no sample write', (world: SynoikiaWorld) 
   authorOf(world).profile = { ...authorOf(world).profile, writes: [] };
 });
 
-/** The writes of Acme Tasks other than `name`, which a build with only that write leaves out of its catalog. */
+/** The writes of Acme Tasks; a build with only one of them leaves the others out of its catalog. */
 const WRITES = ['rename a list', 'archive a list', 'delete a list', 'add a task', 'complete a task', 'import tasks'];
 
 When(
   'plugin author {int} runs the compliance suite on a build of Acme Tasks whose only write is {string}',
   async (world: SynoikiaWorld, _author: number, name: string) => {
     const remove = WRITES.filter((w) => w !== name).map(opKey);
-    await runSuite(world, { files: { 'catalog-changes': JSON.stringify({ remove }) } });
+    await runSuite(world, {
+      entry: [
+        [
+          'const { change = {}, remove = [] } = changes();',
+          `const { change = {}, remove = ${JSON.stringify(remove)} } = changes();`,
+        ],
+      ],
+    });
   },
 );
