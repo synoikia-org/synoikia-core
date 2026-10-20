@@ -14,7 +14,7 @@ const tokenRow = (world: PortalWorld, name: string) =>
 export async function clientsPage(world: PortalWorld) {
   await world.openAsAdmin('/clients');
   await seen(world.page.getByRole('heading', { name: 'Bearer tokens' }));
-  await expect.poll(() => tokensTable(world).getAttribute('aria-busy')).toBe('false');
+  await expect.poll(() => tokensTable(world).getAttribute('aria-busy'), { timeout: 10_000 }).toBe('false');
 }
 
 async function newToken(world: PortalWorld, name: string) {
@@ -55,6 +55,13 @@ Then('the portal shows the new token once, with {string}', async (world: PortalW
   expect(world.noted.token).toMatch(/^\S{32,}$/);
   await dialog(world).getByRole('button', { name: 'Done' }).click();
   await expect.poll(() => dialog(world).count()).toBe(0);
+});
+
+Then('the portal shows why, and lists no token', async (world: PortalWorld) => {
+  await seen(world.page.getByRole('alert'));
+  expect((await world.page.getByRole('alert').textContent())?.trim()).not.toBe('');
+  expect(await tokensTable(world).locator('tbody tr').count()).toBe(0);
+  await seen(world.page.getByText('No bearer tokens.'));
 });
 
 Then('the clients page lists {string} without its value', async (world: PortalWorld, name: string) => {

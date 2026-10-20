@@ -410,6 +410,30 @@ Then('the portal says that there is no instance at {instance}', async (world: Po
   await seen(world.page.getByText(`No endpoint at /${slug}.`));
 });
 
+Given('the admin has the overview open, and the live updates of the portal are down', async (world: PortalWorld) => {
+  await world.page.route('**/api/events', (route) => route.abort());
+  await world.overviewOpen();
+});
+
+Given('another admin made the instance {instance} meanwhile', async (world: PortalWorld, slug: string) => {
+  await world.tasksInstance(slug);
+});
+
+When('the admin goes to the access page of {instance} without a reload', async (world: PortalWorld, slug: string) => {
+  // A history change, as the back and forward buttons make: the portal's router follows it in the same page.
+  await world.page.evaluate((to) => {
+    history.pushState(null, '', to);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, `/endpoints/${slug}/access`);
+});
+
+Then('the portal shows the access page of {instance}', async (world: PortalWorld, slug: string) => {
+  await seen(world.page.getByRole('heading', { name: `/${slug}` }));
+  await seen(world.page.getByRole('radiogroup').first());
+  expect(world.page.url()).toBe(`${world.base}/endpoints/${slug}/access`);
+  expect(await world.sameLoad()).toBe(true);
+});
+
 // ── the connection ──
 
 When('the admin opens the connection page of {instance}', async (world: PortalWorld, slug: string) => {
