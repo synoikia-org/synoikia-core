@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { API_TOKEN } from '../../support/world.js';
@@ -222,7 +221,7 @@ Given(
 );
 
 Given('Acme Tasks reports a rename as one change of the whole list', (world: SynoikiaWorld) => {
-  writeFileSync(world.pluginFile('diff-parent'), '');
+  world.pluginFlag('diff-parent');
 });
 
 When(
