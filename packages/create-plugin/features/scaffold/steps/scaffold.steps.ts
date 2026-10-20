@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from 'node:path';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
+import { matchesAny } from '../../../src/workflow/glob.js';
 import { ARCHETYPE_FLAGS, AUTH_FLAGS, PACKAGE_DIR, TSC, VITEST } from '../../support/world.js';
 import type { PluginAuthorWorld } from '../../support/world.js';
 
@@ -97,6 +98,57 @@ Then('the repository has no assistant files and its shared workflow files are cu
   expect(existsSync(world.file('docs/workflow.md'))).toBe(true);
   syncIsCurrent(world);
 });
+
+Then(
+  "the security paths of the repository cover each plugin's compliance profile, fake upstream, features and guides, and the lockfile",
+  (world: PluginAuthorWorld) => {
+    expect(world.last?.code, world.last?.stderr).toBe(0);
+    const paths =
+      world.readJson<{ synoikia?: { workflow?: { securityPaths?: string[] } } }>('package.json').synoikia?.workflow
+        ?.securityPaths ?? [];
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'plugins/*/test/compliance.yaml',
+        'plugins/*/test/fake*.ts',
+        'plugins/*/features/**',
+        'plugins/*/guides/**',
+        'pnpm-lock.yaml',
+      ]),
+    );
+    for (const f of [
+      'plugins/acme-box/test/compliance.yaml',
+      'plugins/acme-box/test/fake.ts',
+      'plugins/acme-box/test/fake-acme.ts',
+      'plugins/acme-box/features/acme-box.feature',
+      'plugins/acme-box/guides/start.md',
+      'pnpm-lock.yaml',
+    ])
+      expect(matchesAny(f, paths), f).toBe(true);
+  },
+);
+
+Then('the repository has a secret scan setting that keeps the default rules', (world: PluginAuthorWorld) => {
+  expect(world.last?.code, world.last?.stderr).toBe(0);
+  expect(existsSync(world.file('.gitleaks.toml')), '.gitleaks.toml').toBe(true);
+  expect(world.read('.gitleaks.toml')).toMatch(/^\s*\[extend\][^[]*^\s*useDefault\s*=\s*true\b/m);
+});
+
+const filesUnder = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((e) => e.isFile())
+    .map((e) => path.join(e.parentPath, e.name));
+
+Then(
+  'the assistant files have the plugin development skill, and no assistant file names e2e tests or golden records',
+  (world: PluginAuthorWorld) => {
+    expect(world.last?.code, world.last?.stderr).toBe(0);
+    const skill = '.claude/skills/plugin-development/SKILL.md';
+    expect(existsSync(world.file(skill)), skill).toBe(true);
+    expect(world.read(skill).trim()).not.toBe('');
+    for (const f of [...filesUnder(world.file('.claude')), world.file('CLAUDE.md')])
+      expect(readFileSync(f, 'utf8'), path.relative(world.repo, f)).not.toMatch(/e2e|__golden__|golden (record|test)/i);
+  },
+);
 
 Then('the create command fails with {string}', (world: PluginAuthorWorld, message: string) => {
   expect(world.last?.code).toBe(1);
