@@ -18,6 +18,18 @@ Feature: Listeners
       When the operator restarts the server with both listeners on the port 9000
       Then the server does not start, because the two ports must differ
 
+  Rule: The portal serves a file only by its plain name
+
+    Scenario: A portal file asked for by its plain name is served
+      Given the portal has the file "app.js" among its assets
+      When someone asks the portal port for the asset "app.js"
+      Then they get the file "app.js"
+
+    Scenario: A portal file asked for by a name encoded twice is not served
+      Given the portal has the file "app.js" among its assets
+      When someone asks the portal port for the asset "app.js" with its name encoded twice
+      Then they get the portal page, not the file "app.js"
+
   Rule: Health checks answer without sign-in
 
     Scenario: Both health checks answer "ok"
