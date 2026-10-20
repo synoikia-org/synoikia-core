@@ -22,6 +22,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
-      # Each plugin's test checks its manifest and plugin.yaml, builds its bundle, then runs its unit tests and
-      # its e2e tests on core's harness under the permission model.
+      # Each plugin's test: check, build, unit tests, then core's compliance suite and its features on the bundle.
       - run: pnpm test

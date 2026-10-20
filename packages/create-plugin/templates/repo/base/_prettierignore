@@ -1,3 +1,5 @@
 dist
 coverage
 pnpm-lock.yaml
+# Guide text is hashed into attestation keys; keep it byte-for-byte.
+plugins/*/guides
