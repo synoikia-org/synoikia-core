@@ -12,7 +12,7 @@ import { currentGuide, issueAttestationKey } from '../gate/attestation.js';
 import { createGateBindings, principalKey } from '../gate/pipeline.js';
 import type { CallerContext, GateDeps, GatePark, InstanceRuntime } from '../gate/pipeline.js';
 import type { ParkedApproval } from '../approvals/service.js';
-import { pendingResult, RESUME_WAIT_MS } from './executions.js';
+import { pendingResult } from './executions.js';
 import type { ExecuteResult } from './executions.js';
 import { BindingError, runInSandbox } from '../sandbox/index.js';
 import type { Binding, SandboxResult } from '../sandbox/index.js';
@@ -140,7 +140,7 @@ export async function resumeExecution(
   signal?: AbortSignal,
 ): Promise<ExecuteResult> {
   const outcome = deps.executions
-    ? await deps.executions.wait(executionId, principalKey(caller), rt.instanceId, RESUME_WAIT_MS, signal)
+    ? await deps.executions.wait(executionId, principalKey(caller), rt.instanceId, deps.executions.resumeWaitMs, signal)
     : 'not_found';
   const result: ExecuteResult =
     outcome === 'not_found'

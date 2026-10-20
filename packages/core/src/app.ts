@@ -99,6 +99,8 @@ export interface AppOptions {
   log?: Logger;
   /** How long a form prompt waits before its call parks (tests). */
   formFallbackMs?: number;
+  /** How long `resume` waits for a change before it answers (tests). */
+  resumeWaitMs?: number;
   /** Tests only: a cheaper password hash. Never set from the environment or the config. */
   passwordHashCost?: PasswordHashCost;
   /** Tests only: the key set of an external provider's domain, in place of the one it publishes; undefined fetches it. */
@@ -138,7 +140,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   const links = new ApprovalLinkService(db, now);
   const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
-  const executions = new ExecutionRegistry(nowMs);
+  const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
   events.on('instance.status', ({ instanceId, status }) => {
     if (status !== 'stopped') return;
