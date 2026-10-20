@@ -123,6 +123,22 @@ const BROKEN: Record<string, Build> = {
       ],
     ],
   },
+  'shows the share password in the open tasks of a list': {
+    entry: [
+      [
+        "'lists.tasks': (p, ctx) => upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx)),",
+        "'lists.tasks': async (p, ctx) => ({ tasks: await upstream('GET', `${listPath(p.list)}/tasks?status=open`, undefined, callHeaders(ctx)), code: 'groceries-share-7' }),",
+      ],
+    ],
+  },
+  'shows the share password when it deletes a list': {
+    entry: [
+      [
+        "'lists.delete': (p, ctx) => upstream('DELETE', listPath(p.list), undefined, callHeaders(ctx)),",
+        "'lists.delete': async (p, ctx) => ({ deleted: await upstream('DELETE', listPath(p.list), undefined, callHeaders(ctx)), code: 'groceries-share-7' }),",
+      ],
+    ],
+  },
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
@@ -166,6 +182,7 @@ const FAILURES: Record<string, string> = {
   'the suite did not run every rule': 'the suite file locks.feature did not run',
   'the API token reached the approval of "delete a list"': `a secret value of the profile reached the approval of ${opKey('delete a list')}: "${API_TOKEN.slice(0, 4)}…"`,
   '"add a task" asked for no approval': `${opKey('add a task')} asked for no approval`,
+  'the share password reached the agent': `a secret value of the profile reached the agent: "${'groceries-share-7'.slice(0, 4)}…"`,
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
@@ -271,7 +288,14 @@ Given(
   (world: SynoikiaWorld, _author: number, name: string) => {
     const a = authorOf(world);
     const callName = `${name} of Groceries`;
-    a.profile = { ...a.profile, calls: { [callName]: call(name, { list: 'Groceries' }) } };
+    const addName = 'add butter to Groceries';
+    a.profile = {
+      ...a.profile,
+      calls: {
+        [callName]: call(name, { list: 'Groceries' }),
+        [addName]: call('add a task', { list: 'Groceries', title: 'butter' }),
+      },
+    };
     a.ownFeature = {
       file: 'open-tasks.feature',
       text: [
@@ -281,6 +305,18 @@ Given(
         `      Given the group of "${callName}" is at level read`,
         `      When the agent runs "${callName}"`,
         '      Then the agent gets a result that contains "milk"',
+        '    Scenario: The open tasks of Groceries hold no task of another list',
+        `      Given the group of "${callName}" is at level read`,
+        `      When the agent runs "${callName}"`,
+        '      Then the agent gets a result that does not contain "sweep"',
+        '    Scenario: A read at level read asks no human',
+        `      Given the group of "${callName}" is at level read`,
+        `      When the agent runs "${callName}"`,
+        '      Then no approval was asked',
+        '    Scenario: An add with no human still shows its approval',
+        '      Given the group of "add butter to Groceries" is at level ask',
+        '      When the agent runs "add butter to Groceries"',
+        '      Then the approval shows "butter"',
         '',
       ].join('\n'),
     };

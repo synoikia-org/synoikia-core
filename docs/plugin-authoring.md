@@ -209,6 +209,10 @@ Scenario: The approval names the item
 | `Then core refuses the call with the code "<code>"`                | The call failed with that error code        |
 | `Then the approval shows "<text>"`                                 | The approval prompt holds the text          |
 | `Then the approval asks to type "<literal>"`                       | The approval asks for that literal          |
+| `Then the agent gets a result that does not contain "<text>"`      | The call ran, and its result lacks the text |
+| `Then no approval was asked`                                       | The call ran or failed with no human        |
+
+Each named call also checks its result against the secret values of the profile.
 
 A step file of the plugin gets the harness, the profile and the fake from `complianceSubject()`. Pure functions get unit tests in `test/unit/`.
 
