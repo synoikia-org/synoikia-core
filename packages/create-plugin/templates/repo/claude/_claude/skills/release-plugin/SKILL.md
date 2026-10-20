@@ -5,14 +5,38 @@ description: Prepare a plugin release by bumping its version in manifest.json an
 
 # Release a plugin
 
-A release is a version bump merged to `main`; the Release workflow packs, signs, verifies and publishes every plugin whose version isn't in the published index yet (see `RELEASING.md`).
+A release is a version bump merged to `main`. The Release workflow (`.github/workflows/release.yml`) then packs, signs, verifies and publishes every plugin whose manifest version isn't in the published index yet (see `RELEASING.md`). Nothing is published from a branch, and nothing here needs the signing key.
 
-1. **Pick the version** with semver against the last release (`git log --oneline -- plugins/<id>`):
-   - patch: fixes, catalog corrections, wording;
-   - minor: new operations, connection fields or capabilities; also any `plugin.yaml` change that unlocks an operation, drops a `sensitiveParams`/`sensitiveResult` rule or overrides a classification to read (call it out in the PR);
-   - major: a change that breaks existing instances, such as a renamed operation key or a removed connection field.
-2. **Bump both files to the same version**: `plugins/<id>/manifest.json` and `plugins/<id>/package.json`.
-3. **Minimum Synoikia version**, only when the change needs a newer core: `"synoikia": { "minCoreVersion": "x.y.z" }` in `package.json`. A newer SDK means bumping the manifest `sdk` range together with the `@synoikia/plugin-sdk` range, then `pnpm install`.
-4. **Verify**: `pnpm --filter ./plugins/<id> test`, then `pnpm typecheck && pnpm lint && pnpm format:check`.
+## Steps
 
-Released versions are immutable. Never touch `minisign.pub` or the signing steps of the workflow.
+1. **Pick the version** with semver against the last release (`git log --oneline -- plugins/<id>` shows what changed):
+   - patch: fixes, catalog corrections, wording.
+   - minor: new operations, connection fields or capabilities, compatible with existing instances. Also any `plugin.yaml` change that unlocks an operation, drops a `sensitiveParams`/`sensitiveResult` rule or overrides a classification to read. Call it out in the PR.
+   - major: a change that breaks existing instances, such as a renamed operation key, a removed connection field or a changed binding.
+
+   Released versions are immutable, so never reuse one. If the published index already has the version, `synoikia-plugin repo pack` skips the plugin and nothing is released.
+
+2. **Bump both files to the same version.** `synoikia-plugin check` (in the plugin's tests) and `repo pack` fail if they differ.
+   - `plugins/<id>/manifest.json` → `version`
+   - `plugins/<id>/package.json` → `version`
+
+3. **Minimum Synoikia version.** Only when the change needs a core feature that older Synoikia releases lack, add it to `package.json`:
+
+   ```json
+   "synoikia": { "minCoreVersion": "x.y.z" }
+   ```
+
+   Otherwise the manifest's `sdk` range decides which Synoikia versions can install it. If the plugin now needs a newer SDK, bump these ranges together, then run `pnpm install`:
+   - the `sdk` range in `manifest.json`
+   - the `@synoikia/plugin-sdk`, `@synoikia/core` and `@synoikia/create-plugin` ranges in `package.json`
+
+4. **Verify** that what will be packed builds and passes:
+
+   ```sh
+   pnpm --filter ./plugins/<id> test
+   pnpm typecheck && pnpm lint && pnpm format:check
+   ```
+
+5. In the PR description, name the plugin, the version, the user-visible changes and any `minCoreVersion`. Merging it publishes the release.
+
+Never touch `minisign.pub`, the `MINISIGN_SECRET_KEY` steps in the workflow, or the `index` release.

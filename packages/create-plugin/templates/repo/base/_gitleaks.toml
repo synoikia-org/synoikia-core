@@ -1,0 +1,3 @@
+# The default rules. Allowlist a fake credential of a test by its exact value only.
+[extend]
+useDefault = true
