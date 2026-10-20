@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { checkManifest, parsePluginSettings } from '@synoikia/plugin-sdk';
-import { Given, Then, When } from 'quickpickle';
+import * as quickpickle from 'quickpickle';
 import { afterAll, inject } from 'vitest';
 import { parse } from 'yaml';
 import { startPluginHarness } from '../index.js';
@@ -11,7 +11,7 @@ import { loadProfile } from './profile.js';
 import type { ComplianceFake, ComplianceProfile } from './profile.js';
 import { FAILED_RULE } from './verdict.js';
 
-/** The plugin under test, booted once for each feature file of the suite: its profile, its fake and core's harness. */
+/** The plugin under test, booted once for the whole run: its profile, its fake and core's harness. */
 interface Subject {
   pluginDir: string;
   profile: ComplianceProfile;
@@ -56,10 +56,27 @@ async function startError(pluginDir: string, err: unknown): Promise<string> {
 
 const subjectOf = () => (subject ??= boot());
 
+// The feature files share one process (config.ts), and this file loads once for each of them. The first load
+// registers the steps and owns the plugin; the last feature file to end stops it.
+const RUN = Symbol.for('synoikia.compliance.run');
+const run = globalThis as { [RUN]?: { ended: number; stop(): Promise<void> } };
+const firstLoad = !run[RUN];
+run[RUN] ??= {
+  ended: 0,
+  async stop() {
+    const s = await subject?.catch(() => undefined);
+    await s?.harness.stop();
+    await s?.fake?.close();
+  },
+};
+const once = <F>(define: F): F => (firstLoad ? define : ((() => undefined) as F));
+const Given = once(quickpickle.Given);
+const When = once(quickpickle.When);
+const Then = once(quickpickle.Then);
+
 afterAll(async () => {
-  const s = await subject?.catch(() => undefined);
-  await s?.harness.stop();
-  await s?.fake?.close();
+  const state = run[RUN]!;
+  if (++state.ended === inject('synoikiaFeatureFiles')) await state.stop();
 });
 
 /** Fails the step with one line for each broken rule, as the verdict lists them. */
