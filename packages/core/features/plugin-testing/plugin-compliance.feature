@@ -82,6 +82,8 @@ Feature: Plugin compliance suite
         | names no network host                                  | the manifest names no network host                    |
         | shows the API token in the approval of "delete a list" | the API token reached the approval of "delete a list" |
         | cannot summarize "add a task"                          | "add a task" asked for no approval                    |
+        | shows the API token in the open tasks of a list        | the API token reached the agent                       |
+        | shows the API token when it deletes a list             | the API token reached the agent                       |
 
   Rule: A plugin author specifies behavior of the plugin with the steps of the suite
 
