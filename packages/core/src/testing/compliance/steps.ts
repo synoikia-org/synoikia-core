@@ -295,6 +295,7 @@ const lockCases = (profile: ComplianceProfile) => Object.entries(profile.locks).
 Given('the groups of the locked operations are at level write', async () => {
   const { harness, profile } = await subjectOf();
   setGroups(harness, lockCases(profile), 'write');
+  for (const c of lockCases(profile)) harness.setOperationLevel(c.key, null);
 });
 
 When('the agent makes the call of each lock case', async (world: object) => {
