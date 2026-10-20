@@ -26,16 +26,15 @@ const authorOf = (world: SynoikiaWorld) => {
 const call = (name: string, params: unknown) => ({ fn: 'call', args: [opKey(name), params], key: opKey(name) });
 
 /** The builds of Acme Tasks that break a rule: edits of its entry file or its manifest. */
-const BROKEN: Record<
-  string,
-  {
-    entry?: [string, string][];
-    manifest?: (m: ManifestJson) => void;
-    files?: Record<string, string>;
-    /** Extra vitest arguments, such as a file filter. */
-    args?: string[];
-  }
-> = {
+type Build = {
+  entry?: [string, string][];
+  manifest?: (m: ManifestJson) => void;
+  files?: Record<string, string>;
+  /** Extra vitest arguments, such as a file filter. */
+  args?: string[];
+};
+
+const BROKEN: Record<string, Build> = {
   'throws "boom" when it loads': {
     entry: [
       [
@@ -197,9 +196,9 @@ Given(
 );
 
 /** Runs the suite the way plugin author 3 does: vitest in the copy, with the profile and the fake in its test folder. */
-async function runSuite(world: SynoikiaWorld, breaks?: string) {
-  const fault = breaks === undefined ? {} : BROKEN[breaks];
-  if (!fault) throw new Error(`The World has no build of Acme Tasks that ${breaks}`);
+async function runSuite(world: SynoikiaWorld, breaks?: string | Build) {
+  const fault = breaks === undefined ? {} : typeof breaks === 'string' ? BROKEN[breaks] : breaks;
+  if (!fault) throw new Error(`The World has no build of Acme Tasks that ${String(breaks)}`);
   const dir = tasksCopy(world, (copy) => {
     editEntry(copy, fault.entry ?? []);
     const manifestFile = path.join(copy, 'manifest.json');
@@ -297,3 +296,25 @@ Then('the feature passes against the fake Acme in the plugin harness', (world: S
   expect(output, output).toMatch(/✓ \|compliance\| features\/open-tasks\.feature/);
   expect(output).toContain('Acme Tasks (World fixture) 1.0.0 is fit for production.');
 });
+
+Given('the profile of Acme Tasks names no sample write', (world: SynoikiaWorld) => {
+  authorOf(world).profile = { ...authorOf(world).profile, writes: [] };
+});
+
+/** The writes of Acme Tasks; a build with only one of them leaves the others out of its catalog. */
+const WRITES = ['rename a list', 'archive a list', 'delete a list', 'add a task', 'complete a task', 'import tasks'];
+
+When(
+  'plugin author {int} runs the compliance suite on a build of Acme Tasks whose only write is {string}',
+  async (world: SynoikiaWorld, _author: number, name: string) => {
+    const remove = WRITES.filter((w) => w !== name).map(opKey);
+    await runSuite(world, {
+      entry: [
+        [
+          'const { change = {}, remove = [] } = changes();',
+          `const { change = {}, remove = ${JSON.stringify(remove)} } = changes();`,
+        ],
+      ],
+    });
+  },
+);
