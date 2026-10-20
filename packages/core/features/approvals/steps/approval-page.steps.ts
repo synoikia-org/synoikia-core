@@ -133,6 +133,17 @@ Given('the admin turns the gateway off for every instance', async (world: Synoik
   );
 });
 
+Given('the settings of the access gateway are empty', (world: SynoikiaWorld) => {
+  const { changes } = world.editDataFile((db) =>
+    db
+      .prepare(
+        "UPDATE settings SET value = json_set(value, '$.cfAccess.teamDomain', '', '$.cfAccess.aud', '') WHERE key = 'mcp'",
+      )
+      .run(),
+  );
+  expect(changes).toBe(1);
+});
+
 Given('the admin lets people sign up with the role {string}', async (world: SynoikiaWorld, role: string) => {
   const defaultRoleId = await world.role(role);
   await world.expectOk(

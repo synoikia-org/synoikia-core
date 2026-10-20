@@ -115,6 +115,21 @@ Given('the admin lets the session approve calls on {string}', async (world: Syno
   await world.instanceSettings(slug, { formElicitationApprovals: 'ask' });
 });
 
+Given(
+  'the database of {string} holds the in-session setting {string}',
+  async (world: SynoikiaWorld, slug: string, value: string) => {
+    const id = await world.tasksInstance(slug);
+    const { changes } = world.editDataFile((db) =>
+      db
+        .prepare(
+          "UPDATE plugin_instances SET settings = json_set(settings, '$.formElicitationApprovals', ?) WHERE id = ?",
+        )
+        .run(value, id),
+    );
+    expect(changes).toBe(1);
+  },
+);
+
 // ── calls that wait ──
 
 Given(
@@ -307,6 +322,20 @@ Then('agent {word} is told that its app could not show the approval prompt', (wo
 Then('the app of agent {word} was never asked', (world: SynoikiaWorld) => {
   expect(world.prompts).toEqual([]);
 });
+
+Then('the app of agent {word} showed only an approval link', (world: SynoikiaWorld) => {
+  expect(world.prompts.map((p) => p.mode)).toEqual(['url']);
+});
+
+Then(
+  'the admin sees one warning that in-session approvals on {string} were turned off',
+  async (world: SynoikiaWorld, endpoint: string) => {
+    const overview = await world.expectOk(world.admin.get('/api/overview'), 'read overview');
+    expect((overview.warnings as string[]).filter((w) => w.includes('in-session approvals'))).toEqual([
+      `${endpoint}: in-session approvals were turned off (unknown stored value); turn them on again in Endpoint settings`,
+    ]);
+  },
+);
 
 Then('the app of agent {word} showed one form with no fields', (world: SynoikiaWorld) => {
   expect(world.prompts).toEqual([expect.objectContaining({ mode: 'form', fields: [] })]);

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import Database from 'better-sqlite3';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import type { CryptoKey, JWK, JWTVerifyGetKey } from 'jose';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
@@ -578,6 +579,17 @@ export class SynoikiaWorld extends QuickPickleWorld {
       } catch (err) {
         if (attempt === 5 || (err as { code?: string }).code !== 'EADDRINUSE') throw err;
       }
+    }
+  }
+
+  /** Opens core's data file and runs `edit` on it, for a stored state that no interface of core makes. */
+  editDataFile<T>(edit: (db: Database.Database) => T): T {
+    const db = new Database(path.join(this.dataDir, 'synoikia.sqlite'));
+    try {
+      db.pragma('busy_timeout = 5000');
+      return edit(db);
+    } finally {
+      db.close();
     }
   }
 

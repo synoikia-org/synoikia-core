@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { startCoreProcess } from '../../support/core-process.js';
@@ -198,12 +197,12 @@ Then('its log has the warning for the token of another issuer, and no debug or i
 
 Given('the database of the server refuses each change of {string}', async (world: SynoikiaWorld, slug: string) => {
   const id = await world.tasksInstance(slug);
-  const db = new Database(path.join(world.dataDir, 'synoikia.sqlite'));
-  db.exec(
-    `CREATE TRIGGER refuse_changes BEFORE UPDATE OF config, secrets_enc ON plugin_instances WHEN OLD.id = '${id}' ` +
-      `BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`,
+  world.editDataFile((db) =>
+    db.exec(
+      `CREATE TRIGGER refuse_changes BEFORE UPDATE OF config, secrets_enc ON plugin_instances WHEN OLD.id = '${id}' ` +
+        `BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`,
+    ),
   );
-  db.close();
 });
 
 When('the admin tries to save the connection of {string}', async (world: SynoikiaWorld, slug: string) => {
