@@ -1,3 +1,4 @@
+import { globSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { quickpickle } from 'quickpickle';
@@ -21,12 +22,18 @@ export interface ComplianceOptions {
 declare module 'vitest' {
   interface ProvidedContext {
     synoikiaPluginDir: string;
+    synoikiaFeatureFiles: number;
   }
 }
 
 /** The vitest config that runs the compliance suite and the plugin's own feature files, and prints core's verdict. */
 export function complianceConfig(opts: ComplianceOptions): ViteUserConfig {
   const pluginDir = path.resolve(opts.pluginDir);
+  const features = opts.features ?? ['features/**/*.feature'];
+  const files = [
+    ...globSync('*.feature', { cwd: SUITE_DIR }),
+    ...globSync(features, { cwd: pluginDir, exclude: (f) => f === 'node_modules' }),
+  ];
   return {
     plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'], stepTimeout: 60_000 })],
     test: {
@@ -37,10 +44,13 @@ export function complianceConfig(opts: ComplianceOptions): ViteUserConfig {
           test: {
             name: 'compliance',
             root: pluginDir,
-            include: [path.join(SUITE_DIR, '*.feature'), ...(opts.features ?? ['features/**/*.feature'])],
+            include: [path.join(SUITE_DIR, '*.feature'), ...features],
             exclude: [],
             setupFiles: [STEPS, ...(opts.steps ?? []).map((s) => path.resolve(pluginDir, s))],
-            provide: { synoikiaPluginDir: pluginDir },
+            provide: { synoikiaPluginDir: pluginDir, synoikiaFeatureFiles: files.length },
+            // One process runs the feature files one after another, so the plugin boots once for the run.
+            isolate: false,
+            fileParallelism: false,
             // isolated-vm requires --no-node-snapshot on Node >= 20.
             execArgv: ['--no-node-snapshot'],
             testTimeout: 120_000,

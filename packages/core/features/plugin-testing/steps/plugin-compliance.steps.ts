@@ -23,7 +23,32 @@ const authorOf = (world: SynoikiaWorld) => {
 const call = (name: string, params: unknown) => ({ fn: 'call', args: [opKey(name), params], key: opKey(name) });
 
 /** The builds of Acme Tasks that break a rule: edits of its entry file or its manifest. */
-const BROKEN: Record<string, { entry?: [string, string][]; manifest?: (m: ManifestJson) => void }> = {
+const BROKEN: Record<
+  string,
+  { entry?: [string, string][]; manifest?: (m: ManifestJson) => void; files?: Record<string, string> }
+> = {
+  'throws "boom" when it loads': {
+    entry: [
+      [
+        'const HERE = path.dirname(fileURLToPath(import.meta.url));',
+        "throw new Error('boom');\nconst HERE = path.dirname(fileURLToPath(import.meta.url));",
+      ],
+    ],
+  },
+  'syncs no operation': {
+    entry: [['operations: await catalog() }', 'operations: [] }']],
+  },
+  'gives "add a task" no description': {
+    entry: [
+      [
+        "op('tasks.add', 'add a task', 'tasks', 'write', {",
+        "op('tasks.add', 'add a task', 'tasks', 'write', {\n    docs: undefined,",
+      ],
+    ],
+  },
+  'locks "purge lists", which its catalog does not have': {
+    files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
+  },
   'also locks "archive a list"': {
     entry: [
       [
@@ -47,6 +72,10 @@ const BROKEN: Record<string, { entry?: [string, string][]; manifest?: (m: Manife
 
 /** What the suite tells plugin author 3 for each broken rule. */
 const FAILURES: Record<string, string> = {
+  'Acme Tasks does not start, and shows "boom"': 'the plugin does not start: ',
+  'the catalog is empty': 'the catalog is empty',
+  '"add a task" has no description': `${opKey('add a task')} has no description`,
+  'the lock "purge lists" names no operation': 'the lock lists.purge names no operation',
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
@@ -80,6 +109,7 @@ async function runSuite(world: SynoikiaWorld, breaks?: string) {
     const manifestFile = path.join(copy, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as ManifestJson;
     fault.manifest?.(manifest);
+    for (const [name, body] of Object.entries(fault.files ?? {})) writeFileSync(path.join(copy, name), body);
     writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
     mkdirSync(path.join(copy, 'test'));
     writeFileSync(
@@ -130,4 +160,6 @@ Then('the suite does not certify Acme Tasks, because {}', (world: SynoikiaWorld,
   if (!message) throw new Error(`The World has no failure "${failure}"`);
   expect(output, output).toContain('Acme Tasks (World fixture) 1.0.0 is not fit for production.');
   expect(output).toContain(`Failed rule: ${message}`);
+  const shown = /shows "(.+)"$/.exec(failure)?.[1];
+  if (shown) expect(output.split('\n').find((l) => l.startsWith(`Failed rule: ${message}`))).toContain(shown);
 });

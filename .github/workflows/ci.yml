@@ -47,7 +47,8 @@ jobs:
 
   # The portal's feature scenarios in Chromium, against a real core.
   e2e-ui:
-    runs-on: ubuntu-latest
+    # Playwright 1.56 installs no Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

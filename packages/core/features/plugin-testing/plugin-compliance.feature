@@ -28,17 +28,16 @@ Feature: Plugin compliance suite
 
   Rule: The catalog of the plugin is valid
 
-    @backlog
     Scenario Outline: The suite refuses a catalog that <breaks>
       When plugin author 3 runs the compliance suite on a build of Acme Tasks that <breaks>
       Then the suite does not certify Acme Tasks, because <failure>
 
       Examples:
-        | breaks                                           | failure                                            |
-        | throws "boom" when it loads                      | Acme Tasks does not start, and shows "boom"        |
-        | syncs no operation                               | the catalog is empty                               |
-        | gives "add a task" no description                | "add a task" has no description                    |
-        | locks "purge lists", which its catalog does not have | the lock "purge lists" names no operation      |
+        | breaks                                               | failure                                     |
+        | throws "boom" when it loads                          | Acme Tasks does not start, and shows "boom" |
+        | syncs no operation                                   | the catalog is empty                        |
+        | gives "add a task" no description                    | "add a task" has no description             |
+        | locks "purge lists", which its catalog does not have | the lock "purge lists" names no operation   |
 
   Rule: Access levels decide each call of the plugin
 
