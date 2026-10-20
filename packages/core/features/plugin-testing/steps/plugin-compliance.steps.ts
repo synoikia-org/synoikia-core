@@ -288,7 +288,14 @@ Given(
   (world: SynoikiaWorld, _author: number, name: string) => {
     const a = authorOf(world);
     const callName = `${name} of Groceries`;
-    a.profile = { ...a.profile, calls: { [callName]: call(name, { list: 'Groceries' }) } };
+    const addName = 'add butter to Groceries';
+    a.profile = {
+      ...a.profile,
+      calls: {
+        [callName]: call(name, { list: 'Groceries' }),
+        [addName]: call('add a task', { list: 'Groceries', title: 'butter' }),
+      },
+    };
     a.ownFeature = {
       file: 'open-tasks.feature',
       text: [
@@ -306,6 +313,10 @@ Given(
         `      Given the group of "${callName}" is at level read`,
         `      When the agent runs "${callName}"`,
         '      Then no approval was asked',
+        '    Scenario: An add with no human still shows its approval',
+        '      Given the group of "add butter to Groceries" is at level ask',
+        '      When the agent runs "add butter to Groceries"',
+        '      Then the approval shows "butter"',
         '',
       ].join('\n'),
     };
