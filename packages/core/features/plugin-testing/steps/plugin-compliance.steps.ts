@@ -57,6 +57,25 @@ const BROKEN: Record<
       ],
     ],
   },
+  'asks to type "delete" to delete a list': {
+    entry: [['{ confirmLiteral: params.list }', "{ confirmLiteral: 'delete' }"]],
+  },
+  'does not lock "delete a list"': {
+    entry: [
+      [
+        "op('lists.delete', 'delete a list', 'lists', 'write', { locked: true,",
+        "op('lists.delete', 'delete a list', 'lists', 'write', {",
+      ],
+    ],
+  },
+  'does not name the list in the approval of "delete a list"': {
+    entry: [
+      [
+        'return p.title ? `${name}: "${p.title}" in ${p.list}` : `${name}: ${p.list}`;',
+        'return p.title ? `${name}: "${p.title}" in ${p.list}` : name;',
+      ],
+    ],
+  },
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
@@ -89,6 +108,9 @@ const FAILURES: Record<string, string> = {
   'the lock "purge lists" names no operation': 'the lock lists.purge names no operation',
   '"add a task" ran at level read': `${opKey('add a task')} ran at level read`,
   'Acme Tasks accepted a call that is not in its catalog': 'the plugin accepted a call that is not in its catalog',
+  '"delete a list" asks to type "delete" in place of "Chores"': `${opKey('delete a list')} asks to type "delete" in place of "Chores"`,
+  '"delete a list" is not off by default': `${opKey('delete a list')} is not off by default`,
+  'the approval of "delete a list" does not show "Chores"': `the approval of ${opKey('delete a list')} does not show "Chores"`,
   '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,

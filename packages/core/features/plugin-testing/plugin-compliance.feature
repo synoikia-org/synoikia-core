@@ -52,7 +52,6 @@ Feature: Plugin compliance suite
 
   Rule: A locked operation runs only with its typed confirmation
 
-    @backlog
     Scenario Outline: The suite refuses a lock that <breaks>
       When plugin author 3 runs the compliance suite on a build of Acme Tasks that <breaks>
       Then the suite does not certify Acme Tasks, because <failure>

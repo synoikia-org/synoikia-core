@@ -73,10 +73,16 @@ const once = <F>(define: F): F => (firstLoad ? define : ((() => undefined) as F)
 const Given = once(quickpickle.Given);
 const When = once(quickpickle.When);
 const Then = once(quickpickle.Then);
+const Before = once(quickpickle.Before);
 
 afterAll(async () => {
   const state = run[RUN]!;
   if (++state.ended === inject('synoikiaFeatureFiles')) await state.stop();
+});
+
+Before(async () => {
+  const s = await subject?.catch(() => undefined);
+  await s?.fake?.reset?.();
 });
 
 /** Fails the step with one line for each broken rule, as the verdict lists them. */
@@ -86,9 +92,24 @@ function report(issues: string[]) {
 
 const shared = new WeakMap<
   object,
-  { manifestIssues?: string[]; guideIssues?: string[]; lockIssues?: string[]; results?: CallResult[] }
+  {
+    manifestIssues?: string[];
+    guideIssues?: string[];
+    lockIssues?: string[];
+    results?: CallResult[];
+    approvals?: LockApproval[];
+  }
 >();
 
+type LockApproval = {
+  key: string;
+  confirm: string;
+  target?: string;
+  literal?: string | null;
+  message?: string;
+  wrongRefused: boolean;
+  result: ExecuteResult;
+};
 type CallResult = { call: Omit<ComplianceCall, 'key'> & { key?: string }; result: ExecuteResult };
 const seen = (world: object) => {
   let s = shared.get(world);
@@ -192,7 +213,7 @@ const codeOf = (h: PluginHarness, call: { fn: string; args: unknown[] }) =>
 const label = (call: { fn: string; args: unknown[] }) => `${call.fn}(${JSON.stringify(call.args).slice(1, -1)})`;
 
 /** Sets the group of each call's operation; a call whose key is not in the catalog is an issue. */
-function setGroups(h: PluginHarness, calls: ComplianceCall[], level: 'read' | 'ask') {
+function setGroups(h: PluginHarness, calls: ComplianceCall[], level: 'read' | 'ask' | 'write') {
   const issues: string[] = [];
   for (const call of calls) {
     if (!call.key) issues.push(`${label(call)} names no operation key in the profile`);
@@ -266,5 +287,92 @@ Then('core refuses each of those calls', (world: object) => {
         ? [`the plugin accepted a call that is not in its catalog: ${label(call)}`]
         : [],
     ),
+  );
+});
+
+const lockCases = (profile: ComplianceProfile) => Object.entries(profile.locks).map(([key, c]) => ({ ...c, key }));
+
+Given('the groups of the locked operations are at level write', async () => {
+  const { harness, profile } = await subjectOf();
+  setGroups(harness, lockCases(profile), 'write');
+  for (const c of lockCases(profile)) harness.setOperationLevel(c.key, null);
+});
+
+When('the agent makes the call of each lock case', async (world: object) => {
+  await makeCalls(world, lockCases((await subjectOf()).profile));
+});
+
+Then('core refuses each call, because the operation is off', async (world: object) => {
+  const { harness } = await subjectOf();
+  report(
+    (seen(world).results ?? []).flatMap(({ call, result }) =>
+      !harness.operation(call.key!).locked || result.ok || errorOf(result)?.code !== 'OPERATION_DISABLED'
+        ? [`${call.key} is not off by default`]
+        : [],
+    ),
+  );
+});
+
+Given('each locked operation is at level ask', async () => {
+  const { harness, profile } = await subjectOf();
+  const cases = lockCases(profile);
+  setGroups(harness, cases, 'ask');
+  for (const c of cases) harness.setOperationLevel(c.key, 'ask');
+});
+
+let lockRun: Promise<LockApproval[]> | undefined;
+
+/** Runs each lock case once for each feature file, as a human decides it: a wrong literal first, then the right one. */
+async function approveLocks(world: object) {
+  seen(world).approvals = await (lockRun ??= runLocks());
+}
+
+async function runLocks(): Promise<LockApproval[]> {
+  const { harness, profile } = await subjectOf();
+  const approvals: LockApproval[] = [];
+  for (const c of lockCases(profile)) {
+    const seenBy: Partial<LockApproval> = { wrongRefused: false };
+    const result = await harness.execute(codeOf(harness, c), {
+      onApproval: (a) => {
+        seenBy.literal = a.pending.confirmLiteral;
+        seenBy.message = a.message;
+        try {
+          a.approve(`${c.confirm} (wrong)`);
+        } catch {
+          seenBy.wrongRefused = true;
+          a.approve(c.confirm);
+        }
+      },
+    });
+    approvals.push({ key: c.key, confirm: c.confirm, target: c.target, wrongRefused: false, ...seenBy, result });
+  }
+  return approvals;
+}
+
+When(
+  'the agent makes the call of each lock case, and the human types a wrong literal and then the right one',
+  approveLocks,
+);
+
+When('the agent makes the call of each lock case, and the human reads the approval', approveLocks);
+
+Then('core refused the wrong literal and ran the call with the literal of its case', (world: object) => {
+  report(
+    (seen(world).approvals ?? []).flatMap((a) => {
+      if (a.literal !== a.confirm)
+        return [`${a.key} asks to type ${JSON.stringify(a.literal ?? null)} in place of ${JSON.stringify(a.confirm)}`];
+      if (!a.wrongRefused) return [`${a.key} accepted a wrong confirmation literal`];
+      return a.result.ok ? [] : [`${a.key} failed after approval (${JSON.stringify(errorOf(a.result))})`];
+    }),
+  );
+});
+
+Then('the approval shows the target of each lock case', (world: object) => {
+  report(
+    (seen(world).approvals ?? []).flatMap((a) => {
+      if (a.message === undefined) return [`${a.key} ran without an approval`];
+      if (!a.target) return [`the lock case of ${a.key} names no target`];
+      return a.message.includes(a.target) ? [] : [`the approval of ${a.key} does not show ${JSON.stringify(a.target)}`];
+    }),
   );
 });
