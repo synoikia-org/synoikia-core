@@ -426,11 +426,20 @@ Then('no secret value of the profile reaches the agent or the audit log', async 
   const s = await subjectOf();
   const values = secretValues(s);
   const results = seen(world).results ?? [];
+  // Every call the suite makes runs before the audit log is read, whatever the order of the feature files.
+  setGroups(s.harness, s.profile.reads, 'read');
+  const reads = [];
+  for (const call of s.profile.reads) reads.push(await s.harness.execute(codeOf(s.harness, call)));
+  const locks = await (lockRun ??= runLocks());
   report([
     ...results.flatMap(({ call, result }) =>
       result.ok ? [] : [`${call.key} failed at level read (${JSON.stringify(errorOf(result))})`],
     ),
-    ...leaks(JSON.stringify(results.map((r) => r.result)), values, 'the agent'),
+    ...leaks(
+      JSON.stringify([...results.map((r) => r.result), ...reads, ...locks.map((l) => l.result)]),
+      values,
+      'the agent',
+    ),
     ...leaks(JSON.stringify(s.harness.audit()), values, 'the audit log'),
   ]);
 });
@@ -534,6 +543,7 @@ async function runNamed(world: object, name: string, decide?: (a: HarnessApprova
         }
       : undefined,
   });
+  report(leaks(JSON.stringify(o.result), secretValues(await subjectOf()), `the agent in "${name}"`));
 }
 
 When('the agent runs {string}', (world: object, name: string) => runNamed(world, name));
@@ -554,6 +564,17 @@ Then('the agent gets a result that contains {string}', (world: object, text: str
   const { result } = ownOf(world);
   if (!result?.ok) throw new Error(`the call failed: ${JSON.stringify(result && errorOf(result))}`);
   if (!JSON.stringify(result.value).includes(text)) throw new Error(`the result does not contain "${text}"`);
+});
+
+Then('the agent gets a result that does not contain {string}', (world: object, text: string) => {
+  const { result } = ownOf(world);
+  if (!result?.ok) throw new Error(`the call failed: ${JSON.stringify(result && errorOf(result))}`);
+  if (JSON.stringify(result.value).includes(text)) throw new Error(`the result contains "${text}"`);
+});
+
+Then('no approval was asked', (world: object) => {
+  const { message } = ownOf(world);
+  if (message !== undefined) throw new Error(`an approval was asked: "${message}"`);
 });
 
 Then('core refuses the call with the code {string}', (world: object, code: string) => {
