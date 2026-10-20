@@ -534,14 +534,13 @@ Given('the operation of {string} is at level {word}', async (_world: object, nam
 async function runNamed(world: object, name: string, decide?: (a: HarnessApproval) => void) {
   const { harness, call } = await namedCall(name);
   const o = ownOf(world);
+  // Each approval is recorded, so a step can tell that core asked. With no human decision it is denied.
   o.result = await harness.execute(codeOf(harness, call), {
-    onApproval: decide
-      ? (a) => {
-          o.message = a.message;
-          o.literal = a.pending.confirmLiteral;
-          decide(a);
-        }
-      : undefined,
+    onApproval: (a) => {
+      o.message = a.message;
+      o.literal = a.pending.confirmLiteral;
+      (decide ?? ((x: HarnessApproval) => x.deny()))(a);
+    },
   });
   report(leaks(JSON.stringify(o.result), secretValues(await subjectOf()), `the agent in "${name}"`));
 }
