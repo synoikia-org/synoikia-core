@@ -215,6 +215,12 @@ const codeOf = (h: PluginHarness, call: { fn: string; args: unknown[] }) =>
 
 const label = (call: { fn: string; args: unknown[] }) => `${call.fn}(${JSON.stringify(call.args).slice(1, -1)})`;
 
+/** A catalog whose every write is locked needs no sample write: the lock cases drive each of its writes. */
+function requireSampleWrites(h: PluginHarness, profile: ComplianceProfile) {
+  const unlocked = h.operations().some((o) => o.classification === 'write' && !o.locked && !o.stale);
+  if (profile.writes.length === 0 && unlocked) report(['the profile names no sample write']);
+}
+
 /** Sets the group of each call's operation; a call whose key is not in the catalog is an issue. */
 function setGroups(h: PluginHarness, calls: ComplianceCall[], level: 'read' | 'ask' | 'write') {
   const issues: string[] = [];
@@ -243,7 +249,7 @@ Given('the groups of the sample reads are at level read', async () => {
 
 Given('the groups of the sample writes are at level read', async () => {
   const { harness, profile } = await subjectOf();
-  if (profile.writes.length === 0) report(['the profile names no sample write']);
+  requireSampleWrites(harness, profile);
   setGroups(harness, profile.writes, 'read');
 });
 
@@ -431,7 +437,7 @@ Then('no secret value of the profile reaches the agent or the audit log', async 
 
 Given('the groups of the sample writes are at level ask', async () => {
   const { harness, profile } = await subjectOf();
-  if (profile.writes.length === 0) report(['the profile names no sample write']);
+  requireSampleWrites(harness, profile);
   setGroups(harness, profile.writes, 'ask');
 });
 
