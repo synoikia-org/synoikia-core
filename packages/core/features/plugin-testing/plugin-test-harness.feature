@@ -24,6 +24,10 @@ Feature: Plugin test harness
       When plugin author 3 starts the plugin harness on that copy and then stops it
       Then the staged copy held the agent instructions "Name each list by its title.", and the copy is gone
 
+    Scenario: A harness started without a catalog sync has no operations
+      When plugin author 3 starts the plugin harness on Acme Tasks without a catalog sync
+      Then the harness runs Acme Tasks from its own copy, with no operations
+
   Rule: Calls in the harness follow the access levels of the moment
 
     Scenario: A read runs at level read, and the share password stays hidden
@@ -85,3 +89,18 @@ Feature: Plugin test harness
       When the harness run deletes the list "Groceries", and the test types only "groceries"
       Then the harness run is told that the call was denied, and the harness kept the error of the test
       And Acme still has the list "Groceries"
+
+  Rule: A test searches the catalog as an agent does
+
+    Scenario: A search in the harness finds "add a task"
+      Given plugin author 3 runs the plugin of "tasks" in the plugin harness, with the group "tasks" at level read
+      When the harness run searches the catalog for "add a task"
+      Then the harness run finds "add a task"
+
+  Rule: The harness checks a connection apart from its own
+
+    Scenario: A check with a wrong API token fails, and the harness run keeps working
+      Given plugin author 3 runs the plugin of "tasks" in the plugin harness, with the group "tasks" at level read
+      When the test checks the connection with the API token of Acme, and then with a wrong one
+      Then the first check passes, and the second says that Acme refused the token
+      And the harness run still counts 3 open tasks in "Groceries"
