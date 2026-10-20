@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { API_TOKEN } from '../../support/world.js';
@@ -64,6 +65,12 @@ const parameters = (html: string) => {
       .replace(/&#39;/g, "'")
       .replace(/&amp;/g, '&'),
   ) as Fields;
+};
+
+/** The diff entries the approval page shows under Changes. */
+const changes = (html: string) => {
+  const block = /<label>Changes<\/label>\s*<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? '';
+  return JSON.parse(block.replace(/&quot;/g, '"')) as { path: string; before?: unknown; after?: unknown }[];
 };
 
 const openPage = async (world: SynoikiaWorld) => {
@@ -214,6 +221,10 @@ Given(
   },
 );
 
+Given('Acme Tasks reports a rename as one change of the whole list', (world: SynoikiaWorld) => {
+  writeFileSync(world.pluginFile('diff-parent'), '');
+});
+
 When(
   'agent {word} reads the open tasks of {string} in full',
   async (world: SynoikiaWorld, agent: string, list: string) => {
@@ -363,10 +374,19 @@ Then(
 Then('the approval page shows the lock code as [REDACTED]', async (world: SynoikiaWorld) => {
   const html = await openPage(world);
   expect(parameters(html).lockCode).toBe(REDACTED);
-  const block = /<label>Changes<\/label>\s*<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? '';
-  const changes = JSON.parse(block.replace(/&quot;/g, '"')) as { path: string; after?: unknown }[];
-  expect(changes.find((c) => c.path === '/lockCode')?.after).toBe(REDACTED);
+  expect(changes(html).find((c) => c.path === '/lockCode')?.after).toBe(REDACTED);
 });
+
+Then(
+  'the approval page shows the new name {string}, and the lock code as [REDACTED]',
+  async (world: SynoikiaWorld, name: string) => {
+    const html = await openPage(world);
+    expect(parameters(html).lockCode).toBe(REDACTED);
+    expect(changes(html)).toEqual([
+      { path: '', before: { name: 'Groceries', lockCode: null }, after: { name, lockCode: REDACTED } },
+    ]);
+  },
+);
 
 Then('the approval page never shows {string}', async (world: SynoikiaWorld, text: string) => {
   expect(await openPage(world)).not.toContain(text);

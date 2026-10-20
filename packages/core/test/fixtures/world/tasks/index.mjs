@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation`, `count-is-write` (the count
-// syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON), `diff-path` (`dot` or `bare`)
-// and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
+// syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON), `diff-path` (`dot` or `bare`),
+// `diff-parent` (a rename as one change of the whole list) and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
 // restarts the child once. Isolation and supervision: `report`, `start-check`, `hang`/`crash`/`forget` (a method
 // name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove) and `catalog-changed`.
 const flag = (name) => existsSync(path.join(HERE, name));
@@ -264,6 +264,11 @@ const handlers = {
     }),
   async prepareWrite(id, { params }) {
     const current = await upstream('GET', listPath(params.list));
+    if (flag('diff-parent')) {
+      const before = { name: current.name, lockCode: null };
+      const diff = [{ path: '', before, after: { name: params.name, lockCode: params.lockCode ?? null } }];
+      return reply(id, { params, diff, expectedHash: current.version });
+    }
     const diff = [{ path: '/name', before: current.name, after: params.name }];
     const form = flagValue('diff-path');
     const passwordPath = form === 'dot' ? 'list.sharePassword' : form === 'bare' ? 'sharePassword' : '/sharePassword';
