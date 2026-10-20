@@ -5,10 +5,10 @@ import * as quickpickle from 'quickpickle';
 import { afterAll, inject } from 'vitest';
 import { parse } from 'yaml';
 import { startPluginHarness } from '../index.js';
-import type { PluginHarness } from '../index.js';
+import type { ExecuteResult, PluginHarness } from '../index.js';
 import { startsAndAnswers } from '../repository.js';
 import { loadProfile } from './profile.js';
-import type { ComplianceFake, ComplianceProfile } from './profile.js';
+import type { ComplianceCall, ComplianceFake, ComplianceProfile } from './profile.js';
 import { FAILED_RULE } from './verdict.js';
 
 /** The plugin under test, booted once for the whole run: its profile, its fake and core's harness. */
@@ -84,7 +84,12 @@ function report(issues: string[]) {
   if (issues.length) throw new Error(issues.map((i) => `${FAILED_RULE}${i}`).join('\n'));
 }
 
-const shared = new WeakMap<object, { manifestIssues?: string[]; guideIssues?: string[]; lockIssues?: string[] }>();
+const shared = new WeakMap<
+  object,
+  { manifestIssues?: string[]; guideIssues?: string[]; lockIssues?: string[]; results?: CallResult[] }
+>();
+
+type CallResult = { call: Omit<ComplianceCall, 'key'> & { key?: string }; result: ExecuteResult };
 const seen = (world: object) => {
   let s = shared.get(world);
   if (!s) shared.set(world, (s = {}));
@@ -178,4 +183,88 @@ When('core reads the locks of plugin.yaml', async (world: object) => {
 
 Then('each lock names an operation of the catalog', (world: object) => {
   report(seen(world).lockIssues ?? []);
+});
+
+/** Sandbox code that makes one profile call through the plugin's binding. */
+const codeOf = (h: PluginHarness, call: { fn: string; args: unknown[] }) =>
+  `return await ${h.manifest.binding.namespace}.${call.fn}(...${JSON.stringify(call.args)});`;
+
+const label = (call: { fn: string; args: unknown[] }) => `${call.fn}(${JSON.stringify(call.args).slice(1, -1)})`;
+
+/** Sets the group of each call's operation; a call whose key is not in the catalog is an issue. */
+function setGroups(h: PluginHarness, calls: ComplianceCall[], level: 'read' | 'ask') {
+  const issues: string[] = [];
+  for (const call of calls) {
+    if (!call.key) issues.push(`${label(call)} names no operation key in the profile`);
+    else if (!h.operations().some((o) => o.key === call.key)) issues.push(`the catalog has no ${call.key}`);
+    else h.setGroupLevel(h.operation(call.key).pluginGroup, level);
+  }
+  report(issues);
+}
+
+async function makeCalls(world: object, calls: CallResult['call'][]) {
+  const { harness } = await subjectOf();
+  const results: CallResult[] = [];
+  for (const call of calls) results.push({ call, result: await harness.execute(codeOf(harness, call)) });
+  seen(world).results = results;
+}
+
+const errorOf = (r: ExecuteResult) => (r.ok ? undefined : (r.error as { code?: string; message?: string } | undefined));
+
+Given('the groups of the sample reads are at level read', async () => {
+  const { harness, profile } = await subjectOf();
+  if (profile.reads.length === 0) report(['the profile names no sample read']);
+  setGroups(harness, profile.reads, 'read');
+});
+
+Given('the groups of the sample writes are at level read', async () => {
+  const { harness, profile } = await subjectOf();
+  if (profile.writes.length === 0) report(['the profile names no sample write']);
+  setGroups(harness, profile.writes, 'read');
+});
+
+When('the agent makes each sample read', async (world: object) => {
+  await makeCalls(world, (await subjectOf()).profile.reads);
+});
+
+When('the agent makes each sample write', async (world: object) => {
+  await makeCalls(world, (await subjectOf()).profile.writes);
+});
+
+When('the agent makes each call that the profile names as unknown', async (world: object) => {
+  const { profile } = await subjectOf();
+  if (profile.rejects.length === 0) report(['the profile names no unknown call']);
+  await makeCalls(world, profile.rejects);
+});
+
+Then('each sample read returns a result', async (world: object) => {
+  const { harness } = await subjectOf();
+  report(
+    (seen(world).results ?? []).flatMap(({ call, result }) => {
+      if (!result.ok) return [`${call.key} failed at level read (${JSON.stringify(errorOf(result))})`];
+      return harness.audit({ operationKey: call.key }).length ? [] : [`${call.key} ran but is not in the audit log`];
+    }),
+  );
+});
+
+Then('core refuses each sample write, because the operation is off', (world: object) => {
+  report(
+    (seen(world).results ?? []).flatMap(({ call, result }) =>
+      result.ok
+        ? [`${call.key} ran at level read`]
+        : errorOf(result)?.code === 'OPERATION_DISABLED'
+          ? []
+          : [`${call.key} failed at level read with ${JSON.stringify(errorOf(result))}, not because it is off`],
+    ),
+  );
+});
+
+Then('core refuses each of those calls', (world: object) => {
+  report(
+    (seen(world).results ?? []).flatMap(({ call, result }) =>
+      result.ok || errorOf(result)?.code !== 'UNKNOWN_OPERATION'
+        ? [`the plugin accepted a call that is not in its catalog: ${label(call)}`]
+        : [],
+    ),
+  );
 });
