@@ -37,7 +37,8 @@ Feature: Scaffold
     Scenario: The security paths of a new repository cover what certifies its plugins
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
-      Then the security paths of the repository cover each plugin's compliance profile, fake upstream, features and guides, and the lockfile
+      Then the security paths of the repository cover each plugin's compliance profile, fake upstream, its fixtures, features and guides
+      And they cover the shared test setting, the secret scan setting, the security reviewer, the assistant hooks and the lockfile
 
     Scenario: A new repository scans for secrets with the default rules
       Given plugin author 3 has an empty folder "acme-plugins"
