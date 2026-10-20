@@ -133,6 +133,12 @@ Feature: Single sign-on
       When user 12 signs in with Acme ID on the consent page
       Then user 12 sees "invalid_grant: the code has expired"
 
+    Scenario: An identity token that expired is refused
+      Given user 12 linked their Acme ID
+      And Acme ID gives an identity token that expired 10 minutes ago
+      When user 12 signs in with Acme ID
+      Then the sign-in with Acme ID fails, and user 12 is not signed in
+
   Rule: A user links an identity only for themselves
 
     Scenario: User 12 links their Acme ID in their profile

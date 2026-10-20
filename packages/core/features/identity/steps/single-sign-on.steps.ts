@@ -214,6 +214,13 @@ Given('Acme ID refuses every code with {string}', async (world: SynoikiaWorld, r
   (await world.acmeId()).refuse = reason;
 });
 
+Given(
+  'Acme ID gives an identity token that expired {int} minutes ago',
+  async (world: SynoikiaWorld, minutes: number) => {
+    (await world.acmeId()).expiredForS = minutes * 60;
+  },
+);
+
 // ── signing in with Acme ID ──
 
 When('user {int} signs in with Acme ID', async (world: SynoikiaWorld, user: number) => {
@@ -291,6 +298,16 @@ Then(
     expect(user.role.name).toBe(role);
   },
 );
+
+Then('the sign-in with Acme ID fails, and user {int} is not signed in', async (world: SynoikiaWorld) => {
+  const end = lastEnd(world);
+  expect(end.url.pathname + end.url.search).toBe('/login?error=oidc_failed');
+  expect(await world.expectOk(end.browser.get('/api/session'), 'read session')).toMatchObject({
+    authenticated: false,
+  });
+  const [failure] = await world.audit({ kind: 'auth', decision: 'oidc_failed' });
+  expect(failure?.detail).toEqual({ error: 'Sign-in failed: JWT timestamp claim value failed validation' });
+});
 
 Then('the sign-in with Acme ID is refused as not allowed', (world: SynoikiaWorld) => {
   expect(lastEnd(world).url.pathname + lastEnd(world).url.search).toBe('/login?error=oidc_not_allowed');

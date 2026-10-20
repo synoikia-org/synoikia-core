@@ -57,7 +57,11 @@ interface Entry {
 export class ExecutionRegistry {
   private readonly entries = new Map<string, Entry>();
 
-  constructor(private readonly now: () => number = () => Date.now()) {}
+  constructor(
+    private readonly now: () => number = () => Date.now(),
+    /** How long `resume` waits for a change; tests shorten it. */
+    readonly resumeWaitMs = RESUME_WAIT_MS,
+  ) {}
 
   /** Unfinished parked runs (shutdown waits for them like for any running script). */
   get running(): number {

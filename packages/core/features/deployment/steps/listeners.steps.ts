@@ -1,4 +1,6 @@
-import { Then, When } from 'quickpickle';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import type { SynoikiaWorld } from '../../support/world.js';
 import { INITIALIZE, rawRequest } from './requests.js';
@@ -90,4 +92,37 @@ Then('the server starts and warns that OAuth is off until the public address is 
     'WARN PUBLIC_MCP_URL is not set: OAuth is off (bearer tokens still work). Set it to the public address of the MCP port.',
   );
   expect((await rawRequest(world.mcpBase, '/healthz')).status).toBe(200);
+});
+
+const PORTAL_PAGE = '<!doctype html><title>Synoikia portal</title>';
+const assetBody = (name: string) => `console.log(${JSON.stringify(name)});`;
+
+Given('the portal has the file {string} among its assets', async (world: SynoikiaWorld, name: string) => {
+  const uiDir = path.join(world.dataDir, 'portal-ui');
+  mkdirSync(path.join(uiDir, 'assets'), { recursive: true });
+  writeFileSync(path.join(uiDir, 'index.html'), PORTAL_PAGE);
+  writeFileSync(path.join(uiDir, 'assets', name), assetBody(name));
+  await world.restartCore({ ADMIN_UI_DIR: uiDir });
+});
+
+When('someone asks the portal port for the asset {string}', async (world: SynoikiaWorld, name: string) => {
+  await ask(world, [rawRequest(world.adminBase, `/assets/${name}`)]);
+});
+
+When(
+  'someone asks the portal port for the asset {string} with its name encoded twice',
+  async (world: SynoikiaWorld, name: string) => {
+    const twice = encodeURIComponent(`%${name.charCodeAt(0).toString(16)}`) + name.slice(1);
+    await ask(world, [rawRequest(world.adminBase, `/assets/${twice}`)]);
+  },
+);
+
+Then('they get the file {string}', (world: SynoikiaWorld, name: string) => {
+  expect(of(world).statuses).toEqual([200]);
+  expect(of(world).bodies).toEqual([assetBody(name)]);
+});
+
+Then('they get the portal page, not the file {string}', (world: SynoikiaWorld, name: string) => {
+  expect(of(world).bodies[0]).toContain('Synoikia portal');
+  expect(of(world).bodies[0]).not.toContain(assetBody(name));
 });

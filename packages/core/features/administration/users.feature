@@ -30,16 +30,11 @@ Feature: Users
       Then the admin is told that there is no such role
 
   Rule: Nobody can lock administration out
+    The admin who acts is always another enabled admin. Unit tests cover the last active user and the last enabled admin.
 
     Scenario: The admin cannot disable themselves
       When the admin tries to disable themselves
       Then the admin is told that they cannot disable themselves
-
-    @backlog
-    Scenario: The last active user cannot be disabled
-      Given user 12 is disabled
-      When the admin tries to disable the last active user
-      Then the admin is told that the last active user stays enabled
 
   Rule: The last enabled admin keeps the Admin role
 

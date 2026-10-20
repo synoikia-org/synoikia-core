@@ -66,6 +66,12 @@ const parameters = (html: string) => {
   ) as Fields;
 };
 
+/** The diff entries the approval page shows under Changes. */
+const changes = (html: string) => {
+  const block = /<label>Changes<\/label>\s*<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? '';
+  return JSON.parse(block.replace(/&quot;/g, '"')) as { path: string; before?: unknown; after?: unknown }[];
+};
+
 const openPage = async (world: SynoikiaWorld) => {
   const html = pages.get(world) ?? (await world.approvalPage('admin')).html;
   pages.set(world, html);
@@ -213,6 +219,10 @@ Given(
     if (value) world.pluginFlag('diff-path', value);
   },
 );
+
+Given('Acme Tasks reports a rename as one change of the whole list', (world: SynoikiaWorld) => {
+  world.pluginFlag('diff-parent');
+});
 
 When(
   'agent {word} reads the open tasks of {string} in full',
@@ -363,10 +373,19 @@ Then(
 Then('the approval page shows the lock code as [REDACTED]', async (world: SynoikiaWorld) => {
   const html = await openPage(world);
   expect(parameters(html).lockCode).toBe(REDACTED);
-  const block = /<label>Changes<\/label>\s*<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? '';
-  const changes = JSON.parse(block.replace(/&quot;/g, '"')) as { path: string; after?: unknown }[];
-  expect(changes.find((c) => c.path === '/lockCode')?.after).toBe(REDACTED);
+  expect(changes(html).find((c) => c.path === '/lockCode')?.after).toBe(REDACTED);
 });
+
+Then(
+  'the approval page shows the new name {string}, and the lock code as [REDACTED]',
+  async (world: SynoikiaWorld, name: string) => {
+    const html = await openPage(world);
+    expect(parameters(html).lockCode).toBe(REDACTED);
+    expect(changes(html)).toEqual([
+      { path: '', before: { name: 'Groceries', lockCode: null }, after: { name, lockCode: REDACTED } },
+    ]);
+  },
+);
 
 Then('the approval page never shows {string}', async (world: SynoikiaWorld, text: string) => {
   expect(await openPage(world)).not.toContain(text);

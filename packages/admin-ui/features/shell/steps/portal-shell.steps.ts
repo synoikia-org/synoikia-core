@@ -27,9 +27,7 @@ Then('the menu shows the version of the server and a link to report issues', asy
 });
 
 Given('the admin has the overview open', async (world: PortalWorld) => {
-  await world.openAsAdmin('/');
-  await seen(world.page.getByRole('heading', { name: 'Overview', level: 1 }));
-  await world.page.evaluate(() => ((window as unknown as { sameLoad: boolean }).sameLoad = true));
+  await world.overviewOpen();
 });
 
 When('another admin makes the instance {instance}', async (world: PortalWorld, slug: string) => {
@@ -38,5 +36,5 @@ When('another admin makes the instance {instance}', async (world: PortalWorld, s
 
 Then('the overview lists {instance} without a reload', async (world: PortalWorld, slug: string) => {
   await seen(world.page.getByRole('main').getByText(`/${slug}`, { exact: true }).first());
-  expect(await world.page.evaluate(() => (window as unknown as { sameLoad?: boolean }).sameLoad)).toBe(true);
+  expect(await world.sameLoad()).toBe(true);
 });

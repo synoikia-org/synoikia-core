@@ -11,6 +11,11 @@ Feature: Fake upstream server
       When plugin author 3 asks the fake Acme for the list "Our chores"
       Then the fake Acme answers with the list "Our chores", and kept one request for that list
 
+    Scenario: The fake server keeps the body of each request
+      Given plugin author 3 fakes Acme with a route that adds a task to a list
+      When plugin author 3 adds "butter" to "Groceries" on the fake Acme
+      Then the fake Acme answers with the task "butter", and kept the request with the task "butter" in its body
+
     Scenario Outline: The fake Acme answers <request> with <answer>
       Given plugin author 3 fakes Acme with a route for a list by its name, which needs the API token
       When plugin author 3 asks the fake Acme for <request>

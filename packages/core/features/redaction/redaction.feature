@@ -145,6 +145,12 @@ Feature: Redaction
       Then the approval page shows the lock code as [REDACTED]
       And the approval page never shows "2468"
 
+    Scenario: A change of the whole list hides the lock code inside it
+      Given Acme Tasks reports a rename as one change of the whole list
+      When agent 7 renames "Groceries" to "Food" with the lock code "2468"
+      Then the approval page shows the new name "Food", and the lock code as [REDACTED]
+      And the approval page never shows "2468"
+
   Rule: Odd values never break redaction
 
     Scenario: A parameter named "__proto__" is shown as a plain parameter

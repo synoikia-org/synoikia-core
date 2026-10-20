@@ -108,32 +108,24 @@ Feature: Approval channels
   Rule: An unknown stored in-session setting reads as off
     An earlier release of core stored the in-session setting "writes". Core does not know this value now.
 
-    @backlog
     Scenario: A stored value that core does not know sends the add to the page
       Given the database of "tasks" holds the in-session setting "writes"
       And the app of agent 7 shows forms and opens links, and the admin approves each link with the list name
       When agent 7 adds "butter" to "Groceries"
       Then the app of agent 7 showed only an approval link
 
-    @backlog
     Scenario: Core removes a stored value that it does not know when it starts
       Given the database of "tasks" holds the in-session setting "writes"
       When core restarts
       Then the admin sees one warning that in-session approvals on "/tasks" were turned off
 
   Rule: A caller with no channel is denied at once
+    Over MCP a caller can always leave a call waiting, so only the plugin harness has no channel.
 
     Scenario: A harness run with no way to ask a human is denied at once
       Given plugin author 3 runs the plugin of "tasks" in the plugin harness, with the group "tasks" at level ask
       When the harness run adds "butter" to "Groceries" with no way to ask a human
       Then the harness run is told that the add needs approval and it cannot show approval prompts
-
-    @backlog
-    Scenario: A form-only caller that cannot wait is denied at once
-      Given the app of agent 7 shows only forms, and accepts them
-      And agent 7 cannot leave more calls waiting
-      When agent 7 adds "butter" to "Groceries"
-      Then agent 7 is told that the add needs the approval page and its app shows only forms
 
   Rule: An unanswered form falls back to the link
     Core waits 30 seconds for an answer to a form.

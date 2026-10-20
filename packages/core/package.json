@@ -1,6 +1,6 @@
 {
   "name": "@synoikia/core",
-  "version": "0.17.2",
+  "version": "0.17.3",
   "description": "Core process: MCP endpoints, Admin API, plugin host, permission gate",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@node-rs/argon2": "^2.2.1",
     "@synoikia/plugin-sdk": "workspace:^",
@@ -40,7 +40,7 @@
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.3",
-    "hono": "^4.13.9",
+    "hono": "^4.13.13",
     "isolated-vm": "~6.2.0",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",

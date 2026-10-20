@@ -172,6 +172,22 @@ When(
   },
 );
 
+Given(
+  'the database holds a rule that approves deleting the list {string}',
+  async (world: SynoikiaWorld, list: string) => {
+    const instanceId = await world.tasksInstance(world.lastInstance);
+    const { id: operationId } = await world.operation(world.lastInstance, 'delete a list');
+    const match = JSON.stringify([{ field: '/list', op: 'eq', value: list }]);
+    world.editDataFile((db) =>
+      db
+        .prepare(
+          "INSERT INTO pre_approval_rules (id, instance_id, operation_id, match, reason, enabled) VALUES (?, ?, ?, ?, 'a rule from elsewhere', 1)",
+        )
+        .run('rule-from-elsewhere', instanceId, operationId, match),
+    );
+  },
+);
+
 When('the admin tries to pre-approve deleting the list {string}', async (world: SynoikiaWorld, list: string) => {
   await world.rule(world.lastInstance, 'delete a list', [{ field: '/list', op: 'eq', value: list }], {
     expect: 'refused',

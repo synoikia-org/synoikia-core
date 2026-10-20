@@ -31,15 +31,13 @@ Feature: Parked executions
   Rule: Resume says where the run is
     Resume waits up to 45 seconds for a change before it answers.
 
-    @backlog
     Scenario: Resume before a decision gives the same link again
       Given agent 7 waits for the admin to approve the add of "butter" to "Groceries"
-      When agent 7 resumes the run, and nobody decides for 45 seconds
+      When agent 7 resumes the run, and nobody decides while resume waits
       Then agent 7 gets the same approval link again, marked as one that it already has
 
-    @backlog
     Scenario: Resume while the code still runs after the decision says that it still runs
-      Given a run on "tasks" may take 60 seconds, and Acme takes 50 seconds to answer
+      Given Acme answers "tasks" only after resume stops waiting
       And agent 7 waits for the admin to approve the add of "butter" to "Groceries"
       When the admin approves the call and agent 7 resumes it
       Then agent 7 is told that the run still runs, and to resume it again

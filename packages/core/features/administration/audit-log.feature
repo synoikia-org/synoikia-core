@@ -9,6 +9,7 @@ Feature: Audit log
     And agent 7 belongs to the admin and may read and write
 
   Rule: Actors show by name
+    Core records no other actor by the name admin. A unit test covers that filter case.
 
     Scenario: An admin change shows the admin, and agents and core show no user name
       Given agent 7 asks for the open tasks of "Groceries"
@@ -19,12 +20,6 @@ Feature: Audit log
       Given agent 7 asks for the open tasks of "Groceries"
       When the admin filters the audit log by "ADMIN" and exports it
       Then both times the admin finds only what the admin did in the portal
-
-    @backlog
-    Scenario: The filter "admin" also finds an actor that core records by the name admin
-      Given core recorded an event of the system actor "admin"
-      When the admin filters the audit log by "admin" and exports it
-      Then both times the admin also finds the event of the system actor "admin"
 
   Rule: The export has every event once, newest first
 

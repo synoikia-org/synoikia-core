@@ -557,6 +557,18 @@ export class PortalWorld extends QuickPickleWorld {
     await this.open(where);
   }
 
+  /** The admin's overview, in a page that marks itself so that `sameLoad` can tell it did not reload. */
+  async overviewOpen() {
+    await this.openAsAdmin('/');
+    await this.page.getByRole('heading', { name: 'Overview', level: 1 }).waitFor({ state: 'visible', timeout: 10_000 });
+    await this.page.evaluate(() => ((window as unknown as { sameLoad: boolean }).sameLoad = true));
+  }
+
+  /** Whether the page is still the one `overviewOpen` marked. */
+  async sameLoad() {
+    return this.page.evaluate(() => (window as unknown as { sameLoad?: boolean }).sameLoad === true);
+  }
+
   /** The browser of a person other than the admin, signed in through the Admin API, open at `where`. */
   async openAs(name: string, where: string) {
     const client = await this.apiAs(name);

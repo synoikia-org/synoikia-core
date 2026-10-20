@@ -257,3 +257,45 @@ Then('the approval page asks the admin to type {string} to approve', async (worl
   const page = await world.approvalPage('admin');
   expect(page.html).toContain(`Type <code>${literal}</code> to approve`);
 });
+
+// ── stored levels that no interface accepts ──
+
+const updateOperation = async (world: SynoikiaWorld, name: string, set: string, value: string) => {
+  const instanceId = await world.tasksInstance(world.lastInstance);
+  const { changes } = world.editDataFile((db) => {
+    db.pragma('foreign_keys = OFF');
+    return db
+      .prepare(`UPDATE operations SET ${set} = ? WHERE instance_id = ? AND key = ?`)
+      .run(value, instanceId, opKey(name));
+  });
+  expect(changes).toBe(1);
+};
+
+// The level is a bare word when core knows it, and quoted when it does not ("everything").
+Given('the stored own level of {string} is {word}', async (world: SynoikiaWorld, name: string, level: string) => {
+  await updateOperation(world, name, 'level_override', level.replace(/^"(.*)"$/, '$1'));
+});
+
+Given('the group of {string} is missing', async (world: SynoikiaWorld, name: string) => {
+  await updateOperation(world, name, 'group_id', 'a-group-that-is-gone');
+});
+
+Given(
+  'the group {string} of {string} is stored at the level {string}',
+  async (world: SynoikiaWorld, group: string, slug: string, level: string) => {
+    const instanceId = await world.tasksInstance(slug);
+    const { changes } = world.editDataFile((db) =>
+      db
+        .prepare('UPDATE operation_groups SET level = ? WHERE instance_id = ? AND key = ?')
+        .run(level, instanceId, group),
+    );
+    expect(changes).toBe(1);
+  },
+);
+
+Then(
+  'agent {word} is told that the operation is not available on {string}',
+  (world: SynoikiaWorld, _agent: string, _slug: string) => {
+    expect(world.answer).toEqual(disabled(/is not available on this endpoint/));
+  },
+);

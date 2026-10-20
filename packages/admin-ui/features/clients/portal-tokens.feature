@@ -23,7 +23,6 @@ Feature: Bearer tokens in the portal
 
   Rule: A failed list shows no rows
 
-    @backlog
     Scenario: The tokens stay hidden while the owners fail to load
       Given the admin has the bearer token "laptop"
       And the server cannot read its users

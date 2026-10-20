@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import type { Locator } from 'playwright';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
+import { openDatabase } from '../../../../core/src/db/index.js';
 import type { PortalWorld } from '../../support/world.js';
 
 const seen = (locator: Locator) => locator.waitFor({ state: 'visible', timeout: 10_000 });
@@ -25,10 +27,22 @@ async function account(world: PortalWorld, name: string) {
 
 export async function userList(world: PortalWorld) {
   await world.openAsAdmin('/settings/users');
-  await seen(row(world, 'admin'));
+  await seen(row(world, 'admin').or(world.page.getByRole('alert')).first());
 }
 
 // ── setup ──
+
+Given('the server cannot read its users', (world: PortalWorld) => {
+  // A stored user whose recovery codes are not JSON: core fails on the list, but not on the admin's own account.
+  const db = openDatabase({ dataDir: world.dataDir });
+  try {
+    db.$client
+      .prepare('INSERT INTO users (id, username, created_at, recovery_codes_hash) VALUES (?, ?, ?, ?)')
+      .run(randomUUID(), 'unreadable@acme.example', Date.now(), '{not json');
+  } finally {
+    db.$client.close();
+  }
+});
 
 Given(
   'user {int} has the role {string} and an authenticator app',
@@ -40,6 +54,12 @@ Given(
 
 When('the admin opens the user list', async (world: PortalWorld) => {
   await userList(world);
+});
+
+Then('the portal shows why the user list did not load', async (world: PortalWorld) => {
+  await seen(world.page.getByRole('alert'));
+  expect((await world.page.getByRole('alert').textContent())?.trim()).not.toBe('');
+  expect(await usersTable(world).locator('tbody tr').count()).toBe(0);
 });
 
 // ── roles ──

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { eventually, opKey } from '../../support/world.js';
+import { RESUME_WAIT_MS, eventually, opKey } from '../../support/world.js';
 import type { PromptAnswer, SynoikiaWorld } from '../../support/world.js';
 
 /** What a step saw that a later step checks: answers the agents got along the way. */
@@ -112,6 +112,11 @@ Given(
   },
 );
 
+Given('Acme answers {string} only after resume stops waiting', async (world: SynoikiaWorld, slug: string) => {
+  world.upstreamDelayMs = 3 * RESUME_WAIT_MS;
+  await world.instanceSettings(slug, { sandbox: { timeoutMs: world.upstreamDelayMs + 10_000 } });
+});
+
 Given(
   'agents {word}, {word}, {word} and {word} of the admin each have two adds that wait for approval',
   async (world: SynoikiaWorld, ...agents: string[]) => {
@@ -137,7 +142,7 @@ When(
 );
 
 When(
-  'agent {word} resumes the run, and nobody decides for {int} seconds',
+  'agent {word} resumes the run, and nobody decides while resume waits',
   async (world: SynoikiaWorld, agent: string) => {
     seenBy(world).answers.push(world.answer);
     await world.resume(agent, world.executionId);

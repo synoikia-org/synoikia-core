@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import Database from 'better-sqlite3';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import type { CryptoKey, JWK, JWTVerifyGetKey } from 'jose';
 import { After, QuickPickleWorld, setWorldConstructor } from 'quickpickle';
@@ -52,6 +53,8 @@ const gatewayKeySet: JWTVerifyGetKey = async (header, token) =>
 
 /** How long core waits for an answer to a form before the call moves to the approval link (30 s in production). */
 export const FORM_WAIT_MS = 1000;
+/** How long resume waits for a change before it answers (45 s in production). */
+export const RESUME_WAIT_MS = 2000;
 /** The upstream's API token, stored as the instance's secret. */
 export const API_TOKEN = 'acme-tok-9f8e7d6c'; // gitleaks:allow (the fake upstream's test token)
 
@@ -226,6 +229,8 @@ export interface AcmeId {
   next: AcmeIdentity;
   /** When set, Acme ID refuses every code with this reason. */
   refuse?: string;
+  /** When set, Acme ID gives identity tokens that expired this many seconds ago. */
+  expiredForS?: number;
 }
 
 /** Polls `check` until it holds, for at most `ms`. */
@@ -441,6 +446,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         }),
         {
           formFallbackMs: FORM_WAIT_MS,
+          resumeWaitMs: RESUME_WAIT_MS,
           passwordHashCost: TEST_HASH_COST,
           notifyRetryDelaysMs: [200, 400],
           now: () => new Date(this.nowMs()),
@@ -578,6 +584,17 @@ export class SynoikiaWorld extends QuickPickleWorld {
       } catch (err) {
         if (attempt === 5 || (err as { code?: string }).code !== 'EADDRINUSE') throw err;
       }
+    }
+  }
+
+  /** Opens core's data file and runs `edit` on it, for a stored state that no interface of core makes. */
+  editDataFile<T>(edit: (db: Database.Database) => T): T {
+    const db = new Database(path.join(this.dataDir, 'synoikia.sqlite'));
+    try {
+      db.pragma('busy_timeout = 5000');
+      return edit(db);
+    } finally {
+      db.close();
     }
   }
 
@@ -721,6 +738,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
       | 'count-is-write'
       | 'secret-result'
       | 'diff-path'
+      | 'diff-parent'
       | 'upstream-version'
       | 'report'
       | 'start-check'
@@ -1062,13 +1080,15 @@ export class SynoikiaWorld extends QuickPickleWorld {
           if (!grant || !form.get('code_verifier') || form.get('redirect_uri') !== grant.redirectUri)
             return { status: 400, body: { error: 'invalid_grant' } };
           const { sub, ...claims } = grant.who;
+          // openid-client checks the expiry against the real clock, not the World's.
+          const nowS = Math.floor(Date.now() / 1000);
           const idToken = await new SignJWT({ nonce: grant.nonce, ...claims })
             .setProtectedHeader({ alg: 'RS256', kid: 'acme-id-1' })
             .setIssuer(acme.issuer)
             .setSubject(sub)
             .setAudience(acme.clientId)
-            .setIssuedAt()
-            .setExpirationTime('5m')
+            .setIssuedAt(acme.expiredForS ? nowS - acme.expiredForS - 300 : nowS)
+            .setExpirationTime(acme.expiredForS ? nowS - acme.expiredForS : '5m')
             .sign(privateKey);
           return { body: { access_token: 'acme-at', token_type: 'Bearer', id_token: idToken, expires_in: 300 } };
         },

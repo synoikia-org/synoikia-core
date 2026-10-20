@@ -39,6 +39,7 @@ import '../client-auth/steps/oauth-tokens.steps.js';
 import '../client-auth/steps/access-gateway.steps.js';
 import '../client-auth/steps/client-policy.steps.js';
 import '../data/steps/secrets.steps.js';
+import '../data/steps/stored-settings-upgrade.steps.js';
 import '../data/steps/upgrades.steps.js';
 import '../maintenance/steps/master-key-rotation.steps.js';
 import '../maintenance/steps/housekeeping.steps.js';

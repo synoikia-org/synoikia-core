@@ -13,7 +13,15 @@ import type { SynoikiaWorld } from '../../support/world.js';
 /** What plugin author 3's test saw: the copy it built, a parked run, the messages the harness gave it. */
 const tested = new WeakMap<
   SynoikiaWorld,
-  { copy?: string; parked?: ExecuteResult; told: string[]; startError?: string; staged?: string; stagedNotes?: string }
+  {
+    copy?: string;
+    parked?: ExecuteResult;
+    told: string[];
+    startError?: string;
+    staged?: string;
+    stagedNotes?: string;
+    checks?: unknown[];
+  }
 >();
 export const testOf = (world: SynoikiaWorld) => {
   let t = tested.get(world);
@@ -42,8 +50,12 @@ export function editEntry(dir: string, edits: [from: string, to: string][]) {
 }
 
 /** Starts the harness on `pluginDir`, as plugin author 3's test does, and stops it when the scenario ends. */
-export async function startHarness(world: SynoikiaWorld, pluginDir = TASKS_SOURCE) {
-  const harness = await startPluginHarness({ pluginDir, connection: { url: world.upstream!.url, token: API_TOKEN } });
+export async function startHarness(world: SynoikiaWorld, pluginDir = TASKS_SOURCE, sync = true) {
+  const harness = await startPluginHarness({
+    pluginDir,
+    connection: { url: world.upstream!.url, token: API_TOKEN },
+    sync,
+  });
   let stopped = false;
   const stop = async () => {
     if (stopped) return;
@@ -290,5 +302,59 @@ Then(
   (world: SynoikiaWorld) => {
     expect(answerOf(world)).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
     expect(harnessOf(world).approvalErrors.map(String)).toEqual([expect.stringContaining('exactly')]);
+  },
+);
+
+When(
+  'plugin author {int} starts the plugin harness on Acme Tasks without a catalog sync',
+  async (world: SynoikiaWorld) => {
+    await startHarness(world, TASKS_SOURCE, false);
+  },
+);
+
+Then('the harness runs Acme Tasks from its own copy, with no operations', (world: SynoikiaWorld) => {
+  const h = harnessOf(world);
+  expect(h.manifest.id).toBe('tasks');
+  expect(readdirSync(path.join(h.ctx.config.DATA_DIR, 'plugins'))).toEqual(['tasks']);
+  expect(h.operations()).toEqual([]);
+});
+
+// ── search ──
+
+When('the harness run searches the catalog for {string}', async (world: SynoikiaWorld, text: string) => {
+  seenBy(world).harnessAnswer = await harnessOf(world).search(
+    `return (await catalog.find({ text: ${JSON.stringify(text)}, includeDisabled: true })).map((o) => o.key);`,
+  );
+});
+
+Then('the harness run finds {string}', (world: SynoikiaWorld, name: string) => {
+  expect(seenBy(world).harnessAnswer).toMatchObject({ ok: true, value: expect.arrayContaining([opKey(name)]) });
+});
+
+// ── connection checks ──
+
+When(
+  'the test checks the connection with the API token of Acme, and then with a wrong one',
+  async (world: SynoikiaWorld) => {
+    const h = harnessOf(world);
+    const url = world.upstream!.url;
+    testOf(world).checks = [
+      await h.testConnection({ url, token: API_TOKEN }),
+      await h.testConnection({ url, token: 'acme-tok-wrong' }),
+    ];
+  },
+);
+
+Then('the first check passes, and the second says that Acme refused the token', (world: SynoikiaWorld) => {
+  expect(testOf(world).checks).toEqual([
+    expect.objectContaining({ ok: true }),
+    { ok: false, message: 'Acme refused the token' },
+  ]);
+});
+
+Then(
+  'the harness run still counts {int} open tasks in {string}',
+  async (world: SynoikiaWorld, open: number, list: string) => {
+    expect(await run(world, opKey('count the tasks'), { list })).toMatchObject({ ok: true, value: { open } });
   },
 );
