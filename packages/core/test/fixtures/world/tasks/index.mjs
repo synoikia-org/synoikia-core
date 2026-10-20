@@ -235,7 +235,17 @@ const handlers = {
     if (flag('start-check')) await startCheck();
     reply(id);
   },
-  testConnection: (id) => reply(id, { ok: true, upstreamVersion: upstreamVersion() }),
+  async testConnection(id) {
+    // Only a refused token fails the test: the World reaches no address but Acme's.
+    const refused = await upstream('GET', '/lists').then(
+      () => false,
+      (err) => /answered 401/.test(err.message),
+    );
+    reply(
+      id,
+      refused ? { ok: false, message: 'Acme refused the token' } : { ok: true, upstreamVersion: upstreamVersion() },
+    );
+  },
   getUpstreamVersion: (id) => reply(id, upstreamVersion()),
   syncCatalog: async (id) => reply(id, { upstreamVersion: upstreamVersion(), operations: await catalog() }),
   syncRegistry: async (id) => reply(id, await registry()),
