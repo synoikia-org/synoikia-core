@@ -32,10 +32,24 @@ Given(
   },
 );
 
-async function ask(world: SynoikiaWorld, pathname: string, token = true) {
+Given('plugin author {int} fakes Acme with a route that adds a task to a list', async (world: SynoikiaWorld) => {
+  const fake = await startFakeHttp({
+    routes: {
+      'POST /lists/{name}/tasks': (req) => ({ body: { title: (req.body as { title: string }).title, done: false } }),
+    },
+  });
+  world.cleanups.push(() => fake.close());
+  checkOf(world).fake = fake;
+});
+
+async function ask(world: SynoikiaWorld, pathname: string, token = true, body?: unknown) {
   const c = checkOf(world);
   const res = await fetch(`${c.fake!.url}${pathname}`, {
-    headers: token ? { authorization: `Bearer ${API_TOKEN}` } : {},
+    ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
+    headers: {
+      ...(token ? { authorization: `Bearer ${API_TOKEN}` } : {}),
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
   });
   const text = await res.text();
   c.answer = { status: res.status, body: text ? (JSON.parse(text) as unknown) : undefined };
@@ -91,3 +105,21 @@ Then('the fake Acme answers with a server error that says {string}', (world: Syn
 Then('the fake Acme answers that the request is not authorized', (world: SynoikiaWorld) => {
   expect(checkOf(world).answer?.status).toBe(401);
 });
+
+When(
+  'plugin author {int} adds {string} to {string} on the fake Acme',
+  async (world: SynoikiaWorld, _a: number, title: string, list: string) => {
+    await ask(world, `${listPath(list)}/tasks`, true, { title });
+  },
+);
+
+Then(
+  'the fake Acme answers with the task {string}, and kept the request with the task {string} in its body',
+  (world: SynoikiaWorld, title: string, kept: string) => {
+    const c = checkOf(world);
+    expect(c.answer).toEqual({ status: 200, body: { title, done: false } });
+    expect(c.fake!.requests.map((r) => ({ method: r.method, body: r.body }))).toEqual([
+      { method: 'POST', body: { title: kept } },
+    ]);
+  },
+);
