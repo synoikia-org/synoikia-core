@@ -32,7 +32,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@node-rs/argon2": "^2.2.1",
     "@synoikia/plugin-sdk": "workspace:^",
