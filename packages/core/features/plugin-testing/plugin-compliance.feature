@@ -51,6 +51,11 @@ Feature: Plugin compliance suite
         | classifies "add a task" as a read             | "add a task" ran at level read                        |
         | maps an unknown call to "show the open tasks" | Acme Tasks accepted a call that is not in its catalog |
 
+    Scenario: A plugin whose every write is locked needs no sample write
+      Given the profile of Acme Tasks names no sample write
+      When plugin author 3 runs the compliance suite on a build of Acme Tasks whose only write is "delete a list"
+      Then the suite certifies Acme Tasks 1.0.0 for production, with no failed rule
+
   Rule: A locked operation runs only with its typed confirmation
 
     Scenario Outline: The suite refuses a lock that <breaks>
