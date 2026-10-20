@@ -99,31 +99,41 @@ Then('the repository has no assistant files and its shared workflow files are cu
   syncIsCurrent(world);
 });
 
+const securityPaths = (world: PluginAuthorWorld) =>
+  world.readJson<{ synoikia?: { workflow?: { securityPaths?: string[] } } }>('package.json').synoikia?.workflow
+    ?.securityPaths ?? [];
+
+function expectCovered(world: PluginAuthorWorld, files: string[]) {
+  expect(world.last?.code, world.last?.stderr).toBe(0);
+  const paths = securityPaths(world);
+  for (const f of files) expect(matchesAny(f, paths), f).toBe(true);
+}
+
 Then(
-  "the security paths of the repository cover each plugin's compliance profile, fake upstream, features and guides, and the lockfile",
+  "the security paths of the repository cover each plugin's compliance profile, fake upstream, its fixtures, features and guides",
   (world: PluginAuthorWorld) => {
-    expect(world.last?.code, world.last?.stderr).toBe(0);
-    const paths =
-      world.readJson<{ synoikia?: { workflow?: { securityPaths?: string[] } } }>('package.json').synoikia?.workflow
-        ?.securityPaths ?? [];
-    expect(paths).toEqual(
-      expect.arrayContaining([
-        'plugins/*/test/compliance.yaml',
-        'plugins/*/test/fake*.ts',
-        'plugins/*/features/**',
-        'plugins/*/guides/**',
-        'pnpm-lock.yaml',
-      ]),
-    );
-    for (const f of [
+    expectCovered(world, [
       'plugins/acme-box/test/compliance.yaml',
       'plugins/acme-box/test/fake.ts',
       'plugins/acme-box/test/fake-acme.ts',
+      'plugins/acme-box/test/fixtures/lists.json',
       'plugins/acme-box/features/acme-box.feature',
       'plugins/acme-box/guides/start.md',
+    ]);
+  },
+);
+
+Then(
+  'they cover the shared test setting, the secret scan setting, the security reviewer, the assistant hooks and the lockfile',
+  (world: PluginAuthorWorld) => {
+    expectCovered(world, [
+      'vitest.shared.ts',
+      '.gitleaks.toml',
+      '.claude/agents/security-reviewer.md',
+      '.claude/hooks/guard-paths.mjs',
+      '.claude/settings.json',
       'pnpm-lock.yaml',
-    ])
-      expect(matchesAny(f, paths), f).toBe(true);
+    ]);
   },
 );
 
@@ -131,6 +141,7 @@ Then('the repository has a secret scan setting that keeps the default rules', (w
   expect(world.last?.code, world.last?.stderr).toBe(0);
   expect(existsSync(world.file('.gitleaks.toml')), '.gitleaks.toml').toBe(true);
   expect(world.read('.gitleaks.toml')).toMatch(/^\s*\[extend\][^[]*^\s*useDefault\s*=\s*true\b/m);
+  expect(world.read('.gitleaks.toml')).not.toMatch(/^\s*\[+allowlists?\]+/m);
 });
 
 const filesUnder = (dir: string): string[] =>
