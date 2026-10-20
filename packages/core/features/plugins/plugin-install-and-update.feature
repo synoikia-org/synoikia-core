@@ -145,6 +145,7 @@ Feature: Plugin install and update
       And the admin has no plugin Acme Tasks
 
   Rule: Replacing plugin files is all or nothing
+    No interface can make the swap fail, so a unit test covers it.
 
     @backlog
     Scenario: A failed swap keeps the old files

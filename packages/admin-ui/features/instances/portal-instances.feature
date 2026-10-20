@@ -94,7 +94,6 @@ Feature: Instances in the portal
       When the admin opens the access page of /gone
       Then the portal says that there is no instance at /gone
 
-    @backlog
     Scenario: An instance made since the portal loaded its list opens without a reload
       Given the admin has the overview open, and the live updates of the portal are down
       And another admin made the instance /errands meanwhile

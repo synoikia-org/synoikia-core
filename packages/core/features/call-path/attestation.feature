@@ -34,16 +34,11 @@ Feature: Best-practice attestation
       And the list "Groceries" still holds the open tasks "milk", "bread" and "eggs"
 
   Rule: The key works only in the session that read the guide
+    Every MCP call has a session. A unit test covers a key read outside any session.
 
     Scenario: A key from another session is refused
       Given agent 7 read the guide of "import tasks"
       And agent 7 opens a new session on "tasks"
-      When agent 7 imports "flour" and "sugar" into "Groceries" with the key of that guide
-      Then agent 7 is told to read the guide of "import tasks" first
-
-    @backlog
-    Scenario: A key read outside any session is refused
-      Given agent 7 read the guide of "import tasks" outside any session
       When agent 7 imports "flour" and "sugar" into "Groceries" with the key of that guide
       Then agent 7 is told to read the guide of "import tasks" first
 

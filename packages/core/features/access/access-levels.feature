@@ -98,7 +98,6 @@ Feature: Access levels
       Then the admin is told that "add a task" takes only none, ask or write
       And the admin sees that "add a task" follows its group at level ask
 
-    @backlog
     Scenario: A stored level that does not fit its operation is narrowed
       Given the stored own level of "delete a list" is write
       When agent 7 deletes the list "Groceries"
@@ -143,19 +142,16 @@ Feature: Access levels
 
   Rule: A missing group or an unknown level hides the operation
 
-    @backlog
     Scenario: An operation without its group is hidden
       Given the group of "show the open tasks" is missing
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that the operation is not available on "tasks"
 
-    @backlog
     Scenario: A group at a level core does not know hides its operations
       Given the group "lists" of "tasks" is stored at the level "everything"
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that the operation is not available on "tasks"
 
-    @backlog
     Scenario: An own level core does not know closes the operation
       Given the stored own level of "show the open tasks" is "everything"
       When agent 7 asks for the open tasks of "Groceries"

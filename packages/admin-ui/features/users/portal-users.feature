@@ -16,7 +16,6 @@ Feature: Users in the portal
       When the admin picks the role "viewers" for themselves on the user list
       Then the portal shows the alert "You cannot remove the last enabled admin"
 
-    @backlog
     Scenario: A user list that cannot load says why
       Given the server cannot read its users
       When the admin opens the user list

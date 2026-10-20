@@ -9,22 +9,18 @@ Feature: User deletion
     And user 15 has the role "family", which has the instance "tasks"
 
   Rule: Some deletes are refused
+    The admin who acts is always another enabled admin. Unit tests cover the last user and the last enabled admin.
 
     Scenario: The admin cannot delete themselves
       When the admin tries to delete themselves
       Then the admin is told that they cannot delete themselves
-
-    @backlog
-    Scenario: The last user and the last enabled admin are not deleted
-      Given user 15 is disabled
-      When the admin tries to delete the last enabled admin
-      Then the admin is told that the last enabled admin stays
 
     Scenario: A user who does not exist is not found
       When the admin tries to delete a user who does not exist
       Then the admin is told that there is no such user
 
   Rule: A delete first takes every credential away
+    The delete cancels each waiting approval first, so no approval can stop it. A unit test covers that guard.
 
     Scenario: Deleting user 15 ends their portal, their credentials and their approvals
       Given agent 15 belongs to user 15, whose role "family" may ask for the group "tasks" of "tasks"
@@ -32,13 +28,6 @@ Feature: User deletion
       When the admin deletes user 15
       Then the open portal of user 15 stops working
       And agent 15 is refused, because its credential was revoked when user 15 was deleted, and the add of "butter" was denied
-
-    @backlog
-    Scenario: An approval that still waits for user 15 stops the delete
-      Given agent 15 belongs to user 15, whose role "family" may ask for the group "tasks" of "tasks"
-      And agent 15 waits for user 15 to approve the add of "butter" to "Groceries"
-      When user 15 is deleted while the approval still waits
-      Then the delete is refused, because approvals are pending
 
     Scenario: The audit log says why the waiting add of agent 15 ended
       Given agent 15 belongs to user 15, whose role "family" may ask for the group "tasks" of "tasks"

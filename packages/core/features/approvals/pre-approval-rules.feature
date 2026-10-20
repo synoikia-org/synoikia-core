@@ -136,7 +136,6 @@ Feature: Pre-approval rules
       When the admin tries to pre-approve deleting the list "Chores"
       Then the admin is told that "delete a list" is locked and can never be pre-approved
 
-    @backlog
     Scenario: A rule for a locked operation that reached the database another way never applies
       Given the admin gives "delete a list" its own level ask
       And the database holds a rule that approves deleting the list "Chores"

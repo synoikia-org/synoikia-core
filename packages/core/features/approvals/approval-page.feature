@@ -47,6 +47,7 @@ Feature: Approval page
         | with one character changed         |
 
   Rule: Only the owner of the credential decides
+    Every credential has an owner, so a call without one cannot reach the page. A unit test covers that guard.
 
     Scenario: The admin cannot see or decide the call of agent 9
       Given agent 9 belongs to user 12, whose role "family" may ask for the group "tasks" of "tasks"
@@ -54,12 +55,6 @@ Feature: Approval page
       When the admin opens the approval link and signs in
       Then the admin is told that the approval request belongs to another user, with no details
       And the admin cannot approve it
-
-    @backlog
-    Scenario: Only an admin decides a call without an owner
-      Given an agent with a credential that belongs to nobody waits for approval of the add of "butter" to "Groceries"
-      When user 12 opens the approval link and signs in
-      Then user 12 is told that the approval request belongs to another user, with no details
 
   Rule: A typed confirmation must match exactly
 
@@ -174,7 +169,6 @@ Feature: Approval page
       When the access gateway sends the approval link with the identity of user 15 to the same browser
       Then the browser gets the approval page, signed in as user 12 on the page itself
 
-    @backlog
     Scenario: The gateway is ignored while it has no configuration
       Given agent 9 waits for user 12 to approve the add of "butter" to "Groceries"
       And the settings of the access gateway are empty
