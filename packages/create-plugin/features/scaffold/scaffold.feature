@@ -30,6 +30,25 @@ Feature: Scaffold
         | an empty folder "acme'plugins"      | acme'plugins | acme/plugins | use a lowercase directory name       |
         | an empty folder "acme-plugins"      | acme-plugins | acme plugins | repository must look like owner/name |
 
+  Rule: A new repository guards what its plugins tell core
+    A compliance profile, a fake upstream and a feature file decide what the compliance suite of core certifies.
+    So a change to them is a security change, like a change to a plugin's policy.
+
+    Scenario: The security paths of a new repository cover what certifies its plugins
+      Given plugin author 3 has an empty folder "acme-plugins"
+      When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
+      Then the security paths of the repository cover each plugin's compliance profile, fake upstream, features and guides, and the lockfile
+
+    Scenario: A new repository scans for secrets with the default rules
+      Given plugin author 3 has an empty folder "acme-plugins"
+      When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
+      Then the repository has a secret scan setting that keeps the default rules
+
+    Scenario: The assistant files of a new repository describe the compliance suite
+      Given plugin author 3 has an empty folder "acme-plugins"
+      When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins" with the assistant files
+      Then the assistant files have the plugin development skill, and no assistant file names e2e tests or golden records
+
   Rule: A new plugin needs a valid id and namespace
 
     Background:
@@ -109,6 +128,11 @@ Feature: Scaffold
         | a REST service without a spec           | an API key     |
         | a remote procedure service on WebSocket | a bearer token |
         | a plugin to fill in by hand             | no sign-in     |
+
+    @backlog
+    Scenario: The tests of a plugin to fill in by hand are unit tests
+      When plugin author 3 adds the plugin "acme-box" for a plugin to fill in by hand that uses no sign-in
+      Then the tests of "acme-box" are in its unit test folder, where the workflow checks look for them
 
     @long-running
     Scenario Outline: A new plugin of each kind with a fake upstream is fit for production
