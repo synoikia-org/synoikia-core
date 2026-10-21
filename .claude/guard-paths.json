@@ -18,5 +18,10 @@
     "match": "^packages/core/src/plugins/default-repo\\.ts$",
     "decision": "ask",
     "reason": "default-repo.ts pins the synoikia-core-plugins signing key. Changing it marks every install `key_changed`; only for a compromised key."
+  },
+  {
+    "match": "^\\.claude/guard-paths\\.json$",
+    "decision": "ask",
+    "reason": "guard-paths.json lists the files that the path guard protects. A change to it removes or adds a guard."
   }
 ]
