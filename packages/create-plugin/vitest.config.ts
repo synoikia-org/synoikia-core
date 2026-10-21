@@ -17,7 +17,7 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'features',
-            include: ['features/**/*.feature'],
+            include: ['../../features/{build,release,scaffold,workflow}/*.feature'],
             exclude: ['test/**'],
             setupFiles: ['features/support/index.ts'],
             sequence: { concurrent: true },
