@@ -85,7 +85,7 @@ jobs:
           MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -euo pipefail
-          image=ghcr.io/via-justa/synoikia
+          image=ghcr.io/synoikia-org/synoikia
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if docker manifest inspect "$image:$version" >/dev/null 2>&1; then
@@ -98,9 +98,9 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
             # Stable versions also move the floating `latest` tag; prereleases only get their own tag.
             if [[ "$version" == *-* ]]; then
-              echo "tags=ghcr.io/via-justa/synoikia:$version" >> "$GITHUB_OUTPUT"
+              echo "tags=ghcr.io/synoikia-org/synoikia:$version" >> "$GITHUB_OUTPUT"
             else
-              echo "tags=ghcr.io/via-justa/synoikia:$version,ghcr.io/via-justa/synoikia:latest" >> "$GITHUB_OUTPUT"
+              echo "tags=ghcr.io/synoikia-org/synoikia:$version,ghcr.io/synoikia-org/synoikia:latest" >> "$GITHUB_OUTPUT"
             fi
           fi
       - uses: docker/build-push-action@v6

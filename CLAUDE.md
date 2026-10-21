@@ -15,7 +15,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `.github/actions/prose`     | The writing rule checker: a GitHub Action for CI here and in plugin repos, and the `prose` git hook                                                                                                                |
 | `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
 
-Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `via-justa/synoikia-core-plugins`.
+Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `synoikia-org/synoikia-core-plugins`.
 
 ## Commands
 

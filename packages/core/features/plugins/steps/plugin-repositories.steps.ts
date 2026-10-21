@@ -292,17 +292,48 @@ Then('the audit log shows that core added {string}, not a person', async (world:
   expect(rows.filter((r) => r.detail.name === name)).toMatchObject([{ actorKind: 'system' }]);
 });
 
-Given('the admin added {string} with its pinned key', async (world: SynoikiaWorld, name: string) => {
-  const index = { schema: 1, name, publicKey: DEFAULT_REPOSITORY.publicKey, plugins: [] };
-  world.repoFiles.set(DEFAULT_REPOSITORY.url, Buffer.from(JSON.stringify(index)));
+/** The admin adds a repository named `name` at `url`, which publishes `publicKey`, and confirms that key. */
+async function addSigned(world: SynoikiaWorld, name: string, url: string, publicKey: string) {
+  const index = { schema: 1, name, publicKey, plugins: [] };
+  world.repoFiles.set(url, Buffer.from(JSON.stringify(index)));
   await world.expectOk(
-    world.admin.post('/api/plugin-repos', {
-      url: DEFAULT_REPOSITORY.url,
-      signingMode: 'signed',
-      confirmPublicKey: DEFAULT_REPOSITORY.publicKey,
-    }),
+    world.admin.post('/api/plugin-repos', { url, signingMode: 'signed', confirmPublicKey: publicKey }),
     'add repository',
   );
+}
+
+const formerUrl = DEFAULT_REPOSITORY.formerUrls[0]!;
+
+Given('the admin added {string} with its pinned key', async (world: SynoikiaWorld, name: string) => {
+  await addSigned(world, name, DEFAULT_REPOSITORY.url, DEFAULT_REPOSITORY.publicKey);
+});
+
+Given(
+  'the admin added {string} at its former address with its pinned key',
+  async (world: SynoikiaWorld, name: string) => {
+    await addSigned(world, name, formerUrl, DEFAULT_REPOSITORY.publicKey);
+  },
+);
+
+Given('the admin added {string} at its former address with another key', async (world: SynoikiaWorld, name: string) => {
+  await addSigned(world, name, formerUrl, testKey().publicKey);
+});
+
+Then(
+  'the audit log shows that core moved {string} to its new address, not a person',
+  async (world: SynoikiaWorld, name: string) => {
+    const rows = (await world.audit({ decision: 'plugin_repo_moved' })) as unknown as {
+      actorKind: string;
+      detail: { name: string; from: string; to: string };
+    }[];
+    expect(rows.filter((r) => r.detail.name === name)).toMatchObject([
+      { actorKind: 'system', detail: { from: formerUrl, to: DEFAULT_REPOSITORY.url } },
+    ]);
+  },
+);
+
+Then('the admin still has a repository at the former address of {string}', async (world: SynoikiaWorld) => {
+  expect((await world.repositoryList()).filter((r) => r.url === formerUrl)).toHaveLength(1);
 });
 
 Then('the admin has the repository {string} once', async (world: SynoikiaWorld) => {

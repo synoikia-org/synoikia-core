@@ -113,6 +113,22 @@ Feature: Plugin repositories
       When the operator starts core for the first time
       Then the admin has the repository "Synoikia plugins" once
 
+  Rule: The default repository follows its move to a new address
+
+    @long-running
+    Scenario: Core moves the default repository from its former address
+      Given the admin added "Synoikia plugins" at its former address with its pinned key
+      When the operator starts core again
+      Then the admin has the repository "Synoikia plugins", signed with the key that core pins
+      And the admin has the repository "Synoikia plugins" once
+      And the audit log shows that core moved "Synoikia plugins" to its new address, not a person
+
+    @long-running
+    Scenario: A repository at the former address with another key stays there
+      Given the admin added "Synoikia plugins" at its former address with another key
+      When the operator starts core again
+      Then the admin still has a repository at the former address of "Synoikia plugins"
+
   Rule: A changed publisher key blocks installs
 
     Scenario: A refresh that finds a new key shows it to the admin
