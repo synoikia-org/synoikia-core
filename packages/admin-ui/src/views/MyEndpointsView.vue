@@ -7,7 +7,7 @@ import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
 import { ago, formatAuthMethods } from '../format';
 import { useSessionStore } from '../stores/session';
 
-/** Every user's home (design §6.4): the endpoints their role has, how to connect to them, and the
+/** Every user's home (ADR-0010): the endpoints their role has, how to connect to them, and the
  * others by name where the role may see them. */
 const session = useSessionStore();
 const { endpoints: mine, unassigned, error: loadError, isPending: loading } = useMyEndpointsQuery();

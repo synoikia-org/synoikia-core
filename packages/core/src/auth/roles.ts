@@ -11,7 +11,7 @@ import { ADMIN_ROLE_ID } from '../gate/access.js';
 import type { AccessLevel } from '../gate/access.js';
 import { getSettings } from '../settings.js';
 
-/** Roles (design §6.4): the built-in Admin role plus admin-defined ones, each with its endpoints (three
+/** Roles (ADR-0010): the built-in Admin role plus admin-defined ones, each with its endpoints (three
  * switches on each), its maximum levels (`catalog/role-levels.ts`) and a role-wide switch. */
 
 export type RoleRow = typeof roles.$inferSelect;

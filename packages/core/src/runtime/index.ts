@@ -263,7 +263,7 @@ function catalogBindings(
       for (const op of ops) {
         const group = groups.get(op.groupId);
         const access = accessOf(op, groups, caps);
-        // A non-admin never sees what their role keeps from them, not even as disabled (design §6.4).
+        // A non-admin never sees what their role keeps from them, not even as disabled (ADR-0010).
         if (!access.reachable && (!q.includeDisabled || caps)) continue;
         if (q.group && group?.key !== q.group) continue;
         if (q.tag && op.tag !== q.tag) continue;

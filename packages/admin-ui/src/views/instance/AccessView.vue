@@ -23,7 +23,7 @@ import type { GroupSummary, Instance, Level, LevelView, Operation } from '../../
 
 /** Access page (ADR-0004): a level per group, and per operation a level its kind allows that
  * overrides the group (↺ resets it). Locked operations need their own Ask and never take Write.
- * With a `scope` it shows a role's maximums or the user's personal levels (design §6.4) instead. */
+ * With a `scope` it shows a role's maximums or the user's personal levels (ADR-0010) instead. */
 const props = defineProps<{
   instance: Pick<Instance, 'id' | 'slug'> & { plugin?: Pick<Instance['plugin'], 'labels' | 'attestation'> };
   scope?: Scope;

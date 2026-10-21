@@ -106,6 +106,25 @@ The tool result of `execute`, `search` or `resume` carries these codes. A bindin
 | `STILL_RUNNING`       | `resume`: the script still runs after the decision.                                                              |
 | `EXECUTION_NOT_FOUND` | `resume`: the id is unknown or collected, belongs to another principal or endpoint, or is from before a restart. |
 
+## MCP client policy
+
+The client policy allows or denies MCP clients by their client name: the `clientInfo.name` of the MCP `initialize` request. The admin sets it under Settings → Client auth (`mcp.clientPolicy`). It is not a security boundary (ADR-0002).
+
+| `mode`          | Core refuses                                                     |
+| --------------- | ---------------------------------------------------------------- |
+| `off` (default) | No client                                                        |
+| `allow`         | A client whose name is not in `names`, and a client with no name |
+| `deny`          | A client whose name is in `names`                                |
+
+- `names` holds at most 50 names of 1 to 100 characters. Core trims each name and removes duplicates. The match is exact, without regard to case.
+- Core refuses a save of `allow` mode with no names, with 400 `invalid_settings`.
+- Core checks the policy after authentication (ADR-0009), on an `initialize` request, before it makes the MCP session. It reads the body once, with the limits of the MCP transport.
+- Core checks the policy again on each later request of a session. A policy change thus ends an open session of a refused client at its next request.
+- A refusal gets 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server", and no session. Core logs it in the server log and audits `client_refused`.
+- Core keeps in memory the last 50 client names that opened an MCP session, for the admin to add to the policy. A restart clears the list.
+
+The feature file `@id:client-policy` specifies its behavior.
+
 ## Environment
 
 `.env.example` lists every variable: `DATA_DIR`, `MASTER_KEY`, `MCP_HOST`, `MCP_PORT`, `ADMIN_HOST`, `ADMIN_PORT`, `PUBLIC_MCP_URL`, `PUBLIC_ADMIN_URL`, `MCP_ALLOWED_HOSTS`, `TRUST_PROXY`, `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD`, `ADMIN_FORCE_LOCAL_LOGIN` and `LOG_LEVEL`.

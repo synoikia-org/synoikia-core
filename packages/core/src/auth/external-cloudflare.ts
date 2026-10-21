@@ -2,7 +2,7 @@ import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import type { JWTVerifyGetKey } from 'jose';
 import type { ExternalIdentity, ExternalProvider } from './external.js';
 
-/** Cloudflare Access as an external provider (design §6.2): the `Cf-Access-Jwt-Assertion` of a user. */
+/** Cloudflare Access as an external provider (ADR-0009): the `Cf-Access-Jwt-Assertion` of a user. */
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -52,7 +52,7 @@ export async function checkCloudflareAccess(
       requiredClaims: ['exp', 'iat'],
     });
     // A service token's assertion has an empty `sub` and names the token's client ID in `common_name`:
-    // it is no user, so it is refused (design §6.2).
+    // it is no user, so it is refused (ADR-0009).
     if (payload.common_name !== undefined || !payload.sub)
       return { ok: false, reason: 'service token assertion: only user identities are accepted' };
     const email = typeof payload.email === 'string' ? payload.email : '';

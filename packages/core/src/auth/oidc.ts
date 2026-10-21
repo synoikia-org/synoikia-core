@@ -10,7 +10,7 @@ import { ServiceError, ValidationError } from '../errors.js';
 import { signPayload, verifyPayload } from './tokens.js';
 import type { UserRow, UserService } from './users.js';
 
-/** Optional OIDC sign-in (design §6.1): code + PKCE, state and nonce; the identity must pass the allow
+/** Optional OIDC sign-in (ADR-0008): code + PKCE, state and nonce; the identity must pass the allow
  * policy and be linked unless auto-provisioning. Used by the admin and MCP-port logins. */
 
 /** `*@example.com`: any verified address in that exact domain, never its subdomains. */
@@ -276,7 +276,7 @@ export class OidcService {
     const linked = users.byOidc(identity.issuer, identity.subject);
     if (linked) return linked.disabled ? null : linked;
     const settings = this.getSettings();
-    // Auto-provisioning is self-registration: it needs a default role too (design §6.5).
+    // Auto-provisioning is self-registration: it needs a default role too (ADR-0010).
     if (!settings?.autoProvision || policyIsEmpty(settings.allowPolicy) || !users.registrationOpen()) return null;
     const base =
       (identity.username ?? identity.email?.split('@')[0] ?? 'user').replace(/[^a-zA-Z0-9._@-]/g, '').slice(0, 48) ||

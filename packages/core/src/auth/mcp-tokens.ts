@@ -9,7 +9,7 @@ import { NotFoundError, ValidationError } from '../errors.js';
 import { ACCESS_CEILINGS, ADMIN_ROLE_ID } from '../gate/access.js';
 import { randomToken, sha256 } from './tokens.js';
 
-/** Static MCP bearer tokens (design §6.2): `syn_…`, shown once, stored as SHA-256, scoped to instances
+/** Static MCP bearer tokens (ADR-0009): `syn_…`, shown once, stored as SHA-256, scoped to instances
  * or `*`; outside its scope a token gets 403. */
 
 export const TOKEN_PREFIX = 'syn_';
@@ -52,7 +52,7 @@ export class McpTokenService {
       .map(publicToken);
   }
 
-  /** Every token has an owner: their role decides what it reaches (design §6.4). */
+  /** Every token has an owner: their role decides what it reaches (ADR-0010). */
   create(raw: unknown, actor: { userId: string }) {
     const input = CreateTokenSchema.parse(raw);
     if (input.expiresAt && input.expiresAt.getTime() <= this.now().getTime()) {

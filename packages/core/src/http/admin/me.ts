@@ -16,7 +16,7 @@ import { ACCESS_LEVELS } from '../../gate/access.js';
 import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
-/** What every signed-in user may use (design §6.4, §8.4): their endpoints and levels, their own levels
+/** What every signed-in user may use (ADR-0010, design §8.4): their endpoints and levels, their own levels
  * and rules where the role allows them, and their own tokens and OAuth grants. */
 export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const me = (c: Context<AdminEnv>) => c.get('user');
@@ -41,7 +41,7 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     });
   });
 
-  // One endpoint outside the role, by name only; any other id answers 404 (design §6.4).
+  // One endpoint outside the role, by name only; any other id answers 404 (ADR-0010).
   app.get('/api/me/endpoints/:id/about', (c) =>
     c.json(ctx.instances.aboutUnassigned(ctx.users.roleOf(me(c)), c.req.param('id'))),
   );
@@ -70,7 +70,7 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json({ matchProfiles: manifest.matchProfiles, targets: manifest.targets ?? null });
   });
 
-  // The editor's pickers, limited to what a rule the caller may write can name (design §6.4).
+  // The editor's pickers, limited to what a rule the caller may write can name (ADR-0010).
   app.get('/api/me/endpoints/:id/options/:source', async (c) => {
     const id = need(c, 'canManageOwnRules');
     const source = c.req.param('source');

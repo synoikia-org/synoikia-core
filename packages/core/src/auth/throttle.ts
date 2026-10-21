@@ -1,4 +1,4 @@
-/** Brute-force protection (design §6.1): 5 failures per username per 15 min lock it 15 min, plus a per-IP
+/** Brute-force protection (ADR-0008): 5 failures per username per 15 min lock it 15 min, plus a per-IP
  * budget; in memory, and counted per surface so MCP-port failures never lock the admin portal. */
 
 import { HitWindows } from '../gate/rate-limit.js';

@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/vue-query';
 
-/** Reads the double-submit CSRF cookie set by the admin listener (design §6.1). */
+/** Reads the double-submit CSRF cookie set by the admin listener (ADR-0008). */
 function csrfToken(): string | undefined {
   return document.cookie
     .split('; ')

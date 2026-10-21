@@ -15,7 +15,7 @@ const app = useAppStore();
 const router = useRouter();
 const route = useRoute();
 const queryClient = useQueryClient();
-// Overview and live events are admin-only; every role has its own endpoint list (design §6.4).
+// Overview and live events are admin-only; every role has its own endpoint list (ADR-0010).
 // Read once, so signing out doesn't start the other query.
 const isAdmin = session.isAdmin;
 const { data: overview } = useOverviewQuery(isAdmin);

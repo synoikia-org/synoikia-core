@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router';
 import { errorText } from '../api';
 import { useMyEndpointAboutQuery } from '../composables/useMyEndpoints';
 
-/** An endpoint outside the user's role (design §6.4): its name and plugin, and who to ask for access. */
+/** An endpoint outside the user's role (ADR-0010): its name and plugin, and who to ask for access. */
 const route = useRoute();
 const { data: about, error: loadError, isPending: loading } = useMyEndpointAboutQuery(() => String(route.params.id));
 const error = computed(() => (loadError.value ? errorText(loadError.value) : undefined));

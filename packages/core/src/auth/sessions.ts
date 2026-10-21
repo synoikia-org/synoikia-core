@@ -6,7 +6,7 @@ import { sessions, users } from '../db/schema.js';
 import { randomToken } from './tokens.js';
 import type { UserRow } from './users.js';
 
-/** Server-side sessions (design §6.1): the cookie holds a random id, the DB only its HMAC under a
+/** Server-side sessions (ADR-0008): the cookie holds a random id, the DB only its HMAC under a
  * master-key-derived pepper. */
 
 export type SessionKind = 'admin' | 'oauth_ui' | 'approval_ui';

@@ -129,7 +129,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     );
   });
 
-  // ── MCP bearer tokens (design §6.2) ──
+  // ── MCP bearer tokens (ADR-0009) ──
 
   app.get('/api/tokens', (c) => c.json(ctx.tokens.list()));
   app.post('/api/tokens', async (c) => c.json(ctx.tokens.create(await readJson(c, z.unknown()), actor(c)), 201));
@@ -138,7 +138,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
 
-  // ── OAuth clients & grants (design §6.2) ──
+  // ── OAuth clients & grants (ADR-0009) ──
 
   app.get('/api/oauth/clients', (c) => c.json(ctx.oauth.listClients()));
   app.post('/api/oauth/clients', async (c) => {
@@ -173,7 +173,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
 
-  // ── users (design §6.1, §6.4) ──
+  // ── users (ADR-0008, ADR-0010) ──
 
   app.get('/api/users', (c) => c.json(ctx.users.list()));
   app.post('/api/users', async (c) => {
@@ -244,7 +244,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     }),
   );
 
-  // Suggestions for the client policy (design §6.6): names seen at initialize since the server started.
+  // Suggestions for the client policy (@id:client-policy): names seen at initialize since the server started.
   app.get('/api/settings/mcp/clients-seen', (c) => c.json(ctx.seenClients.list()));
 
   app.put('/api/settings/oidc', async (c) => {
@@ -258,7 +258,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!isSettingsSection(section)) throw new NotFoundError('unknown_section', 'Unknown settings section');
     const body = await readJson(c, z.record(z.string(), z.unknown()));
     if (section === 'security' && typeof body.defaultRoleId === 'string') ctx.roles.get(body.defaultRoleId);
-    // Disabling local login locks everyone out unless SSO works and someone can use it (design §6.1).
+    // Disabling local login locks everyone out unless SSO works and someone can use it (ADR-0008).
     if (section === 'security' && body.disableLocalLogin === true) {
       if (!ctx.oidc.isEnabled() || !ctx.users.hasOidcLinkedUser()) {
         throw new ValidationError(

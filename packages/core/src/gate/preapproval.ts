@@ -28,7 +28,7 @@ export function evaluatePreApproval(
     targets: readonly ResolvedTarget[];
     /** The params subtrees a `$targets` condition covers (the profile field's `covers`), for strict matching. */
     targetCovers?: readonly string[];
-    /** The caller's user: their own rules apply too while their role allows own rules on the endpoint (design §6.4). */
+    /** The caller's user: their own rules apply too while their role allows own rules on the endpoint (ADR-0010). */
     userId?: string;
   },
   now = new Date(),

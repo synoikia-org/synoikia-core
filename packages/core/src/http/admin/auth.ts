@@ -10,7 +10,7 @@ import { ConflictError, ServiceError } from '../../errors.js';
 import { getSettings } from '../../settings.js';
 import { clientIp, isSecure, readJson, requestOrigin } from '../common.js';
 
-/** Admin auth over HTTP (design §6.1): session cookie, double-submit CSRF plus Origin check, TOTP, OIDC. */
+/** Admin auth over HTTP (ADR-0008): session cookie, double-submit CSRF plus Origin check, TOTP, OIDC. */
 
 export type AdminEnv = { Variables: { user: UserRow; sessionRaw: string } };
 
@@ -98,7 +98,7 @@ export function requireUser(ctx: AppContext): MiddlewareHandler<AdminEnv> {
   };
 }
 
-/** After `requireUser`: the Admin role only (design §6.4). */
+/** After `requireUser`: the Admin role only (ADR-0010). */
 export function requireAdmin(ctx: AppContext): MiddlewareHandler<AdminEnv> {
   return async (c, next) => {
     if (!ctx.users.isAdmin(c.get('user')))
@@ -107,7 +107,7 @@ export function requireAdmin(ctx: AppContext): MiddlewareHandler<AdminEnv> {
   };
 }
 
-/** The sign-in page offers "Create account" (design §6.5). */
+/** The sign-in page offers "Create account" (ADR-0010). */
 export const signupOpen = (ctx: AppContext) =>
   localLoginEnabled(ctx) && getSettings(ctx.db, 'security').localSignup && ctx.users.registrationOpen();
 
@@ -130,13 +130,13 @@ const lockedAnswer = (lockedFor: number) => ({
   message: `Too many failed attempts; try again in ${Math.ceil(lockedFor / 60)} min`,
 });
 
-/** A wrong second-factor code counts toward the name's lock (§6.1), announces a new lock and is audited. */
+/** A wrong second-factor code counts toward the name's lock (ADR-0008), announces a new lock and is audited. */
 function codeFailed(ctx: AppContext, username: string, detail: Record<string, unknown> = {}) {
   if (ctx.throttle.fail(username)) ctx.events.emit('auth.lockout', { username });
   writeAudit(ctx.db, { kind: 'auth', decision: 'totp_failed', actorKind: 'system', detail: { username, ...detail } });
 }
 
-/** A profile change that needs a current code: the sign-in lock of the name covers it too (§6.1). */
+/** A profile change that needs a current code: the sign-in lock of the name covers it too (ADR-0008). */
 async function withProfileCode<T>(
   c: Context<AdminEnv>,
   ctx: AppContext,
@@ -382,7 +382,7 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/profile/password', async (c) => {
     const body = await readJson(c, z.object({ currentPassword: z.string().optional(), newPassword: z.string() }));
     const user = c.get('user');
-    // The current password is a guess like a sign-in: it counts toward the name's lock (§6.1).
+    // The current password is a guess like a sign-in: it counts toward the name's lock (ADR-0008).
     const lockedFor = ctx.throttle.lockedFor(user.username);
     if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
     try {

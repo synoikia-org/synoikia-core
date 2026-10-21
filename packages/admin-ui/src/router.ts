@@ -33,7 +33,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean;
     title?: string;
-    /** Only the Admin role (design §6.4); the API refuses the rest anyway. */
+    /** Only the Admin role (ADR-0010); the API refuses the rest anyway. */
     admin?: boolean;
   }
 }

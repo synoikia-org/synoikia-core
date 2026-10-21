@@ -14,7 +14,7 @@ import { localLoginEnabled } from '../admin/auth.js';
 import { clientIp, isSecure } from '../common.js';
 import { consentPage, errorPage, loginPage, totpPage } from './pages.js';
 
-/** OAuth 2.1 endpoints and the MCP-port sign-in (design §6.2): portal accounts, but a separate
+/** OAuth 2.1 endpoints and the MCP-port sign-in (ADR-0009): portal accounts, but a separate
  * short-lived session that works only for consent and approval pages. */
 
 /** MCP-port sign-ins are separated by purpose (design §2.1), each with its own scoped cookie. */
@@ -263,7 +263,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     const session = uiSession(ctx, c, 'oauth');
     const continueTo = `/oauth/authorize?${q.toString()}`;
     if (!session) return renderLogin(ctx, c, continueTo, `Sign in to let ${client.name} use your MCP endpoints.`);
-    // A user can only hand out endpoints their role has (design §6.4).
+    // A user can only hand out endpoints their role has (ADR-0010).
     const mine = offered.filter((e) => ctx.users.hasEndpoint(session.user, e.id));
     if (mine.length === 0)
       return errorPage(c, 'No endpoints', 'None of the requested endpoints is available to your account.', 403);
@@ -336,7 +336,7 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
       userId: session.user.id,
       resources,
       instanceIds: resources.map((r) => current.get(r)!),
-      // Anything but an explicit "Read & write" choice is read-only (design §6.3).
+      // Anything but an explicit "Read & write" choice is read-only (ADR-0009).
       access: body.access === 'write' ? 'write' : 'read',
       codeChallenge: form.codeChallenge,
       redirectUri: form.redirectUri,

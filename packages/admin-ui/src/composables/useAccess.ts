@@ -8,7 +8,7 @@ import { useApiMutation } from './useApiMutation';
 import { overviewKeys } from './useOverview';
 import { roleKeys } from './useRoles';
 
-/** Whose levels: the endpoint's own (no scope), a role's maximums, or the user's personal levels (design §6.4). */
+/** Whose levels: the endpoint's own (no scope), a role's maximums, or the user's personal levels (ADR-0010). */
 export type AccessScope = { kind: 'role'; roleId: string } | { kind: 'own' };
 export interface AccessTarget {
   instanceId: string;

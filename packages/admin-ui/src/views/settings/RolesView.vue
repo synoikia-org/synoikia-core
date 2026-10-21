@@ -15,7 +15,7 @@ import {
 } from '../../composables/useRoles';
 import type { EndpointSwitches, RoleRow } from '../../types';
 
-/** Roles (design §6.4): Admin is built in; each other role has endpoints, three switches on each, maximum
+/** Roles (ADR-0010): Admin is built in; each other role has endpoints, three switches on each, maximum
  * levels (set on an endpoint's Access page) and the role-wide "See other endpoints". */
 const overviewQuery = useOverviewQuery();
 const rolesQuery = useRolesQuery();

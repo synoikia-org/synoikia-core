@@ -34,7 +34,7 @@ const props = defineProps<{
   instance: Pick<Instance, 'id'> & { plugin?: Pick<Instance['plugin'], 'id'> };
   own?: boolean;
 }>();
-// `own`: a user's own rules on `/api/me` (design §6.4); admin rules show there read-only.
+// `own`: a user's own rules on `/api/me` (ADR-0010); admin rules show there read-only.
 const base = computed(() =>
   accessBase({ instanceId: props.instance.id, scope: props.own ? { kind: 'own' } : undefined }),
 );
