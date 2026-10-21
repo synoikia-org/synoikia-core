@@ -272,33 +272,3 @@ Then('the sync fails with {string}', (world: PluginAuthorWorld, message: string)
 Then('the file outside the repository is unchanged', (world: PluginAuthorWorld) => {
   expect(readFileSync(path.join(world.dir, 'outside.md'), 'utf8')).toBe('Keep this note.\n');
 });
-
-When('the assistant asks to run {string}', (world: PluginAuthorWorld, command: string) => {
-  world.run(process.execPath, ['.claude/hooks/guard-branch.mjs'], {
-    input: JSON.stringify({ tool_input: { command }, cwd: world.repo }),
-    env: { CLAUDE_PROJECT_DIR: world.repo },
-  });
-});
-
-const decision = (world: PluginAuthorWorld) => {
-  expect(world.last?.code, world.last?.stderr).toBe(0);
-  const out = world.last?.stdout.trim() ?? '';
-  return out
-    ? (JSON.parse(out) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } })
-        .hookSpecificOutput
-    : undefined;
-};
-
-Then('the hook denies the command with {string}', (world: PluginAuthorWorld, reason: string) => {
-  const d = decision(world);
-  expect(d?.permissionDecision).toBe('deny');
-  expect(d?.permissionDecisionReason).toContain(reason);
-});
-
-Then('the hook denies the command', (world: PluginAuthorWorld) => {
-  expect(decision(world)?.permissionDecision).toBe('deny');
-});
-
-Then('the hook allows the command', (world: PluginAuthorWorld) => {
-  expect(decision(world)).toBeUndefined();
-});

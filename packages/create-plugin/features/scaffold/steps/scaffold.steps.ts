@@ -58,8 +58,8 @@ Then(
       '.githooks/pre-push',
       'docs/workflow.md',
       '.claude/settings.json',
-      '.claude/skills/change-workflow/SKILL.md',
-      '.claude/hooks/guard-branch.mjs',
+      '.claude/guard-paths.json',
+      '.claude/hooks/session-start.sh',
       'CLAUDE.md',
       'plugins',
     ])
@@ -124,14 +124,14 @@ Then(
 );
 
 Then(
-  'they cover the shared test setting, the secret scan setting, the security reviewer, the assistant hooks and the lockfile',
+  'they cover the shared test setting, the secret scan setting, the assistant settings and the lockfile',
   (world: PluginAuthorWorld) => {
     expectCovered(world, [
       'vitest.shared.ts',
       '.gitleaks.toml',
-      '.claude/agents/security-reviewer.md',
-      '.claude/hooks/guard-paths.mjs',
       '.claude/settings.json',
+      '.claude/guard-paths.json',
+      '.claude/hooks/session-start.sh',
       'pnpm-lock.yaml',
     ]);
   },
@@ -150,12 +150,40 @@ const filesUnder = (dir: string): string[] =>
     .map((e) => path.join(e.parentPath, e.name));
 
 Then(
-  'the assistant files have the plugin development skill, and no assistant file names e2e tests or golden records',
+  'the assistant settings enable the workflow and plugin development plugins of the Synoikia dev kit',
   (world: PluginAuthorWorld) => {
     expect(world.last?.code, world.last?.stderr).toBe(0);
-    const skill = '.claude/skills/plugin-development/SKILL.md';
-    expect(existsSync(world.file(skill)), skill).toBe(true);
-    expect(world.read(skill).trim()).not.toBe('');
+    expect(world.readJson('.claude/settings.json')).toMatchObject({
+      extraKnownMarketplaces: {
+        'synoikia-dev-kit': { source: { source: 'github', repo: 'synoikia-org/synoikia-dev-kit' } },
+      },
+      enabledPlugins: { 'synoikia-workflow@synoikia-dev-kit': true, 'synoikia-plugin-dev@synoikia-dev-kit': true },
+    });
+  },
+);
+
+Then('a session start hook recommends the plugins when they are not loaded', (world: PluginAuthorWorld) => {
+  const settings = world.readJson<{ hooks?: { SessionStart?: { hooks: { command: string }[] }[] } }>(
+    '.claude/settings.json',
+  );
+  expect(settings.hooks?.SessionStart?.[0]?.hooks[0]?.command).toContain('.claude/hooks/session-start.sh');
+  world.run(process.execPath, ['.claude/hooks/check-plugins.mjs', 'recommended', 'synoikia-workflow'], {
+    env: { CLAUDE_CODE_EXECPATH: process.execPath },
+  });
+  expect(world.last?.code, world.last?.stderr).toBe(0);
+  const out = JSON.parse(world.last?.stdout ?? '') as {
+    systemMessage: string;
+    hookSpecificOutput: { hookEventName: string; additionalContext: string };
+  };
+  expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart');
+  expect(out.systemMessage).toContain('`synoikia-workflow` are recommended');
+  expect(out.hookSpecificOutput.additionalContext).not.toContain('Do not change files');
+});
+
+Then(
+  'the repository has no skills or agents of its own, and no assistant file names e2e tests or golden records',
+  (world: PluginAuthorWorld) => {
+    for (const f of ['.claude/skills', '.claude/agents']) expect(existsSync(world.file(f)), f).toBe(false);
     for (const f of [...filesUnder(world.file('.claude')), world.file('CLAUDE.md')])
       expect(readFileSync(f, 'utf8'), path.relative(world.repo, f)).not.toMatch(/e2e|__golden__|golden (record|test)/i);
   },

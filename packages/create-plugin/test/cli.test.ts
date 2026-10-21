@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkPlugin } from '../src/check.js';
-import { dependencyRange, PACKAGE_DIR } from '../src/repo-root.js';
+import { dependencyRange } from '../src/repo-root.js';
 import { pluginFiles } from '../src/vitest.js';
 import { runWorkflow } from '../src/workflow/index.js';
 
@@ -108,21 +108,5 @@ Feature: Deny writes
     expect((await quiet(['sync'], root)).code).toBe(0);
     expect(existsSync(path.join(root, 'docs/workflow.md'))).toBe(true);
     expect(existsSync(path.join(root, '.claude'))).toBe(false);
-  });
-
-  it('reads branch names past redirects and commit messages', () => {
-    const hook = path.join(PACKAGE_DIR, 'templates/workflow/claude/_claude/hooks/guard-branch.mjs');
-    const root = work();
-    const decide = (command: string) =>
-      execFileSync(process.execPath, [hook], {
-        input: JSON.stringify({ tool_input: { command }, cwd: root }),
-        env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-        encoding: 'utf8',
-      });
-    for (const command of [
-      'git push origin HEAD > /dev/null',
-      'git commit -m "fix: a\nA git push piped into tail, or redirected"',
-    ])
-      expect(decide(command), command).toBe('');
   });
 });
