@@ -47,12 +47,13 @@ pnpm --filter @synoikia/plugin-sdk test:features                            # th
 pnpm --filter @synoikia/create-plugin test:features                         # the plugin tool, run as commands by a plugin author
 ```
 
-The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
+The git hooks in `.githooks/` come from NoVibe, with a Synoikia `prose` guard. Before a commit they refuse credential files. Before a push they check the commit phases, the feature files, the architecture model, the ADRs, added comments and the prose. The `Workflow` job (`.github/workflows/workflow.yml`) runs the same guards in CI. The `security-audit` job needs a `Security audit:` line in each ready pull request.
 
 ```sh
-pnpm hooks:install        # once per clone: .githooks runs the checks before a commit and a push
-pnpm workflow pre-push    # branch name, commit phases, feature files and prose since origin/main
+pnpm hooks:install        # once per clone: git runs .githooks before a commit and a push
 ```
+
+Each guard says how to skip it once, for example `ALLOW_LINT=1 git push`.
 
 Other useful commands:
 
@@ -76,7 +77,7 @@ The feature files of `@synoikia/create-plugin` are in `features/build/`, `releas
 
 ## Architecture model
 
-The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. The `architect` skill and `docs/workflow.md` say when a change updates it. An `arch:` commit changes only the model.
+The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. NoVibe's `architect` skill says when a change updates it. An `arch:` commit changes only the model.
 
 ```sh
 pnpm arch:serve    # preview the views locally

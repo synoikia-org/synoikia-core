@@ -2,7 +2,7 @@
 
 One MCP server for many self-hosted services. Each plugin instance gets its own endpoint exposing `search(code)`, `execute(code)` and `resume(executionId)` (for a call parked on an approval), and every call goes through one sandbox, permission gate, approval flow, redaction and audit log. The software design description (SDD) is in `docs/design/`, one file per section; code comments cite its sections (`§5.2`).
 
-**The rule everything follows: security lives in core, once.** A plugin only describes its upstream API; it never decides what is allowed. Don't add a plugin-side switch for anything the gate, sandbox, approvals, redaction or auth already decide. Core stays plugin-agnostic: no plugin names (TrueNAS, Seerr, Home Assistant) in core code, tests or UI placeholders. The plugins live in `via-justa/synoikia-core-plugins`.
+[NoVibe](https://github.com/novibe-org/novibe) runs the workflow: its `novibe` plugin and its git hooks in `.githooks/`. The Synoikia skills, rules, agent and hooks come from the `synoikia-core-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). `.claude/settings.json` enables both plugins, and a session start hook says when they are not loaded. This repository needs them. `.claude/guard-paths.json` lists the files that the path guard protects.
 
 ## Layout
 
@@ -14,15 +14,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `packages/admin-ui`         | Admin portal: Vue 3, Pinia, Vite                                                                                                                                                                                   |
 | `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
 
-Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. SDK code is bundled into every plugin, so `rules.ts`, `http-client.ts`, `openapi.ts` and `static-catalog.ts` decide what plugins tell core: treat changes there as security changes. `create-plugin` templates use only published SDK and core APIs and are built and tested by the scaffold scenarios in `packages/create-plugin/features/scaffold` and by `packages/create-plugin/test/smoke.test.ts`.
-
-Each security-critical directory under `packages/core/src` (`gate/`, `sandbox/`, `plugins/`, `auth/`) has a short `README.md` with its pipeline and design sections. Read it before changing that module.
-
-Admin UI work (any `.vue` file or `packages/admin-ui`) follows the `vue-development` skill (`.claude/skills/vue-development/`): vue-query for server state, Pinia setup stores for the session only, shared composables, `styles.css` tokens, `ModalDialog` over native dialogs. Load it before writing or reviewing portal code.
-
-Every task that changes the repo starts with the `change-workflow` skill. Changes are built spec first and test first, one slice for each pull request: `requirements-engineer` writes the feature file, `architect` writes the build plan, and `developer` builds it red then green. The rules for commits, branches, feature files and tests are in `docs/workflow.md`. CI checks them, and the git hooks check them before a push.
-
-Backend work (`packages/core`, `packages/plugin-sdk`, `packages/create-plugin`) follows the `core-development` skill (`.claude/skills/core-development/`): thin Hono routes over services, zod at every boundary, `ServiceError` codes, audit in the write's transaction, reuse of the shared helpers. Load it before writing or reviewing backend code.
+Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design description: `docs/design/`. The plugins live in `via-justa/synoikia-core-plugins`.
 
 ## Commands
 
@@ -34,56 +26,9 @@ pnpm --filter @synoikia/core exec vitest run test/gate.test.ts                # 
 pnpm --filter @synoikia/core test:features features/identity               # one feature folder (the whole suite takes ~3 min)
 pnpm --filter @synoikia/core test:coverage                                      # enforces coverage floors
 pnpm format                                                                     # fix formatting
-pnpm hooks:install                                                              # once per clone: the workflow git hooks
-pnpm workflow pre-push                                                          # the workflow checks (branch, phases, features, prose)
+pnpm hooks:install                                                              # once per clone: the git hooks in .githooks
 ```
-
-- Tests resolve workspace packages to their TypeScript sources (the `synoikia-source` export condition), so no build is needed before `pnpm test`.
-- `isolated-vm` needs `--no-node-snapshot`; the vitest config and `pnpm start` already pass it. Any new way of running core must too.
-- `packages/core/vitest.config.ts` sets coverage floors for `gate/`, `auth/`, `approvals/`, `sandbox/` and `crypto/`. A change there comes with tests that keep coverage above them.
 
 ## Conventions
 
-- TypeScript is strict with `noUncheckedIndexedAccess` and `verbatimModuleSyntax`: use `import type` for types, and `.js` extensions on relative imports.
-- Unused variables are allowed only with a `_` prefix.
-- Keep comments minimal: one or two lines, only for what the code can't say (a reason, a constraint, a design § reference). No multi-line comment blocks, in code, YAML, SQL or workflows; the design doc and READMEs carry the long explanations.
-- Prettier formats everything (a hook runs it after each edit). Template layout in `.vue` files is Prettier's job, not ESLint's.
-- Keep changes focused. Specify new behavior in a feature file before the code (`docs/workflow.md`). A new test file is a pure-function unit test in `test/unit/`.
-- Keep `README.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md` and `SECURITY.md` current: when a change affects what one of them describes (features, setup, commands, packages, ports, config, releases, security scope), update it in the same PR, along with the design doc section.
-
-## Design documents
-
-`docs/design/` is the SDD of core. `docs/design/README.md` is its index, rules and glossary. When behavior changes, update the section it belongs to in the same PR.
-
-- Write by the `technical-writing` skill, with the glossary's terms only, each with one meaning.
-- Describe the current design only. No history: no earlier, reverted or revised designs, no "this replaces", "used to" or migration notes. Those belong in commit messages and PRs.
-- Keep section numbers stable: code comments cite them. A new subsection takes a new number; never renumber or reuse one.
-- State facts that the code confirms. If the code and the SDD disagree, find out which one is wrong before you edit either.
-- Simplify: tables and lists over long paragraphs, and no rationale beyond what a reader needs to keep the design intact.
-
-## Database
-
-Schema is `packages/core/src/db/schema.ts`. Migrations in `packages/core/drizzle/` are generated with `pnpm --filter @synoikia/core db:generate` and applied on startup. Never hand-edit `drizzle/meta/`, and never change a migration that has shipped. A data migration is appended to the newly generated `.sql` file and tested in `packages/core/test/migrations.test.ts`. The `db-migration` skill walks through it.
-
-## Releases
-
-`@synoikia/plugin-sdk`, `@synoikia/core` and `@synoikia/create-plugin` publish to npm when their `version` changes on `main`. The Docker image uses the root `package.json` version, separate from the package versions.
-
-A PR bumps the version of each published package, and of the image, whose shipped content it changes, in the same PR. Docs-, test- and CI-only changes bump nothing.
-
-- Semver, while 0.x: a breaking change or a new feature bumps the minor; a fix bumps the patch.
-- `@synoikia/core`: changes under `packages/core/src` (including `testing/`) or its runtime dependencies.
-- `@synoikia/plugin-sdk`: changes under `packages/plugin-sdk/src` or its dependencies.
-- `@synoikia/create-plugin`: its own changes, and a patch whenever core or the SDK takes a minor bump (its `workspace:^` ranges are packed with the minor pinned).
-- Root `package.json` (the image): anything the image ships (core, admin UI, `Dockerfile`, image dependencies), by the same step as the largest package bump.
-- Name the new versions in the PR title, e.g. "(core 0.7.0, image 0.5.0)".
-
-A breaking change to the SDK or `@synoikia/core/testing` breaks every plugin repo, so call it out.
-
-## Security review
-
-Before opening a PR that touches a path in `synoikia.workflow.securityPaths` (root `package.json`), run the `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) on the diff and address its findings. Put its `Security audit:` line in the PR description: the `Workflow` CI job fails a ready PR without it. The reviewer also runs `pnpm audit` and triages known CVEs by whether the vulnerable dependency ships and is reachable.
-
-## Protected files
-
-A PreToolUse hook (`.claude/hooks/guard-paths.mjs`) denies edits to `drizzle/meta/` and `pnpm-lock.yaml`, and asks first for migration SQL and `packages/core/src/plugins/default-repo.ts`. That file pins the plugin repository's signing key, and changing it makes every install block plugin installs until an admin confirms the new key.
+Do not add `Co-Authored-By` or `Claude-Session` trailers to commit messages, and no "Generated with Claude Code" line to pull request descriptions.

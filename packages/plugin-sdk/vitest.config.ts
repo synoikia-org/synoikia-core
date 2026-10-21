@@ -7,7 +7,7 @@ export default mergeConfig(
   defineConfig({
     plugins: [quickpickle({ todoTags: ['@todo', '@wip', '@backlog'] })],
     test: {
-      // Feature files run as tests (docs/workflow.md): plugin author 3 against the published SDK API.
+      // Feature files run as tests: plugin author 3 against the published SDK API.
       projects: [
         { extends: true, test: { name: 'unit', include: ['test/**/*.test.ts'] } },
         {

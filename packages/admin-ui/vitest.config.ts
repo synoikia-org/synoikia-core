@@ -11,7 +11,7 @@ export default mergeConfig(
       projects: [
         { extends: true, test: { name: 'unit', environment: 'jsdom', include: ['test/**/*.test.ts'] } },
         {
-          // The portal in Chromium against a real core, which the World imports from its sources (docs/workflow.md).
+          // The portal in Chromium against a real core, which the World imports from its sources.
           extends: true,
           resolve: shared.resolve,
           ssr: shared.ssr,
