@@ -32,7 +32,7 @@ export function createMcpApp(ctx: AppContext): Hono {
   const endpoints = new McpEndpoints(ctx, ctx.oauth);
   ctx.onStop(() => endpoints.closeAll());
 
-  // Aggregate status only; per-instance detail lives on the admin port (design §11).
+  // Aggregate status only; per-instance detail lives on the admin port (@id:listeners).
   app.get('/healthz', (c) => c.json({ status: 'ok' }));
 
   registerOAuthRoutes(app, ctx, ctx.oauth);
