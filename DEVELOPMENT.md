@@ -73,7 +73,7 @@ The portal's feature files are the `portal-*.feature` files of `features/instanc
 
 The plugin SDK's feature files are in `features/catalogs/`, `conformance/`, `manifest/`, `rules/`, `runtime/` and `upstream/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
 
-The feature files of `@synoikia/create-plugin` are in `features/build/`, `release/`, `scaffold/` and `workflow/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
+The feature files of `@synoikia/create-plugin` are in `features/build/`, `release/` and `scaffold/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
 
 ## Architecture model
 
