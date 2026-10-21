@@ -4,3 +4,4 @@ coverage/
 *.tsbuildinfo
 .repo/
 .repo-current/
+.env*

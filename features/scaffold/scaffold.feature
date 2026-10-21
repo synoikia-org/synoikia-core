@@ -9,14 +9,14 @@ Feature: Scaffold
     Scenario: A new repository has everything that a plugin repository needs
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins" with the assistant files
-      Then the repository has its hidden files, CI, the workflow checks, the git hooks, the assistant files and a plugins folder
-      And the repository package names "acme/plugins", the scripts "new" and "workflow", and the ranges of core and the plugin tool
-      And the repository has no release workflow and its shared workflow files are current
+      Then the repository has its hidden files, CI, the assistant files and a plugins folder
+      And the repository package names "acme/plugins", the script "new", and the ranges of core and the plugin tool
+      And the repository has no release workflow, no workflow checks and no git hooks
 
     Scenario: A repository without the assistant files has none of them
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
-      Then the repository has no assistant files and its shared workflow files are current
+      Then the repository has no assistant files
 
     Scenario Outline: A repository that cannot start clean is refused
       Given plugin author 3 has <folder>
@@ -30,25 +30,24 @@ Feature: Scaffold
         | an empty folder "acme'plugins"      | acme'plugins | acme/plugins | use a lowercase directory name       |
         | an empty folder "acme-plugins"      | acme-plugins | acme plugins | repository must look like owner/name |
 
-  Rule: A new repository guards what its plugins tell core
-    A compliance profile, a fake upstream and a feature file decide what the compliance suite of core certifies.
-    So a change to them is a security change, like a change to a plugin's policy.
-
-    Scenario: The security paths of a new repository cover what certifies its plugins
-      Given plugin author 3 has an empty folder "acme-plugins"
-      When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
-      Then the security paths of the repository cover each plugin's compliance profile, fake upstream, its fixtures, features and guides
-      And they cover the shared test setting, the secret scan setting, the security reviewer, the assistant hooks and the lockfile
+  Rule: A new repository keeps secrets out of its history
 
     Scenario: A new repository scans for secrets with the default rules
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
       Then the repository has a secret scan setting that keeps the default rules
+      And CI scans each pull request for secrets with that setting
+      And the repository ignores local environment files
 
-    Scenario: The assistant files of a new repository describe the compliance suite
+  Rule: The assistant files of a new repository load the Synoikia dev kit
+
+    Scenario: The assistant settings enable the plugin development plugin
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins" with the assistant files
-      Then the assistant files have the plugin development skill, and no assistant file names e2e tests or golden records
+      Then the assistant settings enable the plugin development plugin of the Synoikia dev kit
+      And a session start hook recommends the plugin when it is not loaded
+      And the path guard refuses edits to the lockfile and the built bundles, and asks before an edit to the signing key
+      And the repository has no skills or agents of its own, and no assistant file names e2e tests or golden records
 
   Rule: A new plugin needs a valid id and namespace
 

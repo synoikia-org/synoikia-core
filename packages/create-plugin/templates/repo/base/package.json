@@ -14,37 +14,11 @@
     "test": "pnpm -r --filter './plugins/*' test",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "workflow": "synoikia-plugin workflow",
-    "hooks:install": "synoikia-plugin workflow hooks install"
+    "format:check": "prettier --check ."
   },
   "synoikia": {
     "repository": "{{repository}}",
-    "name": "{{repoName}}",
-    "workflow": {
-      "securityPaths": [
-        "plugins/*/manifest.json",
-        "plugins/*/plugin.yaml",
-        "plugins/*/src/**",
-        "plugins/*/test/compliance.yaml",
-        "plugins/*/test/fake*.ts",
-        "plugins/*/test/fixtures/**",
-        "plugins/*/features/**",
-        "plugins/*/vitest.config.ts",
-        "plugins/*/instructions.md",
-        "plugins/*/guides/**",
-        "vitest.shared.ts",
-        "**/package.json",
-        ".github/workflows/**",
-        ".gitleaks.toml",
-        ".claude/agents/**",
-        ".claude/hooks/**",
-        ".claude/settings.json",
-        "minisign.pub",
-        "pnpm-workspace.yaml",
-        "pnpm-lock.yaml"
-      ]
-    }
+    "name": "{{repoName}}"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

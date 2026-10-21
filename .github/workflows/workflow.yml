@@ -26,7 +26,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # NoVibe's guards, as the pre-push hook runs them. git.sh needs a branch and gh, so it runs only locally.
       - run: for guard in branch code gherkin likec4 madr phases; do sh ".githooks/pre-push.d/$guard.sh" </dev/null || exit 1; done
-      - run: pnpm workflow check-prose --base "$BASE" --pr-body
+      - run: node --test .github/actions/prose/prose.test.mjs
+      - uses: ./.github/actions/prose
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
 
   gitleaks:
     runs-on: ubuntu-latest

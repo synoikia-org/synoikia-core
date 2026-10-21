@@ -1,0 +1,13 @@
+name: Synoikia prose
+description: Checks Synoikia's writing rules on the lines a pull request adds and on its description.
+inputs:
+  base:
+    description: The commit to compare with, usually the pull request's base SHA.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+      run: node "$GITHUB_ACTION_PATH/check-prose.mjs" --base "$BASE" --pr-body

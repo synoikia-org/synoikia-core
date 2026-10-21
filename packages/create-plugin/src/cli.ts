@@ -8,7 +8,6 @@ import { askPluginOptions, PLUGIN_FLAGS, prompts } from './prompts.js';
 import { createRepoTool } from './repo.js';
 import { findRepoRoot } from './repo-root.js';
 import { install, newPlugin } from './scaffold.js';
-import { runWorkflow } from './workflow/index.js';
 
 const USAGE = `synoikia-plugin <command>
 
@@ -23,7 +22,6 @@ const USAGE = `synoikia-plugin <command>
   repo pack|index|verify|publish
                             Build the signed plugin repository (release workflow steps)
       --repository owner/name --out .repo --current .repo-current/index.json
-  workflow <command>        Spec- and test-first checks, git hooks and shared files (synoikia-plugin workflow help)
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -90,8 +88,6 @@ async function main(argv: string[]): Promise<number> {
       }
       return 0;
     }
-    case 'workflow':
-      return runWorkflow(rest, findRepoRoot());
     default:
       console.error(USAGE);
       return command === undefined || command === '--help' || command === 'help' ? 0 : 2;

@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from 'node:path';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { matchesAny } from '../../../src/workflow/glob.js';
 import { ARCHETYPE_FLAGS, AUTH_FLAGS, PACKAGE_DIR, TSC, VITEST } from '../../support/world.js';
 import type { PluginAuthorWorld } from '../../support/world.js';
 
@@ -46,20 +45,16 @@ When(
 );
 
 Then(
-  'the repository has its hidden files, CI, the workflow checks, the git hooks, the assistant files and a plugins folder',
+  'the repository has its hidden files, CI, the assistant files and a plugins folder',
   (world: PluginAuthorWorld) => {
     expect(world.last?.code, world.last?.stderr).toBe(0);
     for (const f of [
       '.gitignore',
       '.nvmrc',
       '.github/workflows/ci.yml',
-      '.github/workflows/workflow.yml',
-      '.githooks/pre-commit',
-      '.githooks/pre-push',
-      'docs/workflow.md',
       '.claude/settings.json',
-      '.claude/skills/change-workflow/SKILL.md',
-      '.claude/hooks/guard-branch.mjs',
+      '.claude/guard-paths.json',
+      '.claude/hooks/session-start.sh',
       'CLAUDE.md',
       'plugins',
     ])
@@ -68,11 +63,11 @@ Then(
 );
 
 Then(
-  'the repository package names {string}, the scripts {string} and {string}, and the ranges of core and the plugin tool',
-  (world: PluginAuthorWorld, repository: string, a: string, b: string) => {
+  'the repository package names {string}, the script {string}, and the ranges of core and the plugin tool',
+  (world: PluginAuthorWorld, repository: string, script: string) => {
     expect(world.readJson('package.json')).toMatchObject({
       name: path.basename(world.repo),
-      scripts: { [a]: `synoikia-plugin ${a}`, [b]: `synoikia-plugin ${b}` },
+      scripts: { [script]: `synoikia-plugin ${script}` },
       synoikia: { repository },
       devDependencies: {
         '@synoikia/core': `^${versionOf('core')}`,
@@ -82,60 +77,18 @@ Then(
   },
 );
 
-const syncIsCurrent = (world: PluginAuthorWorld) => {
-  const sync = world.cli('workflow', 'sync', '--check');
-  expect(sync.code, sync.stderr).toBe(0);
-};
-
-Then('the repository has no release workflow and its shared workflow files are current', (world: PluginAuthorWorld) => {
-  expect(existsSync(world.file('.github/workflows/release.yml'))).toBe(false);
-  syncIsCurrent(world);
+Then('the repository has no release workflow, no workflow checks and no git hooks', (world: PluginAuthorWorld) => {
+  for (const f of ['.github/workflows/release.yml', '.github/workflows/workflow.yml', '.githooks', 'docs/workflow.md'])
+    expect(existsSync(world.file(f)), f).toBe(false);
+  const pkg = world.readJson<{ scripts?: Record<string, string>; synoikia?: Record<string, unknown> }>('package.json');
+  expect(Object.values(pkg.scripts ?? {}).join('\n')).not.toContain('workflow');
+  expect(pkg.synoikia).not.toHaveProperty('workflow');
 });
 
-Then('the repository has no assistant files and its shared workflow files are current', (world: PluginAuthorWorld) => {
+Then('the repository has no assistant files', (world: PluginAuthorWorld) => {
   expect(world.last?.code, world.last?.stderr).toBe(0);
   for (const f of ['.claude', 'CLAUDE.md']) expect(existsSync(world.file(f)), f).toBe(false);
-  expect(existsSync(world.file('docs/workflow.md'))).toBe(true);
-  syncIsCurrent(world);
 });
-
-const securityPaths = (world: PluginAuthorWorld) =>
-  world.readJson<{ synoikia?: { workflow?: { securityPaths?: string[] } } }>('package.json').synoikia?.workflow
-    ?.securityPaths ?? [];
-
-function expectCovered(world: PluginAuthorWorld, files: string[]) {
-  expect(world.last?.code, world.last?.stderr).toBe(0);
-  const paths = securityPaths(world);
-  for (const f of files) expect(matchesAny(f, paths), f).toBe(true);
-}
-
-Then(
-  "the security paths of the repository cover each plugin's compliance profile, fake upstream, its fixtures, features and guides",
-  (world: PluginAuthorWorld) => {
-    expectCovered(world, [
-      'plugins/acme-box/test/compliance.yaml',
-      'plugins/acme-box/test/fake.ts',
-      'plugins/acme-box/test/fake-acme.ts',
-      'plugins/acme-box/test/fixtures/lists.json',
-      'plugins/acme-box/features/acme-box.feature',
-      'plugins/acme-box/guides/start.md',
-    ]);
-  },
-);
-
-Then(
-  'they cover the shared test setting, the secret scan setting, the security reviewer, the assistant hooks and the lockfile',
-  (world: PluginAuthorWorld) => {
-    expectCovered(world, [
-      'vitest.shared.ts',
-      '.gitleaks.toml',
-      '.claude/agents/security-reviewer.md',
-      '.claude/hooks/guard-paths.mjs',
-      '.claude/settings.json',
-      'pnpm-lock.yaml',
-    ]);
-  },
-);
 
 Then('the repository has a secret scan setting that keeps the default rules', (world: PluginAuthorWorld) => {
   expect(world.last?.code, world.last?.stderr).toBe(0);
@@ -144,18 +97,70 @@ Then('the repository has a secret scan setting that keeps the default rules', (w
   expect(world.read('.gitleaks.toml')).not.toMatch(/^\s*\[+allowlists?\]+/m);
 });
 
+Then('CI scans each pull request for secrets with that setting', (world: PluginAuthorWorld) => {
+  const ci = world.read('.github/workflows/ci.yml');
+  expect(ci).toMatch(/^\s+gitleaks:\s*$/m);
+  expect(ci).toMatch(/uses: gitleaks\/gitleaks-action@[0-9a-f]{40}\b/);
+  expect(ci).toMatch(/fetch-depth: 0/);
+});
+
+Then('the repository ignores local environment files', (world: PluginAuthorWorld) => {
+  expect(world.read('.gitignore').split('\n')).toContain('.env*');
+});
+
+Then(
+  'the path guard refuses edits to the lockfile and the built bundles, and asks before an edit to the signing key',
+  (world: PluginAuthorWorld) => {
+    const rules = world.readJson<{ match: string; decision: string }[]>('.claude/guard-paths.json');
+    const decide = (file: string) => rules.find((r) => new RegExp(r.match).test(file))?.decision;
+    expect(decide('pnpm-lock.yaml')).toBe('deny');
+    expect(decide('plugins/acme-box/dist/index.js')).toBe('deny');
+    expect(decide('minisign.pub')).toBe('ask');
+    expect(decide('plugins/acme-box/src/plugin.ts')).toBeUndefined();
+  },
+);
+
 const filesUnder = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true, recursive: true })
     .filter((e) => e.isFile())
     .map((e) => path.join(e.parentPath, e.name));
 
 Then(
-  'the assistant files have the plugin development skill, and no assistant file names e2e tests or golden records',
+  'the assistant settings enable the plugin development plugin of the Synoikia dev kit',
   (world: PluginAuthorWorld) => {
     expect(world.last?.code, world.last?.stderr).toBe(0);
-    const skill = '.claude/skills/plugin-development/SKILL.md';
-    expect(existsSync(world.file(skill)), skill).toBe(true);
-    expect(world.read(skill).trim()).not.toBe('');
+    const settings = world.readJson<{ enabledPlugins?: Record<string, boolean> }>('.claude/settings.json');
+    expect(settings).toMatchObject({
+      extraKnownMarketplaces: {
+        'synoikia-dev-kit': { source: { source: 'github', repo: 'synoikia-org/synoikia-dev-kit' } },
+      },
+    });
+    expect(settings.enabledPlugins).toEqual({ 'synoikia-plugin-dev@synoikia-dev-kit': true });
+  },
+);
+
+Then('a session start hook recommends the plugin when it is not loaded', (world: PluginAuthorWorld) => {
+  const settings = world.readJson<{ hooks?: { SessionStart?: { hooks: { command: string }[] }[] } }>(
+    '.claude/settings.json',
+  );
+  expect(settings.hooks?.SessionStart?.[0]?.hooks[0]?.command).toContain('.claude/hooks/session-start.sh');
+  world.run(process.execPath, ['.claude/hooks/check-plugins.mjs', 'recommended', 'synoikia-plugin-dev'], {
+    env: { CLAUDE_CODE_EXECPATH: process.execPath },
+  });
+  expect(world.last?.code, world.last?.stderr).toBe(0);
+  const out = JSON.parse(world.last?.stdout ?? '') as {
+    systemMessage: string;
+    hookSpecificOutput: { hookEventName: string; additionalContext: string };
+  };
+  expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart');
+  expect(out.systemMessage).toContain('`synoikia-plugin-dev` are recommended');
+  expect(out.hookSpecificOutput.additionalContext).not.toContain('Do not change files');
+});
+
+Then(
+  'the repository has no skills or agents of its own, and no assistant file names e2e tests or golden records',
+  (world: PluginAuthorWorld) => {
+    for (const f of ['.claude/skills', '.claude/agents']) expect(existsSync(world.file(f)), f).toBe(false);
     for (const f of [...filesUnder(world.file('.claude')), world.file('CLAUDE.md')])
       expect(readFileSync(f, 'utf8'), path.relative(world.repo, f)).not.toMatch(/e2e|__golden__|golden (record|test)/i);
   },

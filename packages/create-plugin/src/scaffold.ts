@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { RESERVED_NAMESPACES, SDK_VERSION } from '@synoikia/plugin-sdk';
 import { dependencyRange, TEMPLATES_DIR } from './repo-root.js';
@@ -340,9 +340,6 @@ export function createRepo(opts: CreateRepoOptions): string[] {
   renderTemplate(path.join(TEMPLATES_DIR, 'repo', 'base'), dir, vars, written);
   if (opts.release) renderTemplate(path.join(TEMPLATES_DIR, 'repo', 'release'), dir, vars, written);
   if (opts.claude) renderTemplate(path.join(TEMPLATES_DIR, 'repo', 'claude'), dir, vars, written);
-  renderTemplate(path.join(TEMPLATES_DIR, 'workflow', 'base'), dir, {}, written);
-  if (opts.claude) renderTemplate(path.join(TEMPLATES_DIR, 'workflow', 'claude'), dir, {}, written);
-  for (const hook of ['pre-commit', 'pre-push']) chmodSync(path.join(dir, '.githooks', hook), 0o755);
   mkdirSync(path.join(dir, 'plugins'), { recursive: true });
   return written;
 }
