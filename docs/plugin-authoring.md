@@ -1,6 +1,6 @@
 # Writing a Synoikia plugin
 
-A plugin connects one kind of self-hosted service (the _upstream_) to Synoikia. It describes the upstream's API: which operations exist, which read and which write, which are destructive, and which fields hold secrets. **It never decides what is allowed.** Core's sandbox, permission gate, approvals, redaction and audit apply to every call. Design: [`design/`](design/README.md) §3 and §4, and ADR-0003 to ADR-0007 in [`adrs/`](adrs/).
+A plugin connects one kind of self-hosted service (the _upstream_) to Synoikia. It describes the upstream's API: which operations exist, which read and which write, which are destructive, and which fields hold secrets. **It never decides what is allowed.** Core's sandbox, permission gate, approvals, redaction and audit apply to every call. Design: ADR-0003 to ADR-0007 and ADR-0011 to ADR-0014 in [`adrs/`](adrs/).
 
 ## Start
 
@@ -33,7 +33,7 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 | `src/auth.ts`     | How each request authenticates                                                                            |
 | `test/`           | `compliance.yaml`, a fake upstream, and unit tests in `test/unit/` (below)                                |
 
-`synoikia-plugin build` bundles everything into one self-contained `dist/index.js`. It validates `plugin.yaml` and inlines it at build time. At runtime the plugin runs as a permission-confined child. It can read nothing outside its package directory, and it can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration that the admin reviews before enabling the plugin. An update that changes it arrives disabled again. Core does not enforce it. A container egress policy is the mitigation (design §4.4, issue #108). List exactly the hosts the plugin connects to.
+`synoikia-plugin build` bundles everything into one self-contained `dist/index.js`. It validates `plugin.yaml` and inlines it at build time. At runtime the plugin runs as a permission-confined child. It can read nothing outside its package directory, and it can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration that the admin reviews before enabling the plugin. An update that changes it arrives disabled again. Core does not enforce it. A container egress policy is the mitigation (ADR-0014, issues #108 and #111). List exactly the hosts the plugin connects to.
 
 ### Agent instructions
 
@@ -161,7 +161,7 @@ A field set by several matching rules takes the **first** rule's value, except `
 
 ## The compliance suite
 
-Core's compliance suite certifies a plugin for production (design §4.5). The plugin's `vitest.config.ts` runs it:
+Core's compliance suite certifies a plugin for production. The plugin's `vitest.config.ts` runs it:
 
 ```ts
 export default mergeConfig(shared, complianceConfig({ pluginDir: import.meta.dirname }));
@@ -216,9 +216,46 @@ Each named call also checks its result against the secret values of the profile.
 
 A step file of the plugin gets the harness, the profile and the fake from `complianceSubject()`. Pure functions get unit tests in `test/unit/`.
 
+### The harness
+
+A plugin tests itself against the real core, in its own repository. Core tests never name a plugin. The package `@synoikia/core/testing` has the harness. A plugin adds `@synoikia/core` as a development dependency.
+
+```ts
+const h = await startPluginHarness({ pluginDir, connection: { baseUrl: fake.url, apiKey } });
+h.setGroupLevel('scene', 'ask');
+await h.execute(`return await acme.call('scene.delete', { id: 'evening' })`, {
+  onApproval: (a) => a.approve(),
+});
+```
+
+`startPluginHarness`:
+
+- copies the release files of the plugin to `plugins/<id>` in a temporary data directory: `manifest.json`, `package.json`, the top-level path of the entry, and the instructions file
+- starts core on that directory with an in-memory database, enables the plugin, creates an instance and syncs it
+- runs the bundle as a child under the permission model, as in production
+- fails with an error if the entry is not built. Plugin `test` scripts build first.
+
+| Area       | Harness functions                                                                                                                                                                                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Calls      | `execute(code, { onApproval })` and `search(code)`, on the same path as an MCP client. `onApproval` decides each approval, with typed confirmation. With `{ park: true }`, the call parks as for a client without prompts (ADR-0006): `parkedApproval(result)` decides it and `resume(executionId)` collects it. |
+| Access     | `setGroupLevel`, `setOperationLevel`, `addRule`                                                                                                                                                                                                                                                                  |
+| Inspection | `operation(key)`, `operations()`, `registry()`, `audit({ operationKey })`, `instance()`, `approvalErrors`                                                                                                                                                                                                        |
+| Upstream   | `testConnection(connection)`, `syncNow()`                                                                                                                                                                                                                                                                        |
+| Lifecycle  | `stop()` stops core and removes the temporary directory                                                                                                                                                                                                                                                          |
+
+The same package has `startFakeHttp`, a fake HTTP upstream that answers only the routes a test declares.
+
+**Repository release check.** `verifyPluginRepository({ index, assets, publicKey })` checks a built repository before it is published:
+
+1. It adds the repository as signed, with `publicKey` pinned.
+2. It installs the newest version of each plugin, with the sha256, signature and archive checks.
+3. It starts each bundle as a child under the permission model and requires an answer over IPC.
+
+The release workflow runs it after signing and before upload.
+
 ## Testing a build on your instance
 
-To try an unreleased build on a live Synoikia, with its endpoints, connections and access levels (design §4.6):
+To try an unreleased build on a live Synoikia, with its endpoints, connections and access levels (ADR-0013):
 
 1. In the plugin repository, run `pnpm exec synoikia-plugin repo pack --out .repo-test`. It packs each plugin version that `.repo-current/index.json` does not list into `.repo-test/<id>-<version>.tgz`; without that file it packs every plugin. Give the build a new version, such as `1.3.0-dev.1`, so it differs from the released one.
 2. On **Plugins**, select **Install from file**, pick the `.tgz` and check the summary: what it replaces and the permission changes.
