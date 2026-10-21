@@ -112,12 +112,12 @@ On first start, open the admin portal and create the first account (or set `ADMI
 ### Reverse proxy
 
 - `mcp.example.com` → `:8080`. The proxy must pass `Mcp-Session-Id`, allow SSE without buffering, and forward `X-Forwarded-Proto` and `Host`.
-- `admin.example.com` → `:8081`. The admin portal has its own port, and its sign-in protects it. Cloudflare Access or Authelia can add a second layer.
+- `admin.example.com` → `:8081`. The admin portal has its own port, and its sign-in protects it. An access proxy, such as Cloudflare Access, can add a second layer.
 - Set `TRUST_PROXY=true`, or the number of proxies, so that core reads `X-Forwarded-*`. Core reads `X-Forwarded-For` from the right, and takes the entry that the outermost trusted proxy added as the client.
 
 ### Network egress
 
-Core does not restrict the network access of plugins. Use a container network policy. Allow outbound traffic only to the upstream hosts, the ntfy and webhook targets, the OIDC issuer and the plugin repository hosts.
+Core does not restrict the network access of plugins yet (issues #108 and #111). Use a container network policy. Allow outbound traffic only to the upstream hosts, the ntfy and webhook targets, the OIDC issuer and the plugin repository hosts.
 
 ### Debugging a client that can't connect
 
