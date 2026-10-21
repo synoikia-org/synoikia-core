@@ -17,7 +17,7 @@ Inside a plugin repository (a root devDependency; `pnpm new` maps to `synoikia-p
 
 ## Claude Code
 
-The `--claude` option adds a `CLAUDE.md` and Claude Code settings that enable the `synoikia-plugin-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). A session start hook recommends the plugin when it is not loaded. A new repository has no workflow files. To build spec first and test first, adopt [NoVibe](https://github.com/novibe-org/novibe).
+The `--claude` option adds a `CLAUDE.md` and Claude Code settings that enable the `synoikia-plugin-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). A session start hook recommends the plugin when it is not loaded. A new repository has no workflow files, so nothing checks commit phases or a `Security audit:` line. To build spec first and test first, adopt [NoVibe](https://github.com/novibe-org/novibe). Its CI scans each pull request for secrets with gitleaks.
 
 `@synoikia/create-plugin/vitest` exports `pluginFiles()`, the Vitest plugin that loads `.yaml` and `.md` imports as the bundle does.
 
