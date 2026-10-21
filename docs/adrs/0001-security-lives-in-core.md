@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-21
+date: 2026-09-29
 ---
 
 # Security lives in core, once

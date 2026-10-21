@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-21
+date: 2026-10-07
 ---
 
 # Trust boundaries
@@ -38,7 +38,7 @@ Core accepts these risks. A security review does not report them again.
 
 1. An installed plugin that is malicious can give wrong classifications or locks for its own upstream. It can also connect to any network host. The trust flow for plugin repositories and a container egress policy reduce this risk. Core does not.
 2. The `external` method accepts each user that the Cloudflare Access application lets in. The Access policy, not core, decides who that is. Core refuses service tokens.
-3. SQLite allows one writer, so there is one core process.
+3. SQLite allows one writer, so there is one core process. Issue #110 tracks more than one.
 4. A session grant lets a client run each `ask` operation of one endpoint without a human, for up to `sessionGrantMaxHours`. During that time, a client under prompt injection can make these calls. Locked and typed-confirmation operations, the write rate limit, revoke and the audit log limit this risk.
 5. Without the approval card, the agent shows the approval link as text. An agent under prompt injection can show another link. The real page needs the owner, identified as for URL elicitation, and a POST with a CSRF token.
 6. A parked execution keeps an isolate and the real parameters in memory until its approval ends. The parked limits, the stop after an approval that is not given, and the limit of 10 approvals for each execution bound this.
