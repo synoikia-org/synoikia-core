@@ -47,7 +47,7 @@ pnpm --filter @synoikia/plugin-sdk test:features                            # th
 pnpm --filter @synoikia/create-plugin test:features                         # the plugin tool, run as commands by a plugin author
 ```
 
-The git hooks in `.githooks/` come from NoVibe, with a Synoikia `prose` guard. Before a commit they refuse credential files. Before a push they check the commit phases, the feature files, the architecture model, the ADRs, added comments and the prose. The `Workflow` job (`.github/workflows/workflow.yml`) runs the same guards in CI. The `security-audit` job needs a `Security audit:` line in each ready pull request.
+The git hooks in `.githooks/` come from NoVibe, with Synoikia `branch`, `keys` and `prose` guards. Before a commit they refuse credential files. Before a push they refuse a generated `claude/` branch name. They also check the commit phases, the feature files, the architecture model, the ADRs, added comments and the prose. The `Workflow` job (`.github/workflows/workflow.yml`) runs the same guards in CI. The `security-audit` job needs a `Security audit:` line in each ready pull request.
 
 ```sh
 pnpm hooks:install        # once per clone: git runs .githooks before a commit and a push

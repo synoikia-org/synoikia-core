@@ -25,7 +25,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # NoVibe's guards, as the pre-push hook runs them. git.sh needs a branch and gh, so it runs only locally.
-      - run: for guard in code gherkin likec4 madr phases; do sh ".githooks/pre-push.d/$guard.sh" </dev/null || exit 1; done
+      - run: for guard in branch code gherkin likec4 madr phases; do sh ".githooks/pre-push.d/$guard.sh" </dev/null || exit 1; done
       - run: pnpm workflow check-prose --base "$BASE" --pr-body
 
   gitleaks:
