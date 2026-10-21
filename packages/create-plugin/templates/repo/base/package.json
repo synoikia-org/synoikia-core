@@ -37,9 +37,7 @@
         "**/package.json",
         ".github/workflows/**",
         ".gitleaks.toml",
-        ".claude/agents/**",
-        ".claude/hooks/**",
-        ".claude/settings.json",
+        ".claude/**",
         "minisign.pub",
         "pnpm-workspace.yaml",
         "pnpm-lock.yaml"

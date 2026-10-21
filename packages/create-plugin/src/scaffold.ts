@@ -341,7 +341,6 @@ export function createRepo(opts: CreateRepoOptions): string[] {
   if (opts.release) renderTemplate(path.join(TEMPLATES_DIR, 'repo', 'release'), dir, vars, written);
   if (opts.claude) renderTemplate(path.join(TEMPLATES_DIR, 'repo', 'claude'), dir, vars, written);
   renderTemplate(path.join(TEMPLATES_DIR, 'workflow', 'base'), dir, {}, written);
-  if (opts.claude) renderTemplate(path.join(TEMPLATES_DIR, 'workflow', 'claude'), dir, {}, written);
   for (const hook of ['pre-commit', 'pre-push']) chmodSync(path.join(dir, '.githooks', hook), 0o755);
   mkdirSync(path.join(dir, 'plugins'), { recursive: true });
   return written;

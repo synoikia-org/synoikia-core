@@ -18,7 +18,7 @@ Inside a plugin repository (a root devDependency; `pnpm new` maps to `synoikia-p
 
 ## Workflow
 
-Every new repository gets the spec- and test-first workflow. `docs/workflow.md` holds the rules. The git hooks and `.github/workflows/workflow.yml` run the checks. The `--claude` option adds the workflow skills and a branch-name hook. `pnpm workflow sync` brings a repository's copies up to date with this package. `synoikia.workflow` in the root `package.json` sets the paths the checks use.
+Every new repository gets the spec- and test-first workflow. `docs/workflow.md` holds the rules. The git hooks and `.github/workflows/workflow.yml` run the checks. The `--claude` option adds a `CLAUDE.md` and Claude Code settings that enable the `synoikia-workflow` and `synoikia-plugin-dev` plugins of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). A session start hook recommends the plugins when they are not loaded. `pnpm workflow sync` brings a repository's copies up to date with this package. `synoikia.workflow` in the root `package.json` sets the paths the checks use.
 
 | Command                                     | What                                                                   |
 | ------------------------------------------- | ---------------------------------------------------------------------- |

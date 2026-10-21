@@ -15,8 +15,8 @@ import { TEMPLATES_DIR } from '../repo-root.js';
 const WORKFLOW_DIR = path.join(TEMPLATES_DIR, 'workflow');
 const outName = (name: string) => (/^_[a-zA-Z]/.test(name) ? `.${name.slice(1)}` : name);
 
-/** The shared workflow files, as repo-relative path → template path. Claude files only for repos that use Claude. */
-export function workflowFiles(root: string): Map<string, string> {
+/** The shared workflow files, as repo-relative path → template path. */
+export function workflowFiles(): Map<string, string> {
   const files = new Map<string, string>();
   const walk = (from: string, to: string) => {
     for (const entry of readdirSync(from).sort()) {
@@ -27,14 +27,13 @@ export function workflowFiles(root: string): Map<string, string> {
     }
   };
   walk(path.join(WORKFLOW_DIR, 'base'), '');
-  if (existsSync(path.join(root, '.claude'))) walk(path.join(WORKFLOW_DIR, 'claude'), '');
   return files;
 }
 
 /** Writes the shared files, or with `check` lists the ones that differ. Returns the paths written or out of date. */
 export function syncWorkflow(root: string, check = false): string[] {
   const changed: string[] = [];
-  for (const [rel, src] of workflowFiles(root)) {
+  for (const [rel, src] of workflowFiles()) {
     const dest = path.join(root, rel);
     if (lstatSync(dest, { throwIfNoEntry: false })?.isSymbolicLink())
       throw new Error(`${rel} is a symlink. Remove it before the sync`);
