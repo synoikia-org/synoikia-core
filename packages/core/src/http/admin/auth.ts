@@ -408,7 +408,7 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json({ status: 'ok' });
   });
 
-  // Approval browsers (design §5.3): MCP-port sign-ins that open approval pages without a new sign-in.
+  // Approval browsers (ADR-0006): MCP-port sign-ins that open approval pages without a new sign-in.
   app.get('/api/profile/approval-sessions', (c) => c.json(ctx.sessions.listKind(c.get('user').id, 'approval_ui')));
 
   app.post('/api/profile/approval-sessions/revoke', (c) => {

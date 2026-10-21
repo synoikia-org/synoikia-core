@@ -112,7 +112,7 @@ describe('notification channels', () => {
     expect(JSON.parse(sent[1]!.body)).toMatchObject({ title: 'Pre-approval rules disabled on /nas' });
     expect(JSON.parse(sent[1]!.body).message).toMatch(/2 pre-approval rule\(s\) no longer fit/);
 
-    // Approvals happen in the MCP client (design §5.3); channels can't subscribe to them.
+    // Approvals happen in the MCP client (ADR-0006); channels can't subscribe to them.
     expect(() =>
       ctx.notifier.save({ kind: 'ntfy', name: 'x', config: { topic: 't' }, events: ['approval.pending'] }),
     ).toThrow(/Invalid channel/);

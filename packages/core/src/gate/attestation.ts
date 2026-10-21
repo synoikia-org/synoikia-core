@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { DbLike } from '../db/index.js';
 import { guides } from '../db/schema.js';
 
-/** Best-practice attestation (design §5.1): `search` hands out a key MACed over instance, operation,
+/** Best-practice attestation (ADR-0003): `search` hands out a key MACed over instance, operation,
  * guide version and MCP session; `execute` must present it from the same session. */
 
 export function issueAttestationKey(

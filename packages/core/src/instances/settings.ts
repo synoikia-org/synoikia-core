@@ -12,11 +12,11 @@ export const InstanceSettingsSchema = z
       .max(24 * 60 * 60_000)
       .default(15 * 60_000),
     /** `ask`: approve non-locked Ask operations (reads too) in the agent session, by form prompt or the approval
-     * card (design §5.3). Off by default: a client could then approve its own calls. Other stored values read as off. */
+     * card (ADR-0006). Off by default: a client could then approve its own calls. Other stored values read as off. */
     formElicitationApprovals: z.enum(['off', 'ask']).default('off'),
-    /** Longest session grant an approver can give (design §5.8); 0 turns "Approve for this session" off. */
+    /** Longest session grant an approver can give (ADR-0006); 0 turns "Approve for this session" off. */
     sessionGrantMaxHours: z.number().int().min(0).max(24).default(8),
-    /** `execute` and `search` runs per minute, per principal (design §5.2). */
+    /** `execute` and `search` runs per minute, per principal (ADR-0003). */
     executePerMinute: z.number().int().min(1).max(10_000).default(30),
     writesPerMinute: z.number().int().min(1).max(10_000).default(10),
     sandbox: z

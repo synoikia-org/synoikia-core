@@ -12,7 +12,7 @@ import { MatchSchema } from '../gate/match.js';
 import { resolveAccess } from './groups.js';
 import type { LevelView } from './role-levels.js';
 
-/** Pre-approval rules (design §5.2): from the catalog, with a required reason, structured match and
+/** Pre-approval rules (ADR-0003): from the catalog, with a required reason, structured match and
  * optional rate limit and expiry. Locked operations are refused here (409), whatever the UI offers. */
 
 const RuleInputSchema = z.object({

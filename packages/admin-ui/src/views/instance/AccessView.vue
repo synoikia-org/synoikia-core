@@ -21,7 +21,7 @@ import { LEVEL_HELP, LEVEL_LABELS, OP_LEVEL_HELP, REASON_LABELS, kindSource } fr
 import { LEVELS } from '../../types';
 import type { GroupSummary, Instance, Level, LevelView, Operation } from '../../types';
 
-/** Access page (design §5.2.1): a level per group, and per operation a level its kind allows that
+/** Access page (ADR-0004): a level per group, and per operation a level its kind allows that
  * overrides the group (↺ resets it). Locked operations need their own Ask and never take Write.
  * With a `scope` it shows a role's maximums or the user's personal levels (design §6.4) instead. */
 const props = defineProps<{

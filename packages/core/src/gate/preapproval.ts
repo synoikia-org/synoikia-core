@@ -18,7 +18,7 @@ function ownRulesOn(db: DbLike, userId: string | undefined, instanceId: string):
 }
 
 /** Finds a matching, unexpired rule with budget left and records the hit, in one transaction. Never
- * called for locked operations (design §5.2). */
+ * called for locked operations (ADR-0003). */
 export function evaluatePreApproval(
   db: Db,
   input: {

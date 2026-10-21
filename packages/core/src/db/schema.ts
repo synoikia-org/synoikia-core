@@ -145,7 +145,7 @@ export const pluginInstances = sqliteTable('plugin_instances', {
 
 // ── catalog ──────────────────────────────────────────────────────────────────────────────────────
 
-/** One none/read/ask/write level per group; operations follow it unless they carry their own level (design §5.2). */
+/** One none/read/ask/write level per group; operations follow it unless they carry their own level (ADR-0003). */
 export const operationGroups = sqliteTable(
   'operation_groups',
   {
@@ -217,7 +217,7 @@ export const operations = sqliteTable(
     paramsSchema: json('params_schema'),
     /** JSON-pointer paths into params that hold a secret without a key name (a positional password). */
     sensitiveParams: json('sensitive_params').$type<string[]>(),
-    /** Secrets in the result that no key name gives away; core masks them after `invoke` (design §5.5). */
+    /** Secrets in the result that no key name gives away; core masks them after `invoke` (ADR-0007). */
     sensitiveResult: json('sensitive_result').$type<SensitiveResult>(),
     docs: json('docs'),
     firstSeenAt: ts('first_seen_at').notNull(),
@@ -308,7 +308,7 @@ export const pendingApprovals = sqliteTable('pending_approvals', {
   operationId: text('operation_id')
     .notNull()
     .references(() => operations.id),
-  /** Redacted copy for display; the real params live only in memory while pending (design §5.5). */
+  /** Redacted copy for display; the real params live only in memory while pending (ADR-0006). */
   paramsDisplay: json('params_display'),
   paramsHash: text('params_hash').notNull(),
   resolvedTargets: json('resolved_targets'),
@@ -328,7 +328,7 @@ export const pendingApprovals = sqliteTable('pending_approvals', {
   /** `url`: decided by a signed-in human on the approval page; `elicitation`: by the MCP client (opt-in). */
   decidedVia: text('decided_via', { enum: ['elicitation', 'url'] }),
   decidedAt: ts('decided_at'),
-  /** The user who owns the calling credential: the only one who may decide on the page (design §5.3). */
+  /** The user who owns the calling credential: the only one who may decide on the page (ADR-0006). */
   ownerUserId: text('owner_user_id').references(() => users.id),
 });
 

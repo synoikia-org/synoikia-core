@@ -1,6 +1,6 @@
 # §9 Notifications
 
-Notifications give information only. They never carry links to approve or deny a call. Approvals happen in the MCP client, which opens the approval page (§5.3).
+Notifications give information only. They never carry links to approve or deny a call. Approvals happen in the MCP client, which opens the approval page (ADR-0006).
 
 ## 9.1 Channels
 
@@ -17,7 +17,7 @@ Each channel subscribes to a set of events, and can have a filter for instances.
 | `instance.recovered`  | An instance is `ready` after `error`, also after a crash restart through `starting`. |
 | `plugin.crashed`      | A plugin child crashes.                                                              |
 | `sync.failed`         | A catalog sync fails.                                                                |
-| `sync.pending_review` | A sync adds or changes writes, or disables rules (§5.2.1).                           |
+| `sync.pending_review` | A sync adds or changes writes, or disables rules (ADR-0004).                         |
 | `auth.lockout`        | A user name reaches the failure limit (§6.1). Core sends it once for each lockout.   |
 
 - Core sends a message up to 3 times with backoff. It does not send again after a 4xx answer, except 429.

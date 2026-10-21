@@ -16,7 +16,7 @@ import {
 import type { AccessDecision, AccessLevel, AccessPrincipal } from '../gate/access.js';
 import { loadCaps } from './role-levels.js';
 
-/** Group access management (design §5.2.1): audited `config` events, unreachable from sandboxed code. */
+/** Group access management (ADR-0004): audited `config` events, unreachable from sandboxed code. */
 
 type GroupRow = typeof operationGroups.$inferSelect;
 type OperationRow = typeof operations.$inferSelect;

@@ -13,7 +13,7 @@ import { clientIp } from '../common.js';
 import { boundCsrf, checkBoundCsrf, renderLogin, uiSession } from './oauth-routes.js';
 import { approvalPage, decidedPage, errorPage } from './pages.js';
 
-/** The approval page (design §5.3): deciding needs the call's owner, signed in on this page or named by the
+/** The approval page (ADR-0006): deciding needs the call's owner, signed in on this page or named by the
  * endpoint's external provider, and a CSRF-protected POST, so neither the link holder nor a prefetch decides. */
 export function registerApprovalRoutes(app: Hono, ctx: AppContext) {
   const gone = (c: Context) =>

@@ -1,7 +1,7 @@
 import { maskSensitiveResult } from '@synoikia/plugin-sdk';
 import type { SensitiveResult } from '@synoikia/plugin-sdk';
 
-/** Redaction (design §5.5) of values under sensitive keys, matched case-insensitively ignoring `_`/`-`,
+/** Redaction (ADR-0007) of values under sensitive keys, matched case-insensitively ignoring `_`/`-`,
  * exactly or by containment (short rules only as the last word; contained matches keep booleans/numbers). */
 
 export const REDACTED = '[REDACTED]';
@@ -121,7 +121,7 @@ export function redactPaths<T>(value: T, paths: readonly string[] | null | undef
   return out as T;
 }
 
-/** Masks an operation's declared `sensitiveResult` (design §5.5) on the raw result, before the instance
+/** Masks an operation's declared `sensitiveResult` (ADR-0007) on the raw result, before the instance
  * redactor; exact key names, since names like `key` would hide too much as a global rule. */
 export function redactResult<T>(value: T, spec: SensitiveResult | null | undefined): T {
   return maskSensitiveResult(value, spec);

@@ -1,7 +1,7 @@
 import type { ParkedApproval } from '../approvals/service.js';
 import type { SandboxResult } from '../sandbox/index.js';
 
-/** Parked executions (design §5.6): an `execute` whose approval waits on a human outlives its tool call.
+/** Parked executions (ADR-0006): an `execute` whose approval waits on a human outlives its tool call.
  * Only its owner (credential and endpoint) can follow it with `resume`; it keeps running at the decision. */
 
 export const PARKED_LIMIT = { perPrincipalInstance: 2, perInstance: 8, total: 32 };
@@ -18,7 +18,7 @@ export interface PendingResult {
   status: 'awaiting_approval' | 'running';
   executionId: string;
   approval?: ParkedApproval;
-  /** The owner was already given this approval, so the approval card shows it once (§5.7). */
+  /** The owner was already given this approval, so the approval card shows it once (ADR-0006). */
   repeat?: true;
   error: { code: 'AWAITING_APPROVAL' | 'STILL_RUNNING'; message: string };
   logs: string[];
@@ -33,7 +33,7 @@ export interface ExecutionStatus {
   expiresAt?: string;
   /** The last decision on this run's approvals. */
   decision?: string;
-  /** A `resume` waits on the run now, so the approval card need not ask the chat to continue (§5.7). */
+  /** A `resume` waits on the run now, so the approval card need not ask the chat to continue (ADR-0006). */
   resumeWaiting?: true;
 }
 

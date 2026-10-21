@@ -28,7 +28,7 @@ import type {
   TargetsDecl,
 } from '../../types';
 
-/** Pre-approval rules (design §5.2): a catalog operation (never locked), a match from its declared
+/** Pre-approval rules (ADR-0003): a catalog operation (never locked), a match from its declared
  * fields, a required reason, optional rate limit and expiry. */
 const props = defineProps<{
   instance: Pick<Instance, 'id'> & { plugin?: Pick<Instance['plugin'], 'id'> };

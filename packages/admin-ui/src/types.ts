@@ -464,7 +464,7 @@ export interface ApprovalBrowser {
   userAgent: string | null;
 }
 
-/** A live "Approve for this session" grant on one endpoint (design §5.8). */
+/** A live "Approve for this session" grant on one endpoint (ADR-0006). */
 export interface SessionGrant {
   id: string;
   client: string | null;

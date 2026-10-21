@@ -180,7 +180,7 @@ export class McpTokenService {
     return row;
   }
 
-  /** The token is still live and scoped to the instance (a parked execution re-checks this, design §5.6). */
+  /** The token is still live and scoped to the instance (a parked execution re-checks this, ADR-0006). */
   liveFor(id: string, instanceId: string): boolean {
     const row = this.db.select().from(mcpTokens).where(eq(mcpTokens.id, id)).get();
     if (!row || row.revokedAt) return false;

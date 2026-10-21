@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue';
 
-/** The endpoint's `formElicitationApprovals` (design §5.3): Ask operations approved in the agent session. */
+/** The endpoint's `formElicitationApprovals` (ADR-0006): Ask operations approved in the agent session. */
 const on = defineModel<boolean>({ required: true });
 const uid = useId();
 </script>

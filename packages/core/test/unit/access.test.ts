@@ -83,7 +83,7 @@ describe('effectiveAccess', () => {
   });
 });
 
-describe('role caps (design §5.2.1)', () => {
+describe('role caps (ADR-0004)', () => {
   it.each([
     // [name, op, endpoint level, role layer, own layer, expected level]
     ['own level never widens the role', write, 'write', { group: 'ask' }, { op: 'write' }, 'ask'],

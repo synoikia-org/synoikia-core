@@ -7,15 +7,15 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { readInstanceSettings } from '../instances/settings.js';
 import type { ApprovalLinkService } from './links.js';
 
-/** Human approval (design §5.3): an opted-in, non-locked call is decided in the agent session (form prompt,
+/** Human approval (ADR-0006): an opted-in, non-locked call is decided in the agent session (form prompt,
  * or the card on a parked call); else URL mode sends a human to our page, else the execution parks with the
- * page link (§5.6). Any timeout is denied. A client's answer never approves a locked call. */
+ * page link (ADR-0006). Any timeout is denied. A client's answer never approves a locked call. */
 
 export type DecisionOutcome = 'approved' | 'denied' | 'timed_out' | 'cancelled';
 export type DecisionChannel = 'elicitation' | 'url';
-/** Where the decision was offered: `card` is the approval card's buttons (§5.7). */
+/** Where the decision was offered: `card` is the approval card's buttons (ADR-0006). */
 export type ApprovalChannel = 'form' | 'url' | 'link' | 'card';
-/** How the approval page knew the approver (design §5.3). */
+/** How the approval page knew the approver (ADR-0006). */
 export type ApproverSignIn = 'session' | 'external';
 
 interface DecisionBase {
@@ -30,7 +30,7 @@ interface DecisionBase {
   reason?: string;
 }
 
-/** An approval that also grants this client the endpoint's Ask operations until `sessionGrantUntil` (§5.8). It
+/** An approval that also grants this client the endpoint's Ask operations until `sessionGrantUntil` (ADR-0006). It
  * names its approver, so the grant ends with that user. */
 interface GrantingDecision extends DecisionBase {
   decidedBy: string;
@@ -78,7 +78,7 @@ export interface ClientPrompts {
   url?: (req: UrlPromptRequest) => Promise<UrlPromptResponse>;
   /** Tells the client a URL prompt was decided, so it can close it. */
   urlComplete?: (approvalId: string) => void;
-  /** `signal` aborts when the call parks instead (§5.6). */
+  /** `signal` aborts when the call parks instead (ADR-0006). */
   form?: (req: FormPromptRequest, signal: AbortSignal) => Promise<FormPromptResponse>;
 }
 
@@ -90,11 +90,11 @@ export interface ParkedApproval {
   operationKey: string;
   summary: string;
   expiresAt: Date;
-  /** The approval card may decide it in the agent session (§5.7). */
+  /** The approval card may decide it in the agent session (ADR-0006). */
   inSession: boolean;
 }
 
-/** Lets an execution park (design §5.6) when the client has no usable prompt, or a form gets no answer. */
+/** Lets an execution park (ADR-0006) when the client has no usable prompt, or a form gets no answer. */
 export interface ParkHook {
   /** Null when the execution may park; otherwise the denial reason. */
   reserve(): string | null;
@@ -114,7 +114,7 @@ export interface ApprovalRequestInput {
   diff?: unknown;
   expectedHash?: string;
   client: { kind: string; id?: string };
-  /** The user who owns the calling credential; only they decide on the approval page (design §5.3). */
+  /** The user who owns the calling credential; only they decide on the approval page (ADR-0006). */
   ownerUserId?: string;
   mcpSessionId?: string;
   timeoutMs: number;
@@ -125,7 +125,7 @@ export interface ApprovalRequestInput {
   park?: ParkHook;
 }
 
-/** Only the credential's owner decides (design §5.3); a call without one, only an admin. */
+/** Only the credential's owner decides (ADR-0006); a call without one, only an admin. */
 export const mayDecide = (approval: { ownerUserId: string | null }, userId: string, isAdmin: boolean) =>
   approval.ownerUserId ? approval.ownerUserId === userId : isAdmin;
 
@@ -145,7 +145,7 @@ export class ApprovalService {
     private readonly formFallbackMs = FORM_FALLBACK_MS,
   ) {}
 
-  /** At startup, deny and audit pending rows from a previous process: their params lived only in memory (§5.5). */
+  /** At startup, deny and audit pending rows from a previous process: their params lived only in memory (ADR-0006). */
   static denyOrphans(db: Db, now = new Date()): number {
     return db.transaction((tx) => {
       const orphans = tx.select().from(pendingApprovals).where(eq(pendingApprovals.status, 'pending')).all();
@@ -197,7 +197,7 @@ export class ApprovalService {
     };
 
     const prompts = input.prompts ?? {};
-    // In the session first (§5.3): the form prompt, then the card on a parked call; the page otherwise.
+    // In the session first (ADR-0006): the form prompt, then the card on a parked call; the page otherwise.
     let channel: 'url' | 'form' | 'link' | null =
       prompts.form && input.formApprovals ? 'form' : prompts.url ? 'url' : null;
     let parkRefused: string | null = null;
@@ -258,7 +258,7 @@ export class ApprovalService {
     else {
       this.offerForm(id, input, form!.signal);
       const park = input.park;
-      // A client may advertise forms and never show them (§5.6): the same approval moves to the link.
+      // A client may advertise forms and never show them (ADR-0006): the same approval moves to the link.
       if (park)
         fallback = setTimeout(() => {
           if (!this.live.has(id) || park.reserve()) return;
@@ -356,7 +356,7 @@ export class ApprovalService {
     return decision;
   }
 
-  /** The approval card's decision in the agent session (§5.7): only where the endpoint still allows it, and
+  /** The approval card's decision in the agent session (ADR-0006): only where the endpoint still allows it, and
    * never with a session grant. The caller checks that the approval belongs to the calling principal. */
   decideInSession(id: string, input: { approve: boolean; decidedBy: string }): Decision {
     const live = this.open(id);

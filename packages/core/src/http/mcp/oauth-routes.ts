@@ -29,7 +29,7 @@ const UI_CSRF_COOKIE = 'syn_mcp_csrf';
 const OIDC_COOKIE = 'syn_mcp_oidc';
 const OAUTH_UI_LIMITS: SessionLimits = { idleMs: 15 * 60_000, absoluteMs: 60 * 60_000 };
 
-/** The consent page keeps a short session; the approval page one browser-long session (design §5.3). */
+/** The consent page keeps a short session; the approval page one browser-long session (ADR-0006). */
 function uiLimits(ctx: AppContext, purpose: UiPurpose): SessionLimits {
   if (purpose === 'oauth') return OAUTH_UI_LIMITS;
   const s = getSettings(ctx.db, 'security');

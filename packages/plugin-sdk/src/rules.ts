@@ -267,7 +267,7 @@ function maskShallow(value: unknown, keys: ReadonlySet<string>): unknown {
   return Array.isArray(value) ? value.map(mask) : mask(value);
 }
 
-/** Masks what a `sensitiveResult` declares (design §5.5), on a copy; core applies it after `invoke`. */
+/** Masks what a `sensitiveResult` declares (ADR-0007), on a copy; core applies it after `invoke`. */
 export function maskSensitiveResult<T>(value: T, spec: SensitiveResult | null | undefined): T {
   if (!spec) return value;
   if (spec === 'whole') return (present(value) ? REDACTED : value) as T;

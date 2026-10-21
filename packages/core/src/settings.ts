@@ -34,7 +34,7 @@ const SETTINGS_SCHEMAS = {
         .min(1)
         .max(24 * 30)
         .default(12),
-      /** Approval-page sign-in on the MCP port (design §5.3): how long one browser stays signed in. */
+      /** Approval-page sign-in on the MCP port (ADR-0006): how long one browser stays signed in. */
       approvalSessionIdleHours: z
         .number()
         .int()

@@ -1,4 +1,4 @@
-/** Access levels (design §5.2.1): an operation follows its group's level unless given its own, limited to
+/** Access levels (ADR-0004): an operation follows its group's level unless given its own, limited to
  * what its kind allows; locked ops open only with their own Ask, and a `read` ceiling never reaches a write. */
 
 /** The built-in Admin role's fixed id (design §6.4): its levels are the endpoint's own. */
@@ -46,7 +46,7 @@ export interface AccessPrincipal {
 }
 
 /** Levels on top of the endpoint's, with the same "follow the group" meaning: a role's maximum or a
- * user's own (design §5.2.1). Null or missing means not set. */
+ * user's own (ADR-0004). Null or missing means not set. */
 export interface LevelLayer {
   group?: AccessLevel | null;
   op?: AccessLevel | null;

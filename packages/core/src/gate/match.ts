@@ -3,7 +3,7 @@ import type { ResolvedTarget } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
 import { canonicalJson } from './canonical.js';
 
-/** Pre-approval `match` evaluator (design §5.2): all conditions must hold, failing closed. Matching is
+/** Pre-approval `match` evaluator (ADR-0003): all conditions must hold, failing closed. Matching is
  * strict: every parameter must be covered, or accepted with `op: 'any'`. */
 
 const PARAM_OPS = [...MATCH_OPS, 'any'] as const;

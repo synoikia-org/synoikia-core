@@ -101,7 +101,7 @@ interface ToolExtras {
 function toolText(result: ExecuteResult, extras?: ToolExtras) {
   const sessionGrant = extras?.grant && { id: extras.grant.id, expiresAt: extras.grant.expiresAt.toISOString() };
   if (!result.ok && 'status' in result) {
-    // Parked (design §5.6): not an error; the agent shows the link and calls resume.
+    // Parked (ADR-0006): not an error; the agent shows the link and calls resume.
     const body = {
       status: result.status,
       executionId: result.executionId,
@@ -324,7 +324,7 @@ export class McpEndpoints {
       },
     );
 
-    // Approval prompts (design §5.3): URL mode sends the human to our approval page; form mode is only
+    // Approval prompts (ADR-0006): URL mode sends the human to our approval page; form mode is only
     // used where the endpoint opted in. `elicitation: {}` from older clients means form support.
     const prompts = (): ClientPrompts | undefined => {
       const caps = server.server.getClientCapabilities()?.elicitation;
@@ -436,7 +436,7 @@ export class McpEndpoints {
         );
       },
     );
-    // App-only (design §5.7): the approval card polls state, ends a grant, and decides only in-session approvals.
+    // App-only (ADR-0006): the approval card polls state, ends a grant, and decides only in-session approvals.
     server.registerTool(
       'approval_status',
       {
@@ -465,7 +465,7 @@ export class McpEndpoints {
         // The owner check of approval_status; the approval service decides if the card may answer.
         const approval = this.ctx.executions.currentApproval(id, identity.principal, instanceId);
         let body: { decided: boolean; error?: string } = { decided: false, error: 'not_found' };
-        // A card decides only the approval it shows, never the run's next one (§5.7).
+        // A card decides only the approval it shows, never the run's next one (ADR-0006).
         if (approval && approval.approvalId !== approvalId) body = { decided: false, error: 'approval_changed' };
         else if (approval) {
           try {
@@ -704,7 +704,7 @@ export class McpEndpoints {
       await transport.close().catch(() => undefined);
       await server.close().catch(() => undefined);
     } else {
-      // Which approval path this client gets (design §5.3): elicitation modes and the MCP Apps card.
+      // Which approval path this client gets (ADR-0006): elicitation modes and the MCP Apps card.
       const caps = server.server.getClientCapabilities();
       const elicitation = caps?.elicitation ? (caps.elicitation.url ? 'url' : 'form') : 'none';
       const apps = !!(caps?.extensions as Record<string, unknown> | undefined)?.[MCP_APPS_EXTENSION];

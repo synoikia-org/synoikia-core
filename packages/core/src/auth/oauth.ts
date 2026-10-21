@@ -473,7 +473,7 @@ export class OAuthService {
     };
   }
 
-  /** The grant, its client and user are still live and the grant covers the instance (design §5.6). */
+  /** The grant, its client and user are still live and the grant covers the instance (ADR-0006). */
   grantLiveFor(grantId: string, instanceId: string): boolean {
     const found = this.db
       .select({ grant: oauthGrants, client: oauthClients, user: users })
