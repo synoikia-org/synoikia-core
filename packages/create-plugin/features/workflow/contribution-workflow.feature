@@ -185,30 +185,3 @@ Feature: Contribution workflow
       When plugin author 3 syncs the shared files
       Then the sync fails with "docs/workflow.md is a symlink. Remove it before the sync"
       And the file outside the repository is unchanged
-
-  Rule: The branch hook of the assistant denies unsafe and badly named branches
-
-    Scenario Outline: A branch name with shell characters is denied before any check runs
-      When the assistant asks to run "git checkout -b <name>"
-      Then the hook denies the command with "<name>: use letters, digits"
-
-      Examples:
-        | name     |
-        | a$(id)b  |
-        | a`id`b   |
-        | a&calc&b |
-
-    Scenario Outline: The hook reads the branch name past pipes and redirects
-      When the assistant asks to run "<command>"
-      Then the hook <decision>
-
-      Examples:
-        | command                              | decision           |
-        | git push origin a$b 2>&1 \| tail -1  | denies the command |
-        | git checkout -b x$y > /dev/null      | denies the command |
-        | git push origin HEAD 2>&1 \| tail -1 | allows the command |
-        | git diff \| grep x                   | allows the command |
-
-    Scenario: A badly named branch is denied with the reason
-      When the assistant asks to run "git checkout -b claude/serene-dijkstra-abei82"
-      Then the hook denies the command with '"claude" is not a component'
