@@ -46,6 +46,7 @@ pnpm workflow pre-push                                                          
 
 - TypeScript is strict with `noUncheckedIndexedAccess` and `verbatimModuleSyntax`: use `import type` for types, and `.js` extensions on relative imports.
 - Unused variables are allowed only with a `_` prefix.
+- Do not add `Co-Authored-By` or `Claude-Session` trailers to commit messages, and no "Generated with Claude Code" line to pull request descriptions.
 - Keep comments minimal: one or two lines, only for what the code can't say (a reason, a constraint, a design § reference). No multi-line comment blocks, in code, YAML, SQL or workflows; the design doc and READMEs carry the long explanations.
 - Prettier formats everything (a hook runs it after each edit). Template layout in `.vue` files is Prettier's job, not ESLint's.
 - Keep changes focused. Specify new behavior in a feature file before the code (`docs/workflow.md`). A new test file is a pure-function unit test in `test/unit/`.
