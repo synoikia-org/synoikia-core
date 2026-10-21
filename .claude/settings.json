@@ -9,44 +9,25 @@
       "mcp__github__update_pull_request"
     ]
   },
+  "extraKnownMarketplaces": {
+    "synoikia-dev-kit": {
+      "source": {
+        "source": "github",
+        "repo": "synoikia-org/synoikia-dev-kit"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "synoikia-workflow@synoikia-dev-kit": true,
+    "synoikia-core-dev@synoikia-dev-kit": true
+  },
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-branch.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-paths.mjs"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.mjs"
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
           }
         ]
       }
