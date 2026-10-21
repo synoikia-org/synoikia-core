@@ -39,7 +39,7 @@ export const InstanceSettingsSchema = z
       .min(60_000)
       .max(7 * 24 * 60 * 60_000)
       .default(60 * 60_000),
-    /** Plugin child heap limit (design §4.4). */
+    /** Plugin child heap limit (ADR-0014). */
     memoryMb: z.number().int().min(64).max(4096).default(256),
   })
   .prefault({});

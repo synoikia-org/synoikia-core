@@ -3,7 +3,7 @@ import { SDK_VERSION } from '@synoikia/plugin-sdk';
 import { PluginProcess, PluginUnavailableError } from './process.js';
 import type { SpawnOptions } from './process.js';
 
-/** Keeps one instance's child alive (design §4.4): spawn → init → ready, restarting with backoff after
+/** Keeps one instance's child alive (ADR-0014): spawn → init → ready, restarting with backoff after
  * a crash; while it is down callers get `PluginUnavailableError`, never a fail-open gate. */
 
 export type InstanceStatus = 'stopped' | 'starting' | 'ready' | 'error';

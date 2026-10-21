@@ -50,7 +50,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/plugins/install', async (c) =>
     c.json(await ctx.repos.install(await readJson(c, z.unknown()), actor(c)), 201),
   );
-  // Manual plugins (design §4.6): the raw tarball is the body, its name a header or query param.
+  // Manual plugins (ADR-0013): the raw tarball is the body, its name a header or query param.
   app.post(
     '/api/plugins/uploads',
     bodyLimit({
@@ -75,7 +75,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
 
-  // ── plugin repositories (design §4.2–4.3) ──
+  // ── plugin repositories (ADR-0013) ──
 
   app.get('/api/plugin-repos', (c) => c.json(ctx.repos.list()));
   app.get('/api/plugin-repos/available', (c) => c.json(ctx.repos.available()));

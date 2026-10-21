@@ -191,7 +191,7 @@ export interface PluginRow {
   statusError: string | null;
   enabled: boolean;
   instances: number;
-  /** Set while an uploaded file replaces the repository version (design §4.6). */
+  /** Set while an uploaded file replaces the repository version (ADR-0013). */
   manual: ManualInstall | null;
   manifest: {
     name?: string;
@@ -353,7 +353,7 @@ export interface ManualInstall {
   releasedVersion: string | null;
 }
 
-/** A staged plugin file, as `POST /api/plugins/uploads` describes it (design §4.6). */
+/** A staged plugin file, as `POST /api/plugins/uploads` describes it (ADR-0013). */
 export interface StagedUpload {
   uploadId: string;
   pluginId: string;

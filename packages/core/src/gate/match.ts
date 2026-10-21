@@ -16,7 +16,7 @@ export const ParamConditionSchema = z
   })
   .refine((c) => c.op === 'any' || c.field !== '', 'only "any" can apply to all parameters');
 
-/** Selects resolved targets by id and declared scope values; every target must match (design §3.2). */
+/** Selects resolved targets by id and declared scope values; every target must match (ADR-0011). */
 export const TargetConditionSchema = z
   .object({
     field: z.literal('$targets'),
@@ -95,7 +95,7 @@ const escapePointer = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~
 export function coversAllParams(
   match: readonly MatchCondition[],
   params: unknown,
-  /** Extra covered pointers, e.g. the raw target a `$targets` condition stands for (design §3.4). */
+  /** Extra covered pointers, e.g. the raw target a `$targets` condition stands for (ADR-0012). */
   alsoCovered: readonly string[] = [],
 ): boolean {
   const pointers = [...match.filter((c) => c.field !== '$targets').map((c) => c.field), ...alsoCovered];

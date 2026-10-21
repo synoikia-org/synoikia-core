@@ -51,7 +51,7 @@ export type UiHint = z.infer<typeof UiHintSchema>;
 
 const scopeKey = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'must be lowercase letters, digits, _ or -');
 
-/** What a plugin's resolved targets are and the scopes rules select them by (design §3.2). */
+/** What a plugin's resolved targets are and the scopes rules select them by (ADR-0011). */
 export const TargetsSchema = z.object({
   /** What one target is called in the portal, e.g. "Entity", "Host", "Container". */
   label: z.string().min(1).default('Target'),

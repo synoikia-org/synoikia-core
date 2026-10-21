@@ -17,7 +17,7 @@ import { CORE_VERSION } from '../version.js';
 import { inspectPluginDir } from './discovery.js';
 import { MinisignError, parsePublicKey, verifySignature } from './minisign.js';
 
-/** Plugin repositories and installs (design §4.2–4.3): explicit installs of pinned versions, verified by
+/** Plugin repositories and installs (ADR-0013): explicit installs of pinned versions, verified by
  * sha256 and, for signed repos, a minisign signature from the admin-pinned key. */
 
 export const LIMITS = {
@@ -722,7 +722,7 @@ export class PluginRepoService {
 
     const row = this.pluginByPluginId(a.manifest.id)!;
     // New installs start disabled, and an update that changes what the plugin may do is disabled
-    // again: enabling it is the admin's review of its binding, capabilities and hosts (design §4.2).
+    // again: enabling it is the admin's review of its binding, capabilities and hosts (ADR-0013).
     const review = current ? permissionChanges(current.manifest, a.manifest) : [];
     const enabled = current && a.keepEnabled ? current.enabled && review.length === 0 : false;
     this.db.transaction((tx) => {
@@ -742,7 +742,7 @@ export class PluginRepoService {
     return this.db.select().from(plugins).where(eq(plugins.id, row.id)).get()!;
   }
 
-  // ── manual plugins (design §4.6) ──
+  // ── manual plugins (ADR-0013) ──
 
   private dropUpload() {
     if (this.upload) rmSync(this.upload.work, { recursive: true, force: true });
