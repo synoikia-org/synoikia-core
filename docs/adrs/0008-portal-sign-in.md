@@ -84,6 +84,6 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 
 - Good, because an install needs no identity provider, and an admin can still require TOTP or use single sign-on.
 - Good, because the database holds no usable session id, password or recovery code.
-- Bad, because a user name lock lets anyone lock out a user for 15 minutes. The lock is for each surface, so the MCP listener cannot lock the admin portal.
+- Bad, because a user name lock lets anyone lock out a user for 15 minutes. The lock is for each surface, so the MCP listener cannot lock the admin portal. Issue #114 tracks a progressive lock, one lock for each user and an admin unlock.
 
 The model views `containers` and `coreComponents` show the admin listener. The feature files `@id:first-account`, `@id:portal-sign-in`, `@id:portal-sessions`, `@id:single-sign-on`, `@id:local-sign-in-off`, `@id:users` and `@id:user-deletion` specify its behavior.
