@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkProse } from '../../src/workflow/prose.js';
+import { checkProse } from '../../src/prose.js';
 
 const long = Array.from({ length: 26 }, (_, i) => `word${i}`).join(' ');
 
