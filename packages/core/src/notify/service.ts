@@ -9,7 +9,7 @@ import { notifierChannels } from '../db/schema.js';
 import { NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
 import type { CoreEventMap, CoreEventName, CoreEvents } from '../events.js';
 
-/** Notification channels (design §9): ntfy and signed webhooks, informational only; payloads carry
+/** Notification channels (ADR-0019): ntfy and signed webhooks, informational only; payloads carry
  * summaries, never raw params or secrets. */
 
 const NOTIFY_EVENTS = [
@@ -90,7 +90,7 @@ export class NotifierService {
     } = {},
   ) {}
 
-  /** Undefined when the current master key cannot decrypt them (design §7.2). */
+  /** Undefined when the current master key cannot decrypt them (ADR-0016). */
   private secretsOf(row: ChannelRow): Secrets | undefined {
     if (!row.secretsEnc) return {};
     try {

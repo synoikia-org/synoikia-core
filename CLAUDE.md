@@ -1,6 +1,6 @@
 # Synoikia core
 
-One MCP server for many self-hosted services. Each plugin instance gets its own endpoint exposing `search(code)`, `execute(code)` and `resume(executionId)` (for a call parked on an approval). Every call goes through one sandbox, permission gate, approval flow, redaction and audit log. The security decisions are ADRs in `docs/adrs/`, and the rest of the software design description (SDD) is in `docs/design/` until it moves. Code comments cite an ADR (`ADR-0003`), a feature `@id` or an SDD section (`§7.1`).
+One MCP server for many self-hosted services. Each plugin instance gets its own endpoint exposing `search(code)`, `execute(code)` and `resume(executionId)` (for a call parked on an approval). Every call goes through one sandbox, permission gate, approval flow, redaction and audit log. The security decisions are ADRs in `docs/adrs/`, and the behavior is the feature files in `features/`. The structure is the LikeC4 model in `docs/architecture/`, and other facts are in `docs/reference.md`. Code comments cite an ADR (`ADR-0003`) or a feature `@id`.
 
 [NoVibe](https://github.com/novibe-org/novibe) runs the workflow: its `novibe` plugin and its git hooks in `.githooks/`. The Synoikia skills, rules, agent and hooks come from the `synoikia-core-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). `.claude/settings.json` enables both plugins, and a session start hook says when they are not loaded. This repository needs them. `.claude/guard-paths.json` lists the files that the path guard protects.
 
@@ -15,7 +15,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `.github/actions/prose`     | The writing rule checker: a GitHub Action for CI here and in plugin repos, and the `prose` git hook                                                                                                                |
 | `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
 
-Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design description: `docs/design/`. The plugins live in `via-justa/synoikia-core-plugins`.
+Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `via-justa/synoikia-core-plugins`.
 
 ## Commands
 

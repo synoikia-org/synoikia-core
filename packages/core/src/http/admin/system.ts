@@ -13,7 +13,7 @@ import { CORE_VERSION } from '../../version.js';
 import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
-/** Global Admin API routes (design §8.4): overview, plugins, audit, tokens, users, settings, events. */
+/** Global Admin API routes (ADR-0010): overview, plugins, audit, tokens, users, settings, events. */
 export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const actor = (c: { get: (k: 'user') => { id: string } }) => ({ userId: c.get('user').id });
 
@@ -92,7 +92,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
 
-  // ── notification channels (design §9) ──
+  // ── notification channels (ADR-0019) ──
 
   app.get('/api/notifiers', (c) => c.json(ctx.notifier.list()));
   app.post('/api/notifiers', async (c) =>

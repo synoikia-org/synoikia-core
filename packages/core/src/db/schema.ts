@@ -4,7 +4,7 @@ import { blob, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-or
 import { ADMIN_ROLE_ID } from '../gate/access.js';
 import type { AuthMethod } from '../instances/manager.js';
 
-/** The SQLite schema (design §7.1): JSON as TEXT, timestamps as epoch ms, secrets as AES-256-GCM blobs. */
+/** The SQLite schema: JSON as TEXT, timestamps as epoch ms, secrets as AES-256-GCM blobs. */
 
 const id = () => text('id').primaryKey();
 const ts = (name: string) => integer(name, { mode: 'timestamp_ms' });
@@ -107,7 +107,7 @@ export const plugins = sqliteTable('plugins', {
   manifest: json('manifest').notNull(),
   status: text('status', { enum: ['ok', 'invalid', 'incompatible'] }).notNull(),
   statusError: text('status_error'),
-  /** Text of the manifest's `instructions` file, read by discovery (design §2.2). */
+  /** Text of the manifest's `instructions` file, read by discovery (ADR-0015). */
   instructions: text('instructions'),
   enabled: flag('enabled').notNull().default(false),
   /** Set while an uploaded tarball replaces the repository version (ADR-0013). */
@@ -332,7 +332,7 @@ export const pendingApprovals = sqliteTable('pending_approvals', {
   ownerUserId: text('owner_user_id').references(() => users.id),
 });
 
-/** Append-only: no API updates or deletes rows (design §7.3). */
+/** Append-only: no API updates or deletes rows (ADR-0017). */
 export const auditLog = sqliteTable(
   'audit_log',
   {

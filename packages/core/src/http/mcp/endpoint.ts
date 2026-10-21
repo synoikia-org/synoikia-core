@@ -31,7 +31,7 @@ import { ServiceError } from '../../errors.js';
 import { clientIp } from '../common.js';
 import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION } from './approval-card.js';
 
-/** `/{slug}` Streamable HTTP endpoints (design §2.2): one McpServer per session, bound to its instance
+/** `/{slug}` Streamable HTTP endpoints (ADR-0015): one McpServer per session, bound to its instance
  * and principal, exposing `search`, `execute` and `resume`, plus the approval card's app-only tools. */
 
 const SESSION_IDLE_MS = 30 * 60_000;
@@ -167,7 +167,7 @@ function describeResume(manifest: Manifest): string {
 const APPROVAL_NOTE =
   'An approval can also happen inside the execute call, which then returns the result directly. When execute returns awaiting_approval, show the link, then call resume at once and again while it waits on the same link, for up to about 3 minutes.';
 
-/** The plugin's agent instructions (design §2.2) in a delimited block after core's text; core's approval
+/** The plugin's agent instructions (ADR-0015) in a delimited block after core's text; core's approval
  * rule follows it, so plugin text can't pose as core's last word. */
 function withPluginNotes(text: string, manifest: Manifest, instructions: string | undefined): string {
   if (!instructions) return text;

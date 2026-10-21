@@ -1,13 +1,13 @@
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
-/** A manifest's `instructions` file (core design §2.2): Markdown the agent reads, checked the same way
+/** A manifest's `instructions` file (ADR-0015): Markdown the agent reads, checked the same way
  * by `synoikia-plugin check` and by core when it loads the plugin. */
 
 /** Largest `instructions` file core accepts; a larger one fails the check, it is never truncated. */
 export const INSTRUCTIONS_MAX_BYTES = 4096;
 
-/** Core wraps the text in this element (design §2.2), so the text may not contain the tag itself. */
+/** Core wraps the text in this element (ADR-0015), so the text may not contain the tag itself. */
 export const INSTRUCTIONS_TAG = 'plugin-notes';
 
 /** The text of an `instructions` file. Throws for a file over the cap, invalid UTF-8, control or invisible

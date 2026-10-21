@@ -11,7 +11,7 @@ const jsonRpcError = (code: number, message: string) => ({
   error: { code, message },
 });
 
-/** The public MCP listener (design §2.1): endpoints, OAuth and approval pages; no Admin API here. */
+/** The public MCP listener (ADR-0015): endpoints, OAuth and approval pages; no Admin API here. */
 export function createMcpApp(ctx: AppContext): Hono {
   const app = new Hono();
   app.onError((err, c) => errorResponse(err, c, ctx.log));

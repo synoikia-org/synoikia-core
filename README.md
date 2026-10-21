@@ -16,7 +16,7 @@
   <a href="#the-name">The name</a> ·
   <a href="#deployment">Deployment</a> ·
   <a href="DEVELOPMENT.md">Development</a> ·
-  <a href="docs/design/README.md">Design</a> ·
+  <a href="docs/adrs/">Decision records</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -105,7 +105,7 @@ cp .env.example .env   # set MASTER_KEY, PUBLIC_MCP_URL, …
 docker compose -f docker-compose.example.yml up -d
 ```
 
-Pulls the published image from `ghcr.io/via-justa/synoikia` — `latest` tracks the newest stable release; pin an explicit version tag (e.g. `ghcr.io/via-justa/synoikia:0.2.0`) in production. Deploys with [Docker Compose][compose]. Put `:8080` behind your reverse proxy (such as [Caddy][caddy], [Traefik][traefik] or a [Cloudflare Tunnel][cf-tunnel]) as the public MCP hostname and set `PUBLIC_MCP_URL` to it. The admin portal runs on its own dedicated port (`ADMIN_PORT`, 8081 by default). See design §11.
+Pulls the published image from `ghcr.io/via-justa/synoikia`. `latest` tracks the newest stable release. Pin an explicit version tag (e.g. `ghcr.io/via-justa/synoikia:0.2.0`) in production. Deploys with [Docker Compose][compose]. Put `:8080` behind your reverse proxy (such as [Caddy][caddy], [Traefik][traefik] or a [Cloudflare Tunnel][cf-tunnel]) as the public MCP hostname and set `PUBLIC_MCP_URL` to it. The admin portal runs on its own dedicated port (`ADMIN_PORT`, 8081 by default). See [Reverse proxy](#reverse-proxy) and ADR-0015.
 
 On first start, open the admin portal and create the first account (or set `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` once). Then install and enable plugins, create an endpoint, raise the access groups you want above Read, and connect your MCP client to `PUBLIC_MCP_URL/<slug>`.
 
@@ -121,7 +121,7 @@ Core does not restrict the network access of plugins yet (issues #108 and #111).
 
 ### Debugging a client that can't connect
 
-A refused MCP request is logged with its reason: the endpoint's client auth methods, the kind of credential the client sent, a Cloudflare Access claim that didn't match, a Host outside `PUBLIC_MCP_URL`/`MCP_ALLOWED_HOSTS`, or an endpoint that is unavailable. Watch `docker compose logs -f synoikia` while the client connects. Set `LOG_LEVEL=debug` to also see every request on the MCP port, including OAuth discovery. If nothing shows up, the request was stopped before it reached Synoikia: check your proxy's log (for Cloudflare Access, Zero Trust → Logs → Access). See design §11.
+Core logs each refused MCP request with its reason. The reason can be the endpoint's client auth methods or the kind of credential the client sent. It can also be a Cloudflare Access claim that didn't match, a Host outside `PUBLIC_MCP_URL`/`MCP_ALLOWED_HOSTS`, or an endpoint that is unavailable. Watch `docker compose logs -f synoikia` while the client connects. Set `LOG_LEVEL=debug` to also see every request on the MCP port, including OAuth discovery. If nothing shows up, the request was stopped before it reached Synoikia: check your proxy's log (for Cloudflare Access, Zero Trust → Logs → Access). The server log is in [`docs/reference.md`](docs/reference.md#server-log).
 
 ### Plugin repositories
 

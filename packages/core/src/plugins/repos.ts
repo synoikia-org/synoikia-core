@@ -413,7 +413,7 @@ export class PluginRepoService {
     return this.publicRepo(this.repoRow(id));
   }
 
-  /** Daily refresh (design §10); failed repos retry hourly, and failures are recorded, never thrown. */
+  /** Daily refresh (@id:plugin-repositories); failed repos retry hourly, and failures are recorded, never thrown. */
   async refreshStale(maxAgeMs = 24 * 60 * 60_000) {
     for (const row of this.db.select().from(pluginRepos).all()) {
       const fresh = row.lastFetchedAt && this.now().getTime() - row.lastFetchedAt.getTime() < maxAgeMs;

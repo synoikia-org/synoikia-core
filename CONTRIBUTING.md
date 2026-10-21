@@ -6,7 +6,7 @@ Thanks for taking the time to contribute. Bug reports, feature requests and pull
 
 [DEVELOPMENT.md](DEVELOPMENT.md) covers the repository layout, local setup, running the server and the admin UI, and database schema changes. To write a plugin, see [docs/plugin-authoring.md](docs/plugin-authoring.md).
 
-For the architecture and design rationale behind core, the sandbox, the permission gate and the plugin protocol, see the software design description in [`docs/design/`](docs/design/README.md).
+The design decisions behind core, the sandbox, the permission gate and the plugin protocol are the ADRs in [`docs/adrs/`](docs/adrs/). The architecture model is in [`docs/architecture/`](docs/architecture/README.md), and other facts are in [`docs/reference.md`](docs/reference.md).
 
 ## How a change is built
 
@@ -37,7 +37,7 @@ pnpm test
 
 Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature starts with its scenarios. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
 
-When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md) and the section of [`docs/design/`](docs/design/README.md) it belongs to.
+When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md) and the ADR or [`docs/reference.md`](docs/reference.md) section it belongs to.
 
 ## Releases
 

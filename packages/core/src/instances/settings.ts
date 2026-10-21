@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { cleanStored, parseLeniently } from '../lenient.js';
 
-/** Per-instance runtime settings (design §8.2 "Instance Settings"), stored as JSON on `plugin_instances.settings`. */
+/** Per-instance runtime settings, stored as JSON on `plugin_instances.settings`. */
 export const InstanceSettingsSchema = z
   .object({
     /** Unanswered approvals are auto-denied after this long. */
@@ -32,7 +32,7 @@ export const InstanceSettingsSchema = z
       })
       .prefault({}),
     extraRedactKeys: z.array(z.string().min(1)).default([]),
-    /** Re-sync the catalog on session start when the last sync is older than this (design §10). */
+    /** Re-sync the catalog on session start when the last sync is older than this (@id:catalog-sync-schedule). */
     syncMaxAgeMs: z
       .number()
       .int()

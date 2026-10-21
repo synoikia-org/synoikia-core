@@ -1,5 +1,5 @@
 # Example deployment. Publish 8080 through your reverse proxy as https://mcp.example.com; the admin
-# portal runs on its own dedicated port, 8081 — see docs/design/11-deployment.md.
+# portal runs on its own dedicated port, 8081 — see the README, Deployment.
 services:
   synoikia:
     # `latest` tracks the newest stable release; pin an explicit version (e.g. `:0.2.0`) in production.

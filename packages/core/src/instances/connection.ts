@@ -30,7 +30,7 @@ function validatorFor(schema: Manifest['connection']['schema']): ValidateFunctio
   return validate;
 }
 
-/** Connection config (design §7.2, §8.3): `writeOnly` fields are secrets, encrypted, sent only via
+/** Connection config (ADR-0016, ADR-0018): `writeOnly` fields are secrets, encrypted, sent only via
  * `init` and returned by the API only as `{ set, hint }`. */
 
 export function secretFieldNames(manifest: Manifest): string[] {
@@ -112,7 +112,7 @@ function addressFieldNames(manifest: Manifest): string[] {
 }
 
 /** The stored secrets a candidate connection may use: none if it moves the upstream, so a changed URL
- * never receives the stored key (design §7.2). */
+ * never receives the stored key (ADR-0016). */
 export function storedSecretsFor(
   manifest: Manifest,
   current: { config: Record<string, unknown>; secrets: Record<string, string> },

@@ -7,7 +7,7 @@ import { settings } from './db/schema.js';
 import { ValidationError } from './errors.js';
 import { cleanStored } from './lenient.js';
 
-/** Global settings (design §8.2 "Settings"), one JSON document per section in the `settings` table. */
+/** Global settings, one JSON document per section in the `settings` table. */
 
 /** Keeps the first spelling of each name; upper and lower case do not matter. */
 function dedupeNames(names: string[]): string[] {
@@ -80,7 +80,7 @@ const SETTINGS_SCHEMAS = {
     .prefault({}),
   audit: z
     .object({
-      /** Null = keep forever (design §10). */
+      /** Null = keep forever (@id:housekeeping). */
       retentionDays: z.number().int().min(7).nullable().default(90),
     })
     .prefault({}),

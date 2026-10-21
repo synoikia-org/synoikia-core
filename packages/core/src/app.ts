@@ -33,7 +33,7 @@ import { ExecutionRegistry } from './runtime/executions.js';
 import { sandboxesRunning } from './runtime/index.js';
 import { normalizeStoredSettings } from './settings.js';
 
-/** Wires every core service once (design §2): one database, approval service and event bus for
+/** Wires every core service once (ADR-0015): one database, approval service and event bus for
  * both listeners, the scheduler and tests. */
 
 export interface AppContext {
@@ -222,7 +222,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     discoverPlugins: discover,
     async start() {
       await instances.startAll();
-      // Hourly: daily backstop sync per instance and per plugin repo (design §10), staggered by their
+      // Hourly: daily backstop sync per instance and per plugin repo (@id:catalog-sync-schedule), staggered by their
       // own last-run times, plus housekeeping.
       const hourly = () => {
         void instances.syncStale();

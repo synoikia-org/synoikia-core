@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { DbLike } from './db/index.js';
 import { auditLog, users } from './db/schema.js';
 
-/** Audit log reads for the portal (design §8.2): filterable, paginated, exportable. Never writes. */
+/** Audit log reads for the portal: filterable, paginated, exportable. Never writes. */
 
 const AuditQuerySchema = z.object({
   instance: z.string().optional(),
