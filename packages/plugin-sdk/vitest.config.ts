@@ -14,7 +14,7 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'features',
-            include: ['features/**/*.feature'],
+            include: ['../../features/{catalogs,conformance,manifest,rules,runtime,upstream}/*.feature'],
             exclude: ['test/**'],
             setupFiles: ['features/support/index.ts'],
           },

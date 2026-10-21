@@ -26,8 +26,12 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'features',
-            include: ['features/**/*.feature'],
-            exclude: ['test/**'],
+            include: ['../../features/*/*.feature'],
+            exclude: [
+              'test/**',
+              '../../features/{catalogs,conformance,manifest,rules,runtime,upstream,build,release,scaffold,workflow,accessibility,audit,clients,my-instances,profile,roles,settings,shell,sign-in,users}/*.feature',
+              '../../features/{instances,plugins}/portal-*.feature',
+            ],
             setupFiles: ['features/support/index.ts'],
             // A @long-running scenario waits for real timers of core, such as the shortest approval expiry.
             testTimeout: 30_000,

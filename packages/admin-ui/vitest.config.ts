@@ -18,7 +18,10 @@ export default mergeConfig(
           test: {
             name: 'features',
             environment: 'node',
-            include: ['features/**/*.feature'],
+            include: [
+              '../../features/{accessibility,audit,clients,my-instances,profile,roles,settings,shell,sign-in,users}/*.feature',
+              '../../features/{instances,plugins}/portal-*.feature',
+            ],
             globalSetup: ['features/support/build-portal.ts'],
             setupFiles: ['features/support/index.ts'],
             execArgv: shared.test?.execArgv,
