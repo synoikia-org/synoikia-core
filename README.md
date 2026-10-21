@@ -16,7 +16,7 @@
   <a href="#the-name">The name</a> ·
   <a href="#deployment">Deployment</a> ·
   <a href="DEVELOPMENT.md">Development</a> ·
-  <a href="docs/adrs/">Design</a> ·
+  <a href="docs/adrs/">Decision records</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
