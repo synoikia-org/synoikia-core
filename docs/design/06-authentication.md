@@ -229,7 +229,7 @@ The client policy allows or denies MCP clients by their client name. The client 
 - The match is exact, but upper and lower case do not matter.
 - Core refuses a save of `allow` mode with no names, with 400 `invalid_settings`.
 - **When.** Core checks the policy after authentication (§6.2), on an `initialize` request, before it makes the MCP session. It reads the client name from the request body. It reads the body once, with the limits of the MCP transport (4 MiB and 100 messages in a batch). Core checks the policy again on each later request of a session. A policy change thus ends an open session of a refused client at its next request.
-- **Refusal.** Core answers 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server". It keeps no session. It logs the refusal with the client name (§11), and writes an `auth` audit event `client_refused` with the slug, the client name and the mode.
+- **Refusal.** Core answers 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server". It keeps no session. It logs the refusal with the client name in the server log. It writes an `auth` audit event `client_refused` with the slug, the client name and the mode.
 - **Seen clients.** Core keeps in memory the last 50 client names that opened an MCP session, for the admin to add to the policy. A restart clears the list.
 - **Limit.** A client declares its own name, and any client can send any name. The policy stops honest clients that the admin does not want. It is not a security boundary. Client auth (§6.2), the access ceiling (§6.3) and the gate (§5) are the boundary.
 

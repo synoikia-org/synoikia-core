@@ -109,6 +109,16 @@ Pulls the published image from `ghcr.io/via-justa/synoikia` — `latest` tracks 
 
 On first start, open the admin portal and create the first account (or set `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` once). Then install and enable plugins, create an endpoint, raise the access groups you want above Read, and connect your MCP client to `PUBLIC_MCP_URL/<slug>`.
 
+### Reverse proxy
+
+- `mcp.example.com` → `:8080`. The proxy must pass `Mcp-Session-Id`, allow SSE without buffering, and forward `X-Forwarded-Proto` and `Host`.
+- `admin.example.com` → `:8081`. The admin portal has its own port, and its sign-in protects it. An access proxy, such as Cloudflare Access, can add a second layer.
+- Set `TRUST_PROXY=true`, or the number of proxies, so that core reads `X-Forwarded-*`. Core reads `X-Forwarded-For` from the right, and takes the entry that the outermost trusted proxy added as the client.
+
+### Network egress
+
+Core does not restrict the network access of plugins yet (issues #108 and #111). Use a container network policy. Allow outbound traffic only to the upstream hosts, the ntfy and webhook targets, the OIDC issuer and the plugin repository hosts.
+
 ### Debugging a client that can't connect
 
 A refused MCP request is logged with its reason: the endpoint's client auth methods, the kind of credential the client sent, a Cloudflare Access claim that didn't match, a Host outside `PUBLIC_MCP_URL`/`MCP_ALLOWED_HOSTS`, or an endpoint that is unavailable. Watch `docker compose logs -f synoikia` while the client connects. Set `LOG_LEVEL=debug` to also see every request on the MCP port, including OAuth discovery. If nothing shows up, the request was stopped before it reached Synoikia: check your proxy's log (for Cloudflare Access, Zero Trust → Logs → Access). See design §11.

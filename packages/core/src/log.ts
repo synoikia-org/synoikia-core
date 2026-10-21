@@ -1,4 +1,4 @@
-/** Server log, filtered by LOG_LEVEL (design §11): `LEVEL message key=value …`; never credentials, and
+/** Server log, filtered by LOG_LEVEL (@id:server-log): `LEVEL message key=value …`; never credentials, and
  * client-supplied values are quoted so they can't forge lines. */
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;

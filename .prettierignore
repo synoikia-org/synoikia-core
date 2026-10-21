@@ -8,3 +8,4 @@ packages/create-plugin/templates
 packages/create-plugin/.smoke
 # likec4 export markdown writes it
 docs/architecture/README.md
+.madr-lint/cache

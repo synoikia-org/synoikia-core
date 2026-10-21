@@ -92,7 +92,7 @@ Each enabled instance runs in its own child process. Core starts it with `child_
   - Start, stop and restart of an instance run one at a time. A stop or restart kills a child that is still in `init`. At most one child of an instance is alive.
   - While the child is down, `execute` calls fail with `PLUGIN_UNAVAILABLE`. The gate does not need the plugin to refuse a call, so it never fails open.
 - **Bundle version.** Just before each fork, core reads the version in the `manifest.json` of the bundle. The catalog must come from this version. If it does not, core syncs before the endpoint serves again (§10). The gate also refuses a call if the bundle changed while the call waited (§5.2).
-- **Known limit: network access is not restricted.** The Node permission model does not control network access. A plugin can connect to any host that the container can reach. `network.hosts` is a declaration that the admin reviews. Use a container egress policy to restrict network access (§11, §14).
+- **Known limit: network access is not restricted.** The Node permission model does not control network access. A plugin can connect to any host that the container can reach. `network.hosts` is a declaration that the admin reviews. Use a container egress policy to restrict network access (README › Deployment › Network egress, issue #108).
 
 ## 4.5 Plugin tests
 

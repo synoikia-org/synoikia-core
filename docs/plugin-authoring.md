@@ -33,7 +33,7 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 | `src/auth.ts`     | How each request authenticates                                                                            |
 | `test/`           | `compliance.yaml`, a fake upstream, and unit tests in `test/unit/` (below)                                |
 
-`synoikia-plugin build` bundles everything, `plugin.yaml` included (validated and inlined at build time), into one self-contained `dist/index.js`. At runtime the plugin runs as a permission-confined child: it can read nothing outside its package directory, and can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration the admin reviews before enabling the plugin (an update that changes it arrives disabled again), not something core enforces; container egress policy is the mitigation (design §4.4, §14). List exactly the hosts the plugin connects to.
+`synoikia-plugin build` bundles everything into one self-contained `dist/index.js`. It validates `plugin.yaml` and inlines it at build time. At runtime the plugin runs as a permission-confined child. It can read nothing outside its package directory, and it can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration that the admin reviews before enabling the plugin. An update that changes it arrives disabled again. Core does not enforce it. A container egress policy is the mitigation (design §4.4, issue #108). List exactly the hosts the plugin connects to.
 
 ### Agent instructions
 
