@@ -19,7 +19,7 @@ export default mergeConfig(
     test: {
       // Four test files at once: the fastest on a 4-core machine (178 s at 3, 154 s at 4, no gain above).
       maxWorkers: 4,
-      // Feature files run as tests (docs/workflow.md). Only they load the World, so test files keep their vi.mock calls.
+      // Feature files run as tests. Only they load the World, so test files keep their vi.mock calls.
       projects: [
         { extends: true, test: { name: 'unit', include: ['test/**/*.test.ts'] } },
         {

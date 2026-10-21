@@ -10,13 +10,17 @@ For the architecture and design rationale behind core, the sandbox, the permissi
 
 ## How a change is built
 
-Every change is built spec first and test first, one slice for each pull request. [docs/workflow.md](docs/workflow.md) has the rules for feature files, commits, branches, tests and prose. Install the git hooks once, so the checks run before you push:
+Every change follows [NoVibe](https://github.com/novibe-org/novibe): a Gherkin feature file, then the LikeC4 model, then the build, test first. Each slice is one pull request. Install the git hooks once, so the checks run before you push:
 
 ```sh
 pnpm hooks:install
 ```
 
-Pull requests merge by rebase, so keep each commit in its phase. The `Workflow` CI job checks the branch name, the commit phases, the feature files and the prose. It also checks that the scenarios fail at the `test:` commit and pass at the head.
+- A `spec:` commit changes only `features/`. An `arch:` commit changes only `docs/architecture/` and `docs/adrs/`. Any other commit changes neither.
+- Prose follows ASD-STE100 Simplified Technical English: short sentences, no semicolons, no em dashes.
+- A ready pull request has a line of its own that starts with `Security audit:`.
+
+The `Workflow` CI job runs the same checks as the hooks, and checks the prose of the pull request description.
 
 ## Before opening a pull request
 
@@ -29,7 +33,6 @@ pnpm format:check   # pnpm format to fix
 pnpm typecheck
 pnpm build
 pnpm test
-pnpm workflow pre-push
 ```
 
 Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature starts with its scenarios. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
@@ -38,7 +41,7 @@ When a change affects what the docs describe, update them in the same pull reque
 
 ## Releases
 
-This repo publishes three npm packages (`@synoikia/plugin-sdk`, `@synoikia/core`, `@synoikia/create-plugin`) and a Docker image, each versioned independently — see [Publishing the npm packages](DEVELOPMENT.md#publishing-the-npm-packages) and [Publishing the Docker image](DEVELOPMENT.md#publishing-the-docker-image) in DEVELOPMENT.md. A pull request that changes what a package or the image ships bumps its `version`; [CLAUDE.md](CLAUDE.md) › Releases says which bump. If you're unsure, leave it and a maintainer will bump it before merge.
+This repo publishes three npm packages (`@synoikia/plugin-sdk`, `@synoikia/core` and `@synoikia/create-plugin`) and a Docker image. Each has its own version. See [Publishing the npm packages](DEVELOPMENT.md#publishing-the-npm-packages) and [Publishing the Docker image](DEVELOPMENT.md#publishing-the-docker-image) in DEVELOPMENT.md. A pull request that changes what a package or the image ships bumps its `version`. [Which versions a change bumps](DEVELOPMENT.md#which-versions-a-change-bumps) says which bump. If you're unsure, leave it, and a maintainer bumps it before the merge.
 
 ## Code of Conduct
 

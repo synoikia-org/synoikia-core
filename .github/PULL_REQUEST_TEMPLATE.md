@@ -12,14 +12,14 @@
 
 ## Testing
 
-<!-- How you saw the scenarios fail at the test: commit and pass at the head. Add other checks you ran. -->
+<!-- How you saw the scenarios fail first and pass at the head. Add other checks you ran. -->
 
 ## Checklist
 
-- [ ] Commits follow the phases in `docs/workflow.md` (`spec:`, `arch:`, `test:`, `feat:`/`fix:`, `refactor:`)
+- [ ] Commits follow NoVibe's phases: `spec:` for `features/`, `arch:` for the model and the ADRs, any other prefix for the rest
 - [ ] `pnpm lint`, `pnpm format:check`, `pnpm typecheck` and `pnpm test` pass
-- [ ] `pnpm workflow pre-push` passes
+- [ ] The git hooks pass on push
 - [ ] Docs updated (README, DEVELOPMENT, CONTRIBUTING, SECURITY, `docs/design/`), where applicable
-- [ ] Versions bumped where required (CLAUDE.md › Releases)
+- [ ] Versions bumped where required (DEVELOPMENT.md › Which versions a change bumps)
 
-<!-- A pull request that changes a security path (root package.json › synoikia.workflow.securityPaths) needs a line of its own here. The line starts with "Security audit:", then names the boundary and what the review found. Write "Security audit: none." and the reason when the change crosses no boundary. -->
+<!-- Every ready pull request needs a line of its own here. The line starts with "Security audit:", then names the boundary and what the review found. Write "Security audit: none." and the reason when the change crosses no boundary. -->

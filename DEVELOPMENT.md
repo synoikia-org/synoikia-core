@@ -47,12 +47,13 @@ pnpm --filter @synoikia/plugin-sdk test:features                            # th
 pnpm --filter @synoikia/create-plugin test:features                         # the plugin tool, run as commands by a plugin author
 ```
 
-The `Workflow` job (`.github/workflows/workflow.yml`) checks the rules in [docs/workflow.md](docs/workflow.md). Run the same checks locally, or let the git hooks run them:
+The git hooks in `.githooks/` come from NoVibe, with Synoikia `branch`, `keys` and `prose` guards. Before a commit they refuse credential files. Before a push they refuse a generated `claude/` branch name. They also check the commit phases, the feature files, the architecture model, the ADRs, added comments and the prose. The `Workflow` job (`.github/workflows/workflow.yml`) runs the same guards in CI. The `security-audit` job needs a `Security audit:` line in each ready pull request.
 
 ```sh
-pnpm hooks:install        # once per clone: .githooks runs the checks before a commit and a push
-pnpm workflow pre-push    # branch name, commit phases, feature files and prose since origin/main
+pnpm hooks:install        # once per clone: git runs .githooks before a commit and a push
 ```
+
+Each guard says how to skip it once, for example `ALLOW_LINT=1 git push`.
 
 Other useful commands:
 
@@ -76,7 +77,7 @@ The feature files of `@synoikia/create-plugin` are in `features/build/`, `releas
 
 ## Architecture model
 
-The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. The `architect` skill and `docs/workflow.md` say when a change updates it. An `arch:` commit changes only the model.
+The LikeC4 model in [`docs/architecture/`](docs/architecture/README.md) holds the structure of the system. NoVibe's `architect` skill says when a change updates it. An `arch:` commit changes only the model.
 
 ```sh
 pnpm arch:serve    # preview the views locally
@@ -108,7 +109,20 @@ Prerelease versions (`0.3.0-rc.0`) are never published by a merge. Publish them 
 
 The Docker image ships as one unit (core + admin UI, with the SDK only as a build dependency), so it carries its own version in the root `package.json`, separate from the package versions above. To release a new image, bump that `version` and merge to `main`; the same `release.yml` builds and pushes `ghcr.io/via-justa/synoikia:<version>` (and moves `latest` to it, for stable versions) whenever that tag isn't already published. Prereleases follow the same manual-dispatch rule as the npm packages.
 
-Which versions a change bumps is set in [CLAUDE.md](CLAUDE.md) › Releases.
+### Which versions a change bumps
+
+A pull request bumps the version of each published package, and of the image, whose shipped content it changes, in the same pull request. Docs-, test- and CI-only changes bump nothing.
+
+| Version                         | Bump when the pull request changes                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@synoikia/core`                | `packages/core/src`, including `testing/`, or its runtime dependencies                                                                           |
+| `@synoikia/plugin-sdk`          | `packages/plugin-sdk/src` or its dependencies                                                                                                    |
+| `@synoikia/create-plugin`       | its own files. Also a patch whenever core or the SDK takes a minor bump, because its `workspace:^` ranges are packed with the minor pinned       |
+| Root `package.json` (the image) | anything that the image ships: core, the admin UI, the `Dockerfile` and image dependencies. Bump it by the same step as the largest package bump |
+
+- While at 0.x, a breaking change or a new feature bumps the minor, and a fix bumps the patch.
+- Name the new versions in the pull request title, for example "(core 0.7.0, image 0.5.0)".
+- A breaking change to the SDK or to `@synoikia/core/testing` breaks every plugin repository, so call it out in the pull request.
 
 <!-- External links -->
 

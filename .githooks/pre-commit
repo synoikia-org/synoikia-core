@@ -1,3 +1,5 @@
 #!/bin/sh
-# Refuses credential files by name, then scans the staged changes with gitleaks when it is installed.
-exec pnpm run --silent workflow pre-commit
+here=$(cd "$(dirname "$0")/pre-commit.d" && pwd)
+"$here/security.sh" "$@" || exit 1
+"$here/keys.sh" "$@" || exit 1
+exit 0
