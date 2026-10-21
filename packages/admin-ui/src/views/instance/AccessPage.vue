@@ -6,7 +6,7 @@ import { useRolesQuery, useSetRoleInstances } from '../../composables/useRoles';
 import type { Instance } from '../../types';
 import AccessView from './AccessView.vue';
 
-/** The Access tab (design §8.2): the endpoint's own levels (the Admin role's), or another role's maximums. */
+/** The Access tab: the endpoint's own levels (the Admin role's), or another role's maximums. */
 const props = defineProps<{ instance: Instance }>();
 const route = useRoute();
 const router = useRouter();

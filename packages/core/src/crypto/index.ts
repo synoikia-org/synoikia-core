@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:cr
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-/** Secrets at rest (design §7.2): AES-256-GCM, random nonce per value, AAD binding table/column/row. */
+/** Secrets at rest (ADR-0016): AES-256-GCM, random nonce per value, AAD binding table/column/row. */
 
 const VERSION = 0x01;
 const NONCE_BYTES = 12;

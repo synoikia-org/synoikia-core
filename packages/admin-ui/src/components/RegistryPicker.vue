@@ -4,7 +4,7 @@ import { useRegistryKinds, useRegistrySearch } from '../composables/useRegistry'
 import type { TargetFieldOptions, TargetsDecl } from '../types';
 import ChipsInput from './ChipsInput.vue';
 
-/** `$targets` selector (design §8.3), from the plugin's targets and scopes; values are suggested
+/** `$targets` selector (ADR-0018), from the plugin's targets and scopes; values are suggested
  * from the synced registry where the plugin names a kind, else free text. */
 /** `base`: the API prefix, `/api/instances/:id` for an admin or `/api/me/endpoints/:id` for own rules. */
 const props = defineProps<{ base: string; targets: TargetsDecl; options?: TargetFieldOptions }>();

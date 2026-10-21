@@ -2,7 +2,7 @@
 import { computed, useId } from 'vue';
 import type { ConnectionSchema, JsonSchemaProp, UiHint } from '../types';
 
-/** Renders a plugin's connection schema (design §8.3). Secrets are never shown, only set/replace/clear;
+/** Renders a plugin's connection schema (ADR-0018). Secrets are never shown, only set/replace/clear;
  * `secretPatch` follows the API merge rules: omitted keeps, null clears. */
 const props = defineProps<{
   schema: ConnectionSchema;

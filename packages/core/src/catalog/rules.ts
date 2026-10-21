@@ -46,7 +46,7 @@ function loadOperation(db: Db, instanceId: string, operationId: string): Operati
   return op;
 }
 
-/** Why a rule's match doesn't fit the operation's declared fields (design §8.3), or null if it does. */
+/** Why a rule's match doesn't fit the operation's declared fields (ADR-0018), or null if it does. */
 export function matchMisfit(
   manifest: Pick<Manifest, 'matchProfiles' | 'targets'>,
   op: Pick<OperationRow, 'key' | 'matchProfile'>,

@@ -17,7 +17,7 @@ import { consentPage, errorPage, loginPage, totpPage } from './pages.js';
 /** OAuth 2.1 endpoints and the MCP-port sign-in (ADR-0009): portal accounts, but a separate
  * short-lived session that works only for consent and approval pages. */
 
-/** MCP-port sign-ins are separated by purpose (design §2.1), each with its own scoped cookie. */
+/** MCP-port sign-ins are separated by purpose (ADR-0015), each with its own scoped cookie. */
 export type UiPurpose = 'oauth' | 'approval';
 const UI_SESSIONS = {
   oauth: { cookie: 'syn_mcp_oauth', kind: 'oauth_ui', path: '/oauth' },
@@ -138,7 +138,7 @@ interface AuthorizeRequest extends Record<string, unknown> {
 }
 
 export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthService) {
-  // The authorization server only runs with a configured public URL (design §2.1): its issuer and every
+  // The authorization server only runs with a configured public URL (ADR-0015): its issuer and every
   // discovery document must not come from the request's Host header, which a client controls.
   const asOff = (c: Context) => {
     c.header('Cache-Control', 'no-store');

@@ -46,7 +46,7 @@ export interface InstanceRuntime {
   instanceId: string;
   slug: string;
   manifest: Manifest;
-  /** The plugin's agent instructions (design §2.2), if it ships any. */
+  /** The plugin's agent instructions (ADR-0015), if it ships any. */
   instructions?: string;
   settings: InstanceSettings;
   redact: Redactor;

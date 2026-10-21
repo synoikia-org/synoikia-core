@@ -18,7 +18,7 @@ import { clientIp, readJson, readOptionalJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 import { createRedactor, GLOBAL_SENSITIVE_KEYS } from '../../gate/redact.js';
 
-/** Instance-scoped Admin API routes (design §8.4). Every mutation is audited by the service layer. */
+/** Instance-scoped Admin API routes (ADR-0010). Every mutation is audited by the service layer. */
 export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const actor = (c: { get: (k: 'user') => { id: string } }) => ({ userId: c.get('user').id });
   const exists = (id: string) => ctx.instances.get(id); // throws 404

@@ -34,7 +34,7 @@ const fingerprint = (op: Pick<OperationRow, 'kind' | 'paramsSchema' | 'matchProf
 const isEffectiveWrite = (op: Pick<OperationRow, 'classification' | 'locked'>) =>
   op.locked || op.classification === 'write';
 
-/** Applies a `syncCatalog` result in one transaction (ADR-0004, design §10). Changes are quarantined:
+/** Applies a `syncCatalog` result in one transaction (ADR-0004, @id:catalog-sync-schedule). Changes are quarantined:
  * missing ops go stale, changed writes need acknowledgement again, and nothing opens wider by itself. */
 export function applyCatalogSync(
   db: Db,

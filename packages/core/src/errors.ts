@@ -35,7 +35,7 @@ export class ForbiddenError extends ServiceError {
   }
 }
 
-/** Stored secrets that the current master key cannot decrypt (design §7.2). */
+/** Stored secrets that the current master key cannot decrypt (ADR-0016). */
 export class SecretsUnreadableError extends ConflictError {
   constructor() {
     super('secrets_unreadable', 'The stored secrets cannot be read with the current master key. Enter them again.');

@@ -1,4 +1,4 @@
-/** Top-level paths on the MCP listener that can never be used as an instance slug (design §2.2). */
+/** Top-level paths on the MCP listener that can never be used as an instance slug (ADR-0015). */
 export const RESERVED_SLUGS = ['oauth', 'a', 'healthz', '.well-known', 'api', 'auth', 'static'] as const;
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;

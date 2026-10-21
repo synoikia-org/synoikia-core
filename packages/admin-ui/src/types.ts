@@ -1,4 +1,4 @@
-/** Admin API response shapes (design §8.4), mirrored from packages/core. */
+/** Admin API response shapes (ADR-0010), mirrored from packages/core. */
 
 /** A client auth method on the MCP port (ADR-0009). */
 export type AuthMethod = 'bearer' | 'oauth' | 'external';

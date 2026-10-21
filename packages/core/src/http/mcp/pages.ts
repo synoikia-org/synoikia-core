@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 
-/** Server-rendered pages on the MCP port (design §2.1); every value HTML-escaped by `html`. The only script
+/** Server-rendered pages on the MCP port (ADR-0015); every value HTML-escaped by `html`. The only script
  * is the decided page's static `window.close()`, allowed by its hash. */
 
 type Body = HtmlEscapedString | Promise<HtmlEscapedString>;

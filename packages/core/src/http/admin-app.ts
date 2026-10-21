@@ -22,7 +22,7 @@ const EVERY_USER = ['/api/session', '/api/setup', '/api/profile', '/api/me'];
 /** Paths the SPA fallback must never swallow, so API/auth typos surface as 404s. */
 const NON_SPA_PREFIXES = ['/api', '/auth', '/.well-known', '/healthz'];
 
-/** The LAN-only admin listener (design §2.1): Vue SPA + Admin API + login/OIDC. */
+/** The LAN-only admin listener (ADR-0015): Vue SPA + Admin API + login/OIDC. */
 export function createAdminApp(ctx: AppContext, { uiDir }: AdminAppOptions = {}): Hono<AdminEnv> {
   const app = new Hono<AdminEnv>();
   app.onError((err, c) => errorResponse(err, c, ctx.log));
@@ -46,7 +46,7 @@ export function createAdminApp(ctx: AppContext, { uiDir }: AdminAppOptions = {})
   app.use('/auth/*', csrfGuard(ctx));
   registerAuthRoutes(app, ctx); // public: session probe, setup, login, OIDC
 
-  // Everything else under /api needs a signed-in user, and is admin-only unless listed (design §8.4).
+  // Everything else under /api needs a signed-in user, and is admin-only unless listed (ADR-0010).
   app.use('/api/*', async (c, next) => {
     if (c.req.path === '/api/session' || c.req.path === '/api/setup') return next();
     return requireUser(ctx)(c, next);

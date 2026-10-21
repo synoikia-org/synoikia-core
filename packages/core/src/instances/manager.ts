@@ -33,7 +33,7 @@ import {
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
 
-/** Instance lifecycle (ADR-0013, design §10): connection config, one supervised plugin child per enabled
+/** Instance lifecycle (ADR-0013, @id:catalog-sync-schedule): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
 
 export const AUTH_METHODS = ['bearer', 'oauth', 'external'] as const;
@@ -366,7 +366,7 @@ export class InstanceManager {
   }
 
   /** The stored secrets for the connection form. A wrong master key leaves them unreadable: a save that gives
-   * every secret field anew replaces them (design §7.2). */
+   * every secret field anew replaces them (ADR-0016). */
   private connectionSecrets(
     row: InstanceRow,
     manifest: Manifest,
@@ -725,7 +725,7 @@ export class InstanceManager {
     await live.supervisor.stop();
   }
 
-  // ── sync scheduling (design §10) ───────────────────────────────────────────────────────────────
+  // ── sync scheduling (@id:catalog-sync-schedule) ───────────────────────────────────────────────────────────────
 
   private scheduleSync(instanceId: string, delayMs = 2000) {
     const live = this.live.get(instanceId);
@@ -819,7 +819,7 @@ export class InstanceManager {
     }
   }
 
-  /** Daily backstop (design §10): sync anything that hasn't synced in 24 h. */
+  /** Daily backstop (@id:catalog-sync-schedule): sync anything that hasn't synced in 24 h. */
   async syncStale(maxAgeMs = 24 * 60 * 60_000) {
     for (const [id, live] of this.live) {
       if (live.supervisor.status !== 'ready') continue;

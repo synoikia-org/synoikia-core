@@ -155,7 +155,7 @@ export function syncPluginRegistry(
       } else {
         tx.update(plugins).set(fields).where(eq(plugins.id, prev.id)).run();
         out.updated.push(pluginId);
-        // The text reaches the model (§2.2); a change is recorded by hash, not by text.
+        // The text reaches the model (ADR-0015); a change is recorded by hash, not by text.
         const before = sha256(prev.instructions);
         const after = sha256(fields.instructions);
         if (before !== after)

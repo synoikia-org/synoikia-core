@@ -4,7 +4,7 @@ import { writeAudit } from './audit.js';
 import { auditLog, pendingApprovals, preApprovalHits, preApprovalRules } from './db/schema.js';
 import { getSettings } from './settings.js';
 
-/** Hourly, idempotent housekeeping (design §10): expired sessions, tokens and links, old rule hits and
+/** Hourly, idempotent housekeeping (@id:housekeeping): expired sessions, tokens and links, old rule hits and
  * decided approvals, and audit rows past the retention. */
 
 const DAY = 24 * 60 * 60_000;

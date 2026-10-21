@@ -16,7 +16,7 @@ import { ACCESS_LEVELS } from '../../gate/access.js';
 import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
-/** What every signed-in user may use (ADR-0010, design §8.4): their endpoints and levels, their own levels
+/** What every signed-in user may use (ADR-0010): their endpoints and levels, their own levels
  * and rules where the role allows them, and their own tokens and OAuth grants. */
 export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const me = (c: Context<AdminEnv>) => c.get('user');

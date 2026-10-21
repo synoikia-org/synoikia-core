@@ -33,7 +33,7 @@ function close(server: Server, graceMs: number) {
   });
 }
 
-/** Starts the two listeners on separate ports (design §2.1). */
+/** Starts the two listeners on separate ports (ADR-0015). */
 export async function startServers(ctx: AppContext): Promise<RunningServers> {
   const { config } = ctx;
   const mcp = await listen(createMcpApp(ctx), config.MCP_HOST, config.MCP_PORT);

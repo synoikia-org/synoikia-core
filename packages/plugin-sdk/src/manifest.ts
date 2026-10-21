@@ -2,7 +2,7 @@ import semver from 'semver';
 import { z } from 'zod';
 import { SDK_VERSION } from './version.js';
 
-/** Core widget library (design §8.3); an unknown widget fails validation rather than degrading. */
+/** Core widget library (ADR-0018); an unknown widget fails validation rather than degrading. */
 export const WIDGETS = [
   'text',
   'url',
@@ -122,7 +122,7 @@ export const ManifestSchema = z
     description: z.string().optional(),
     entry: relativePath,
     /** Markdown file in the package that tells the agent how the upstream API works; core adds it to the
-     * MCP instructions (design §2.2). At most `INSTRUCTIONS_MAX_BYTES` of UTF-8 text. */
+     * MCP instructions (ADR-0015). At most `INSTRUCTIONS_MAX_BYTES` of UTF-8 text. */
     instructions: relativePath
       .regex(/^\w[\w.-]*(\/\w[\w.-]*)*\.md$/, 'must be a .md file named with letters, digits, _ . - and /')
       .optional(),

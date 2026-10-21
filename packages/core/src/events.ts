@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 
-/** In-process event bus (design §9.1) for notifiers and admin SSE; payloads never carry params or secrets. */
+/** In-process event bus (ADR-0019) for notifiers and admin SSE; payloads never carry params or secrets. */
 export interface CoreEventMap {
   'instance.status': [{ instanceId: string; slug: string; status: string; error?: string }];
   'plugin.crashed': [{ instanceId: string; slug: string; error: string }];
