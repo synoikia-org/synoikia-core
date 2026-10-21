@@ -220,8 +220,6 @@ importers:
         specifier: 1.11.2
         version: 1.11.2(vitest@5.0.2)
 
-  packages/prose: {}
-
 packages:
 
   '@a11y-tools/aria-roles@1.0.0':

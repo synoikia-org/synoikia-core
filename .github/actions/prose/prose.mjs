@@ -1,27 +1,35 @@
 const MAX_WORDS = 25;
 
-interface Block {
-  line: number;
-  lastLine: number;
-  text: string;
-  /** Headings and table rows are labels, not sentences: no length limit. */
-  label: boolean;
-}
+/**
+ * @typedef {object} Block
+ * @property {number} line
+ * @property {number} lastLine
+ * @property {string} text
+ * @property {boolean} label Headings and table rows are labels, not sentences: no length limit.
+ */
 
 /** Inline code and link targets are not prose. */
-const stripInline = (text: string) =>
+/** @param {string} text */
+const stripInline = (text) =>
   text
     .replace(/`[^`]*`/g, 'Code')
     .replace(/\]\([^)]*\)/g, ']')
     .replace(/<!--.*?-->/g, '')
     .replace(/https?:\/\/\S+/g, 'link');
 
-function markdownBlocks(text: string): Block[] {
+/**
+ * @param {string} text
+ * @returns {Block[]}
+ */
+function markdownBlocks(text) {
   const lines = text.split('\n');
-  const blocks: Block[] = [];
-  let fence: string | undefined;
+  /** @type {Block[]} */
+  const blocks = [];
+  /** @type {string | undefined} */
+  let fence;
   let comment = false;
-  let para: Block | undefined;
+  /** @type {Block | undefined} */
+  let para;
   const flush = () => {
     if (para) blocks.push(para);
     para = undefined;
@@ -32,7 +40,7 @@ function markdownBlocks(text: string): Block[] {
     if (end > 0) i = end + 1;
   }
   for (; i < lines.length; i++) {
-    const raw = lines[i]!;
+    const raw = /** @type {string} */ (lines[i]);
     const line = i + 1;
     const fenceMark = raw.match(/^\s*(`{3,}|~{3,})/)?.[1];
     if (fence) {
@@ -66,7 +74,7 @@ function markdownBlocks(text: string): Block[] {
     const item = raw.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)$/);
     if (item) {
       flush();
-      para = { line, lastLine: line, text: item[1]!, label: false };
+      para = { line, lastLine: line, text: item[1] ?? '', label: false };
       continue;
     }
     if (para) {
@@ -78,7 +86,11 @@ function markdownBlocks(text: string): Block[] {
   return blocks;
 }
 
-function featureBlocks(text: string): Block[] {
+/**
+ * @param {string} text
+ * @returns {Block[]}
+ */
+function featureBlocks(text) {
   return text.split('\n').flatMap((raw, i) => {
     const t = raw.trim();
     if (!t || t.startsWith('#') || t.startsWith('@')) return [];
@@ -87,12 +99,20 @@ function featureBlocks(text: string): Block[] {
   });
 }
 
-const words = (sentence: string) => sentence.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+/** @param {string} sentence */
+const words = (sentence) => sentence.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 
-/** Problems with the writing rules in one file. With `lines`, only blocks that touch those lines. */
-export function checkProse(file: string, text: string, lines?: ReadonlySet<number>): string[] {
+/**
+ * Problems with the writing rules in one file. With `lines`, only blocks that touch those lines.
+ * @param {string} file
+ * @param {string} text
+ * @param {ReadonlySet<number>} [lines]
+ * @returns {string[]}
+ */
+export function checkProse(file, text, lines) {
   const blocks = file.endsWith('.feature') ? featureBlocks(text) : markdownBlocks(text);
-  const issues: string[] = [];
+  /** @type {string[]} */
+  const issues = [];
   for (const block of blocks) {
     if (lines) {
       let touched = false;

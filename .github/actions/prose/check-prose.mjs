@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { addedLines, changedSince, repoRoot } from './git.js';
-import { matchesAny } from './glob.js';
-import { checkProse } from './prose.js';
+import { addedLines, changedSince, repoRoot } from './git.mjs';
+import { matchesAny } from './glob.mjs';
+import { checkProse } from './prose.mjs';
 
 const USAGE = `check-prose [--base <ref>] [--pr-body] [files...]
   --base <ref>  check the lines that the branch adds since <ref>, in the files that synoikia.prose lists
@@ -20,11 +20,14 @@ if (values.help) {
 }
 
 const root = repoRoot(process.cwd());
-const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { synoikia?: { prose?: string[] } };
+/** @type {{ synoikia?: { prose?: string[] } }} */
+const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const globs = pkg.synoikia?.prose ?? ['**/*.md', '**/*.feature'];
-const read = (f: string) => readFileSync(path.join(root, f), 'utf8');
+/** @param {string} f */
+const read = (f) => readFileSync(path.join(root, f), 'utf8');
 
-const issues: string[] = [];
+/** @type {string[]} */
+const issues = [];
 for (const f of positionals) issues.push(...checkProse(f, read(f)));
 if (values.base) {
   const changed = changedSince(root, values.base).filter((f) => matchesAny(f, globs));
@@ -32,9 +35,8 @@ if (values.base) {
   for (const f of changed) issues.push(...checkProse(f, read(f), added.get(f) ?? new Set()));
 }
 if (values['pr-body'] && process.env.GITHUB_EVENT_PATH) {
-  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) as {
-    pull_request?: { body: string | null };
-  };
+  /** @type {{ pull_request?: { body: string | null } }} */
+  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   const body = event.pull_request?.body;
   if (body) issues.push(...checkProse('PR description', body.replace(/\r\n/g, '\n')));
 }

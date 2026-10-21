@@ -4,7 +4,7 @@
 base=$(git merge-base origin/main HEAD 2>/dev/null) || exit 0
 
 # Synoikia's writing rules (technical-writing skill) on the lines this branch adds.
-pnpm run --silent prose --base "$base" || {
+node .github/actions/prose/check-prose.mjs --base "$base" || {
   echo "pre-push: fix the prose, or override: ALLOW_PROSE=1 git push" >&2
   exit 1
 }
