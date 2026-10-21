@@ -97,6 +97,29 @@ Then('the repository has a secret scan setting that keeps the default rules', (w
   expect(world.read('.gitleaks.toml')).not.toMatch(/^\s*\[+allowlists?\]+/m);
 });
 
+Then('CI scans each pull request for secrets with that setting', (world: PluginAuthorWorld) => {
+  const ci = world.read('.github/workflows/ci.yml');
+  expect(ci).toMatch(/^\s+gitleaks:\s*$/m);
+  expect(ci).toMatch(/uses: gitleaks\/gitleaks-action@[0-9a-f]{40}\b/);
+  expect(ci).toMatch(/fetch-depth: 0/);
+});
+
+Then('the repository ignores local environment files', (world: PluginAuthorWorld) => {
+  expect(world.read('.gitignore').split('\n')).toContain('.env*');
+});
+
+Then(
+  'the path guard refuses edits to the lockfile and the built bundles, and asks before an edit to the signing key',
+  (world: PluginAuthorWorld) => {
+    const rules = world.readJson<{ match: string; decision: string }[]>('.claude/guard-paths.json');
+    const decide = (file: string) => rules.find((r) => new RegExp(r.match).test(file))?.decision;
+    expect(decide('pnpm-lock.yaml')).toBe('deny');
+    expect(decide('plugins/acme-box/dist/index.js')).toBe('deny');
+    expect(decide('minisign.pub')).toBe('ask');
+    expect(decide('plugins/acme-box/src/plugin.ts')).toBeUndefined();
+  },
+);
+
 const filesUnder = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true, recursive: true })
     .filter((e) => e.isFile())
