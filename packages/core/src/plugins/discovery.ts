@@ -9,7 +9,7 @@ import { writeAudit } from '../audit.js';
 import type { Db } from '../db/index.js';
 import { plugins } from '../db/schema.js';
 
-/** Plugin discovery (design §4.1): the plugins installed in `DATA_DIR/plugins`. */
+/** Plugin discovery (ADR-0013): the plugins installed in `DATA_DIR/plugins`. */
 
 export type DiscoveredPlugin =
   | { status: 'ok'; dir: string; manifest: Manifest; instructions?: string }
@@ -44,7 +44,7 @@ export function inspectPluginDir(dir: string): DiscoveredPlugin {
       error: `entry ${manifest.entry} not found (not built?)`,
     };
   }
-  // The child may only read its own directory (design §4.4), so the entry must not escape it via symlinks.
+  // The child may only read its own directory (ADR-0014), so the entry must not escape it via symlinks.
   const realDir = realpathSync(dir);
   if (!realpathSync(entry).startsWith(realDir + path.sep)) {
     return {
@@ -95,7 +95,7 @@ const sha256 = (text: string | null | undefined) => (text ? createHash('sha256')
 
 const pluginIdOf = (p: DiscoveredPlugin) => (p.status === 'ok' ? p.manifest.id : p.pluginId);
 
-/** Upserts discovered plugins: new ones start disabled (design §4.2), duplicate ids keep the first, and
+/** Upserts discovered plugins: new ones start disabled (ADR-0013), duplicate ids keep the first, and
  * missing ones are marked invalid, never deleted. */
 export function syncPluginRegistry(
   db: Db,

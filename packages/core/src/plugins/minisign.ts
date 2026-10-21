@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 
-/** Minisign verification (design §4.3) with Node's Ed25519: legacy `Ed` and prehashed `ED`, always
+/** Minisign verification (ADR-0013) with Node's Ed25519: legacy `Ed` and prehashed `ED`, always
  * checking the trusted comment's signature. https://jedisct1.github.io/minisign/ */
 
 export interface MinisignPublicKey {

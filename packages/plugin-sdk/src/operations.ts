@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Shapes a plugin returns over RPC; core validates every result against them (design §3.3). */
+/** Shapes a plugin returns over RPC; core validates every result against them (ADR-0011). */
 
 /** Secrets in a result no key name gives away: the whole result, or fields named `keys` (any depth with
  * `deep`). Core masks them before anything else sees the result (ADR-0007). */

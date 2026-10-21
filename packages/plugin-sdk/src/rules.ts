@@ -5,7 +5,7 @@ import { SensitiveResultSchema } from './operations.js';
 import type { OperationDescriptor, ResolvedTarget, SensitiveResult } from './operations.js';
 import { isPlainObject, stringOr } from './plugin-kit.js';
 
-/** `plugin.yaml` (design §3.4): rules, exclude/include, declared operations and plugin settings on top
+/** `plugin.yaml` (ADR-0012): rules, exclude/include, declared operations and plugin settings on top
  * of discovery. Fails closed: excluded, locked, a rule's classification, the heuristic, else write. */
 
 const pointer = z.string().regex(/^(\/[^/]{1,128}){1,8}$/, 'a JSON pointer such as /1 or /0/password');

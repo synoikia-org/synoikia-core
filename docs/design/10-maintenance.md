@@ -13,7 +13,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 | Admin                       | "Sync now", or `POST /api/instances/:id/sync`.                                                                                                                              |
 | Plugin                      | The `catalogChanged` notification starts a sync after a short delay.                                                                                                        |
 
-**Bundle version.** Core records on the instance the bundle version that the catalog came from (`catalog_plugin_version`). Core reads this version from the `manifest.json` of the bundle just before each fork (§4.4).
+**Bundle version.** Core records on the instance the bundle version that the catalog came from (`catalog_plugin_version`). Core reads this version from the `manifest.json` of the bundle just before each fork (ADR-0014).
 
 - If the version of the running child is not the recorded one, the sync must succeed first. This happens after an install, an update, or files copied by hand and a restart.
 - Until the sync succeeds, the endpoint answers `PLUGIN_UNAVAILABLE`. It never serves a catalog of another bundle, with its locks and its `sensitiveResult`.
@@ -37,7 +37,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 
 Scenarios: [`@id:catalog-sync-schedule`](../../packages/core/features/maintenance/catalog-sync-schedule.feature), [`@id:catalog-sync`](../../packages/core/features/instances/catalog-sync.feature), [`@id:catalog-access-on-sync`](../../packages/core/features/access/catalog-access-on-sync.feature).
 
-**Repository index refresh.** Each day (§4.2). It shows available updates and key changes. It never installs anything. Scenarios: [`@id:plugin-repositories`](../../packages/core/features/plugins/plugin-repositories.feature).
+**Repository index refresh.** Each day (ADR-0013). It shows available updates and key changes. It never installs anything. Scenarios: [`@id:plugin-repositories`](../../packages/core/features/plugins/plugin-repositories.feature).
 
 **Housekeeping** (each hour, idempotent):
 

@@ -125,6 +125,92 @@ The client policy allows or denies MCP clients by their client name: the `client
 
 The feature file `@id:client-policy` specifies its behavior.
 
+## Plugin manifest
+
+An example `manifest.json` for a plugin `acme`. The SDK validates it with a zod schema (ADR-0011).
+
+```jsonc
+{
+  "id": "acme", // unique, [a-z0-9-]
+  "name": "Acme Hub",
+  "version": "1.0.0",
+  "sdk": "^0.2.2", // plugin contract range (ADR-0011)
+  "description": "Search/execute over the Acme Hub API.",
+  "entry": "dist/index.js",
+  "instructions": "instructions.md", // optional agent instructions (Markdown)
+  "binding": {
+    "namespace": "acme", // sandbox global: acme.*
+    "functions": ["call"], // acme.call(...)
+    "searchApis": ["registry"], // extra read-only APIs for search()
+  },
+  "labels": { "operation": "Operation", "operations": "Operations" },
+  "capabilities": { "registry": true, "targets": true, "attestation": true, "configTransform": true },
+  "connection": {
+    "schema": {
+      "type": "object",
+      "required": ["baseUrl", "token"],
+      "properties": {
+        "baseUrl": { "type": "string", "format": "uri", "title": "Base URL" },
+        "token": { "type": "string", "title": "API token", "writeOnly": true },
+      },
+    },
+    "ui": { "token": { "widget": "secret", "help": "Settings → API tokens" } },
+    "help": "Setup steps in Markdown.",
+  },
+  "sensitiveKeys": ["access_token", "webhook_id"],
+  "network": { "hosts": ["{{connection.baseUrl}}"] },
+  "targets": {
+    "label": "Device",
+    "registryKind": "device",
+    "scopes": [
+      { "key": "room", "label": "Room", "registryKind": "room" },
+      { "key": "type", "label": "Device type" },
+    ],
+  },
+  "matchProfiles": {
+    "light": [
+      {
+        "field": "$targets",
+        "label": "Targets",
+        "widget": "registry-picker",
+        "options": { "scopes": ["room"], "filter": { "type": "light" } },
+        "covers": ["/target"],
+      },
+    ],
+  },
+}
+```
+
+## Plugin repository index
+
+An example `index.json` of a plugin repository (ADR-0013). `signature` is required in a signed repository.
+
+```jsonc
+{
+  "schema": 1,
+  "name": "Example community plugins",
+  "homepage": "https://github.com/example/mcp-plugins",
+  "publicKey": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3", // optional, minisign
+  "plugins": [
+    {
+      "id": "unifi",
+      "name": "UniFi Network",
+      "description": "Search/execute over the UniFi controller API",
+      "versions": [
+        {
+          "version": "0.3.1",
+          "sdk": "^0.2.0",
+          "minCoreVersion": "1.0.0",
+          "url": "https://github.com/example/mcp-plugins/releases/download/unifi-0.3.1/unifi-0.3.1.tgz",
+          "sha256": "9f2c…",
+          "signature": "untrusted comment: …\nRWQ…", // required in a signed repository
+        },
+      ],
+    },
+  ],
+}
+```
+
 ## Environment
 
 `.env.example` lists every variable: `DATA_DIR`, `MASTER_KEY`, `MCP_HOST`, `MCP_PORT`, `ADMIN_HOST`, `ADMIN_PORT`, `PUBLIC_MCP_URL`, `PUBLIC_ADMIN_URL`, `MCP_ALLOWED_HOSTS`, `TRUST_PROXY`, `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD`, `ADMIN_FORCE_LOCAL_LOGIN` and `LOG_LEVEL`.

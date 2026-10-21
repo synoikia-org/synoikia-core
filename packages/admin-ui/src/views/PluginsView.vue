@@ -125,7 +125,7 @@ const installedNotice = (pluginId: string, version: string, enabled: boolean) =>
 
 const shortSha = (sha: string | null) => sha?.slice(0, 12) ?? '';
 
-// ── install from file (design §4.6) ──
+// ── install from file (ADR-0013) ──
 
 const fromFile = ref<{ file?: File; staged?: StagedUpload }>();
 function openFromFile() {

@@ -1,4 +1,4 @@
-/** Catalog helpers. A risk-dependent operation gets an always-locked split twin `<key>#<suffix>` (§3.4). */
+/** Catalog helpers. A risk-dependent operation gets an always-locked split twin `<key>#<suffix>` (ADR-0012). */
 
 /** A valid access group (lowercase letters, digits, `.`, `_`, `-`) from any name; `fallback` if nothing is left. */
 export function toGroup(name: string, fallback = 'misc'): string {

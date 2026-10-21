@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkPlugin } from './check.js';
 
-/** Builds a signed plugin repository (design §4.2–4.3): pack → (sign) → index → verify → publish, one
+/** Builds a signed plugin repository (ADR-0013): pack → (sign) → index → verify → publish, one
  * `<id>-v<version>` release per version and `index.json` on the `index` release; versions never change. */
 
 export interface RepoOptions {

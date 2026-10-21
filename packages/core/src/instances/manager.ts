@@ -33,7 +33,7 @@ import {
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
 
-/** Instance lifecycle (design §4, §10): connection config, one supervised plugin child per enabled
+/** Instance lifecycle (ADR-0013, design §10): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
 
 export const AUTH_METHODS = ['bearer', 'oauth', 'external'] as const;

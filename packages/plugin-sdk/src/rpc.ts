@@ -33,7 +33,7 @@ export interface InvokeContext {
   targets?: ResolvedTarget[];
 }
 
-/** The plugin side of the core ⇄ plugin contract (design §3.3), one params object per handler. */
+/** The plugin side of the core ⇄ plugin contract (ADR-0011), one params object per handler. */
 export interface PluginHandlers {
   init(params: InitParams): MaybePromise<void>;
   testConnection(): MaybePromise<TestConnectionResult>;

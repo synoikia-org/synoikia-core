@@ -239,7 +239,7 @@ describe('re-sync of changed operations (review M14)', () => {
   });
 });
 
-describe('rules on $targets (design §3.4)', () => {
+describe('rules on $targets (ADR-0012)', () => {
   const profiles = {
     targets: [
       { field: '$targets', label: 'Targets', widget: 'registry-picker' as const, covers: ['/selector'] },

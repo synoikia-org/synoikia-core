@@ -8,7 +8,7 @@ import { isPlainObject, truncate } from './plugin-kit.js';
 import type { InvokeContext } from './rpc.js';
 import type { CompiledRules, OperationDraft } from './rules.js';
 
-/** A catalog and `request({ method, path, query, body })` binding from an OpenAPI 3 spec (design §3.3).
+/** A catalog and `request({ method, path, query, body })` binding from an OpenAPI 3 spec (ADR-0011).
  * Keys are verb + path template; GET reads, other verbs write, action-like GETs are writes for review. */
 
 export const HTTP_VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;

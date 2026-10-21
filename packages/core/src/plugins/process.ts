@@ -17,7 +17,7 @@ import {
 import type { ErrorCode, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
 
-/** One plugin child and its JSON-RPC-over-IPC channel (design §3.3, §4.4); every result is validated. */
+/** One plugin child and its JSON-RPC-over-IPC channel (ADR-0011, ADR-0014); every result is validated. */
 
 export class PluginRpcError extends Error {
   constructor(

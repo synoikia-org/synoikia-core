@@ -302,7 +302,7 @@ describe('plugin repositories', () => {
   });
 });
 
-// ── manual plugins (design §4.6) ──
+// ── manual plugins (ADR-0013) ──
 
 const withManifest = (patch: Record<string, unknown>) => (dir: string) => {
   const m = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;

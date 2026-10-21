@@ -1,4 +1,4 @@
-/** The pre-configured, signed Synoikia plugins repository (design §4.1); added once, removal sticks. */
+/** The pre-configured, signed Synoikia plugins repository (ADR-0013); added once, removal sticks. */
 export const DEFAULT_PLUGIN_REPO = {
   url: 'https://github.com/via-justa/synoikia-core-plugins/releases/download/index/index.json',
   name: 'Synoikia plugins',
