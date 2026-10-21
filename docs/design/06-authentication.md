@@ -48,7 +48,7 @@ The Admin listener (port 8081) has its own sign-in.
 **Delete a user.** An admin deletes a user (`DELETE /api/users/:id`). The delete is permanent.
 
 - Core refuses to delete the admin who asks, the last user or the last enabled admin. While local sign-in is off, it also keeps the last enabled linked user.
-- First, core takes every credential of the user away: sessions, OAuth grants and bearer tokens (§6.2). It also ends their pending approvals and the session grants that they gave (§5.8).
+- First, core takes every credential of the user away: sessions, OAuth grants and bearer tokens (§6.2). It also ends their pending approvals and the session grants that they gave (ADR-0006).
 - Then, in one transaction, core deletes the user, their personal levels and their own pre-approval rules. It keeps the shared rows that name the user and clears that name (§7.3). It writes the audit event `user_deleted`.
 - Core does not change the audit log. The log reads the user name of a deleted user from `user_deleted` (§7.1).
 
@@ -100,7 +100,7 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
   - Core refuses the assertion of a service token (an empty `sub`, or a `common_name` claim). A service token is not a user.
 - **User.** Core finds the user whose user name is the identity. Upper and lower case do not matter. Only a user that an admin made, or that `external` registered, can match. A user from the sign-up form or OIDC never matches, so nobody can take an external identity first. If there is no such user, self-registration (§6.5) creates one. If self-registration is off, the name is taken, or the identity is not a valid user name, core refuses the request with 403.
 - Core refuses a caller that the provider does not identify (401). Each call belongs to a user.
-- The approval page also uses the provider to identify the approver, without self-registration (§5.3).
+- The approval page also uses the provider to identify the approver, without self-registration (ADR-0006).
 - Core does not read any other identity header.
 
 **Bearer tokens** (Clients & Tokens page):
@@ -135,7 +135,7 @@ Client auth is how an MCP client proves who it is on the MCP listener. There are
 - **Revocation.**
   - The Clients & Tokens page lists the grants of each user and client. The admin can revoke them.
   - A password change or a disabled user revokes all grants of the user, and their tokens.
-  - A disabled user also loses the bearer tokens that they made, and the session grants that they gave (§5.8). `refresh` refuses a disabled user.
+  - A disabled user also loses the bearer tokens that they made, and the session grants that they gave (ADR-0006). `refresh` refuses a disabled user.
   - A deleted user loses all grants, their tokens and the bearer tokens that they made (§6.1).
   - When the admin enables a user again, no grant or token comes back.
 
@@ -151,7 +151,7 @@ Each credential has an access ceiling: `read` or `write`.
 
 - On the OAuth consent page, the user selects "Read only" (the default) or "Read & write". The ceiling is stored on the grant. All access and refresh tokens of the grant have it. A wider ceiling needs a new consent.
 - A bearer token has the same field, `read` by default.
-- A principal with ceiling `read` never reaches a write, whatever the access levels are (§5.2.1).
+- A principal with ceiling `read` never reaches a write, whatever the access levels are (ADR-0004).
 - The `external` method trusts the external provider. Core does not limit its principals.
 
 The person who connects a client decides once what the client can ever do.
@@ -162,23 +162,23 @@ Scenarios: [`@id:access-levels`](../../packages/core/features/access/access-leve
 
 Each user has one role. A role decides what the user can reach and change.
 
-**Admin role.** It is built in, and nobody can change or delete it. An admin does all administration. Its access levels are the levels of each endpoint (§5.2.1). Core refuses a change that leaves no enabled admin (409 `last_admin`).
+**Admin role.** It is built in, and nobody can change or delete it. An admin does all administration. Its access levels are the levels of each endpoint (ADR-0004). Core refuses a change that leaves no enabled admin (409 `last_admin`).
 
 **Other roles.** An admin makes them on the Roles page. Each role has:
 
-| Part                | Meaning                                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| Endpoints           | The endpoints that the role has. For other endpoints, the credentials of its users get 403.              |
-| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                        |
-| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See §5.2.1.  |
-| See other endpoints | A role-wide switch. Users see the other endpoints by name and description, without access. Default: off. |
+| Part                | Meaning                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Endpoints           | The endpoints that the role has. For other endpoints, the credentials of its users get 403.               |
+| Endpoint switches   | Three switches on each endpoint of the role. See the table below.                                         |
+| Role maximums       | For each group, and for an operation if necessary, the highest level. Not set means `none`. See ADR-0004. |
+| See other endpoints | A role-wide switch. Users see the other endpoints by name and description, without access. Default: off.  |
 
 Each switch applies only on its endpoint. The Admin role has all switches on, on each endpoint.
 
 | Endpoint switch        | Meaning                                                                                                                                         |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Set personal levels    | Users set a personal level for each group or operation, at most the role maximum.                                                               |
-| Own pre-approval rules | Users add pre-approval rules that apply only to their own calls (§5.2).                                                                         |
+| Own pre-approval rules | Users add pre-approval rules that apply only to their own calls (ADR-0003).                                                                     |
 | See endpoint status    | Users see the state, plugin, upstream version and last sync of the endpoint. They also see all its groups and operations, also those at `none`. |
 
 **What each user gets.**
@@ -189,7 +189,7 @@ Each switch applies only on its endpoint. The Admin role has all switches on, on
 - With "See endpoint status" on an endpoint, also the operations that they cannot call for another reason. These show as off, with no level to set.
 - With "See other endpoints", a list of the other endpoints. Each shows only its slug, display name, plugin name and plugin description, and the name of their role. An admin has no other endpoints.
 - On each endpoint, the parts that the switches of their role on that endpoint allow. Core refuses the other parts with 403.
-- An approval page for their own calls only (§5.3).
+- An approval page for their own calls only (ADR-0006).
 
 **Rules.**
 
@@ -231,6 +231,6 @@ The client policy allows or denies MCP clients by their client name. The client 
 - **When.** Core checks the policy after authentication (§6.2), on an `initialize` request, before it makes the MCP session. It reads the client name from the request body. It reads the body once, with the limits of the MCP transport (4 MiB and 100 messages in a batch). Core checks the policy again on each later request of a session. A policy change thus ends an open session of a refused client at its next request.
 - **Refusal.** Core answers 403 with the JSON-RPC error `-32003` "This MCP client is not allowed on this server". It keeps no session. It logs the refusal with the client name in the server log. It writes an `auth` audit event `client_refused` with the slug, the client name and the mode.
 - **Seen clients.** Core keeps in memory the last 50 client names that opened an MCP session, for the admin to add to the policy. A restart clears the list.
-- **Limit.** A client declares its own name, and any client can send any name. The policy stops honest clients that the admin does not want. It is not a security boundary. Client auth (§6.2), the access ceiling (§6.3) and the gate (§5) are the boundary.
+- **Limit.** A client declares its own name, and any client can send any name. The policy stops honest clients that the admin does not want. It is not a security boundary. Client auth (§6.2), the access ceiling (§6.3) and the gate (ADR-0003) are the boundary.
 
 Scenarios: [`@id:client-policy`](../../packages/core/features/client-auth/client-policy.feature).

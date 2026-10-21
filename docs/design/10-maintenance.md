@@ -17,7 +17,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 
 - If the version of the running child is not the recorded one, the sync must succeed first. This happens after an install, an update, or files copied by hand and a restart.
 - Until the sync succeeds, the endpoint answers `PLUGIN_UNAVAILABLE`. It never serves a catalog of another bundle, with its locks and its `sensitiveResult`.
-- The gate also checks this version for each call (§5.2).
+- The gate also checks this version for each call (ADR-0003).
 
 **What a sync does.**
 
@@ -25,7 +25,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 - Core creates missing groups at `ask`.
 - Core marks groups without operations as `stale` and keeps their level, in case they come back.
 - Core marks operations that are missing as `stale`. It never deletes them.
-- New writes start without acknowledgement. At level `write` they ask until the admin acknowledges them (§5.2.1).
+- New writes start without acknowledgement. At level `write` they ask until the admin acknowledges them (ADR-0004).
 - `syncRegistry` runs with each sync and after `catalogChanged`. `resolveTargets` uses the live view of the plugin, so scope membership is as it is at the time of the call.
 
 **Sync failure.**

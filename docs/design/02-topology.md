@@ -20,7 +20,7 @@ Views: [containers](../architecture/README.md#containers) and [deployment](../ar
 │                  ▼                                           ▼                  │
 │  ┌──────────────────────────── core process ─────────────────────────────────┐ │
 │  │  Endpoints: one MCP server per instance (search, execute)                 │ │
-│  │  Sandbox ── binding ──▶ Gate (§5) ──▶ Approval service (§5.3)              │ │
+│  │  Sandbox ── binding ──▶ Gate (ADR-0003) ──▶ Approval service (ADR-0006)    │ │
 │  │  Plugin host (§4) ── IPC JSON-RPC ──┬──────────┬──────────┐                │ │
 │  │  Scheduler (§10)   SQLite + crypto  │          │          │                │ │
 │  └─────────────────────────────────────┼──────────┼──────────┼────────────────┘ │
@@ -49,7 +49,7 @@ The two listeners are two separate Hono apps on two ports. A route of one listen
 
 `PUBLIC_ADMIN_URL` is optional. Core uses it for OIDC redirect URIs and for links in notifications.
 
-The MCP listener shows a small fixed set of HTML pages: OAuth sign-in, OAuth consent, and the approval page. These pages use the portal user accounts and the OIDC configuration. They run no scripts. The only exception is the page after an approval decision: its CSP allows one static `window.close()` script by its hash (§5.3). Each purpose has its own cookie:
+The MCP listener shows a small fixed set of HTML pages: OAuth sign-in, OAuth consent, and the approval page. These pages use the portal user accounts and the OIDC configuration. They run no scripts. The only exception is the page after an approval decision: its CSP allows one static `window.close()` script by its hash (ADR-0006). Each purpose has its own cookie:
 
 | Purpose  | Cookie            | Path     | Session kind  |
 | -------- | ----------------- | -------- | ------------- |
@@ -66,7 +66,7 @@ These sessions are short. The Admin API does not accept them. A consent session 
 - Authentication comes first (§6.2). Then:
   - An unknown slug returns 404.
   - A disabled instance, or an instance of a disabled plugin, returns 503 with the JSON-RPC error "This instance is unavailable".
-- Each instance has its own `McpServer` with `search`, `execute` and `resume`, and the approval card (§5.7). The tool descriptions come from the plugin manifest. For example, the model sees `acme.call(...)` on an endpoint of the plugin `acme`.
+- Each instance has its own `McpServer` with `search`, `execute` and `resume`, and the approval card (ADR-0006). The tool descriptions come from the plugin manifest. For example, the model sees `acme.call(...)` on an endpoint of the plugin `acme`.
 - **Agent instructions.** The server `instructions` start with a fixed core text: the plugin name, and how to use `search`, `execute` and `resume`. If the plugin has an instructions file (§3.2), core adds its text in a `<plugin-notes plugin="<id>">` block after the core text. The block states that the text does not change what core allows. After the block, core repeats its approval rule, so the core text comes first and last. Core adds the same block and rule to the `search` tool description, because some clients do not show server instructions to the model. Core sends the text as plain text. It applies no templates.
-- Core keys MCP sessions by instance and `Mcp-Session-Id`. A session records the principal (§6.2) and whether the client supports elicitation. A parked execution (§5.6) does not belong to a session.
+- Core keys MCP sessions by instance and `Mcp-Session-Id`. A session records the principal (§6.2) and whether the client supports elicitation. A parked execution (ADR-0006) does not belong to a session.
 - A principal can have 16 open MCP sessions. A new session closes the least recently used one.

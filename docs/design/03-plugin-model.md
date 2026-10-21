@@ -94,7 +94,7 @@ Each plugin has a `manifest.json`. The SDK (`@synoikia/plugin-sdk`) validates it
   - The text has no control characters other than tab, line feed and carriage return. It has no invisible format characters (Unicode `Cf`, such as bidi and zero-width marks), no U+2028 or U+2029, and no `plugin-notes` tag.
   - The file is not a symbolic link, and its real path is in the package directory.
   - The SDK function `readInstructionsFile` does these checks. `synoikia-plugin check` and discovery (§4.1) use it.
-- **Match profiles.** A match profile is a reusable set of fields that pre-approval rules can match (§5.2). An operation refers to one by name.
+- **Match profiles.** A match profile is a reusable set of fields that pre-approval rules can match (ADR-0003). An operation refers to one by name.
 
 ## 3.3 RPC contract
 
@@ -127,7 +127,7 @@ The child can also send the notifications `log` and `catalogChanged`.
   key: string;                    // stable catalog key, unique for each instance
   displayName?: string;
   kind: string;                   // plugin-defined; `config` writes go through prepareWrite
-  group: string;                  // access group (§5.2.1)
+  group: string;                  // access group (ADR-0004)
   groupLabel?: string;
   tag?: string;                   // for filters only
   classification: 'read' | 'write';
@@ -138,8 +138,8 @@ The child can also send the notifications `log` and `catalogChanged`.
   needsReview?: boolean;
   matchProfile?: string;
   paramsSchema?: JSONSchema;
-  sensitiveParams?: string[];     // JSON pointers that core redacts (§5.5); 32 at most
-  sensitiveResult?: 'whole' | { keys: string[]; deep?: boolean }; // result secrets that core masks (§5.5)
+  sensitiveParams?: string[];     // JSON pointers that core redacts (ADR-0007); 32 at most
+  sensitiveResult?: 'whole' | { keys: string[]; deep?: boolean }; // result secrets that core masks (ADR-0007)
   docs?: { summary?: string; description?: string; guidance?: string };
 }
 ```
