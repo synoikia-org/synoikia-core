@@ -44,9 +44,9 @@ Core keeps all data in one SQLite file, `DATA_DIR/synoikia.sqlite` (default `/da
 
 The `decision` of a call is one of: `auto-executed`, `auto-approved:level`, `auto-approved:rule:<id>`, `human-approved`, `denied`, `timed-out`, `rejected:<reason>`, `error:<code>`.
 
-The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_via` of a deleted user in `detail` (§6.1). The audit log reads take the user name from it for the events of that user, with `actorDeleted` true. The CSV export has the same column.
+The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_via` of a deleted user in `detail` (ADR-0008). The audit log reads take the user name from it for the events of that user, with `actorDeleted` true. The CSV export has the same column.
 
-**Roles** (§6.4)
+**Roles** (ADR-0010)
 
 | Table            | Holds                                                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
