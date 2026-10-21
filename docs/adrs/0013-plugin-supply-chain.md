@@ -29,7 +29,7 @@ Chosen option: "Plugin repositories with a pinned key, prebuilt packages and a r
 
 **Installation.** Core installs each plugin from a plugin repository, or from a file that an admin uploads, into `DATA_DIR/plugins/<id>/`. Only one version of a plugin is installed at a time. Core replaces it atomically.
 
-**Default repository.** At the first start, core adds the Synoikia plugins repository ([synoikia-core-plugins](https://github.com/via-justa/synoikia-core-plugins)) as a signed repository.
+**Default repository.** At the first start, core adds the Synoikia plugins repository ([synoikia-core-plugins](https://github.com/synoikia-org/synoikia-core-plugins)) as a signed repository.
 
 - Its public key is pinned in core (`plugins/default-repo.ts`), so the admin does not confirm it. Core adds it once and records a `system` audit event.
 - If an admin removes it, it stays removed. If its index cannot be fetched, core records the error on the repository. This is not fatal.

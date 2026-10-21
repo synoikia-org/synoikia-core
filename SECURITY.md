@@ -7,7 +7,7 @@ about it, and about the credential handling around it, seriously.
 ## Supported Versions
 
 Only the latest published release (npm packages `@synoikia/core`,
-`@synoikia/plugin-sdk` and `@synoikia/create-plugin`, and the latest `ghcr.io/via-justa/synoikia`
+`@synoikia/plugin-sdk` and `@synoikia/create-plugin`, and the latest `ghcr.io/synoikia-org/synoikia`
 image tag) receives security fixes. There is no long-term support branch —
 upgrade to the latest release before reporting an issue that may already be
 fixed.
@@ -17,7 +17,7 @@ fixed.
 **Please do not open a public GitHub issue for a security vulnerability.**
 
 Instead, report it privately through [GitHub private security
-advisories](https://github.com/via-justa/synoikia-core/security/advisories/new)
+advisories](https://github.com/synoikia-org/synoikia-core/security/advisories/new)
 for this repository — this lets us collaborate on a fix before disclosure.
 
 Please include enough detail to reproduce the issue: affected version,

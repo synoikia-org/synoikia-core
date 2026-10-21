@@ -101,13 +101,13 @@ Plugins live in their own repositories, such as [synoikia-core-plugins][core-plu
 
 This repository publishes three npm packages: `@synoikia/plugin-sdk`, `@synoikia/core` (for its plugin test harness) and `@synoikia/create-plugin`. Plugin repositories, [synoikia-core-plugins][core-plugins] included, build against them. To release one, bump its `version` and merge to `main`. The Release workflow (`.github/workflows/release.yml`) publishes every package whose version isn't on npm yet: the SDK first, then core, then create-plugin. It adds provenance only while this repository is public, because npm rejects provenance from private repositories.
 
-It publishes through npm trusted publishing, so no token is stored: each package's settings on npmjs.com trust `via-justa/synoikia-core` and `release.yml`, with **Direct publishing** allowed. If the repository or the workflow file is renamed, update those settings too; trusted publishing doesn't follow renames. npm can only trust a publisher for a package that already exists, so a new package's first release has to be published once with a token (or by hand) before its trusted publisher can be set.
+It publishes through npm trusted publishing, so no token is stored: each package's settings on npmjs.com trust `synoikia-org/synoikia-core` and `release.yml`, with **Direct publishing** allowed. If the repository or the workflow file is renamed, update those settings too; trusted publishing doesn't follow renames. npm can only trust a publisher for a package that already exists, so a new package's first release has to be published once with a token (or by hand) before its trusted publisher can be set.
 
 Prerelease versions (`0.3.0-rc.0`) are never published by a merge. Publish them by hand with **Actions → Release → Run workflow**; they go to the `next` dist-tag, so `latest` stays on the last release. A prerelease run is also the way to check trusted publishing after changing its settings: npm's verbose log (on for every release run) says why a publish was refused.
 
 ### Publishing the Docker image
 
-The Docker image ships as one unit (core + admin UI, with the SDK only as a build dependency), so it carries its own version in the root `package.json`, separate from the package versions above. To release a new image, bump that `version` and merge to `main`; the same `release.yml` builds and pushes `ghcr.io/via-justa/synoikia:<version>` (and moves `latest` to it, for stable versions) whenever that tag isn't already published. Prereleases follow the same manual-dispatch rule as the npm packages.
+The Docker image ships as one unit (core + admin UI, with the SDK only as a build dependency), so it carries its own version in the root `package.json`, separate from the package versions above. To release a new image, bump that `version` and merge to `main`; the same `release.yml` builds and pushes `ghcr.io/synoikia-org/synoikia:<version>` (and moves `latest` to it, for stable versions) whenever that tag isn't already published. Prereleases follow the same manual-dispatch rule as the npm packages.
 
 ### Which versions a change bumps
 
@@ -126,7 +126,7 @@ A pull request bumps the version of each published package, and of the image, wh
 
 <!-- External links -->
 
-[core-plugins]: https://github.com/via-justa/synoikia-core-plugins
+[core-plugins]: https://github.com/synoikia-org/synoikia-core-plugins
 [vue]: https://vuejs.org/
 [hono]: https://hono.dev/
 [better-sqlite3]: https://github.com/WiseLibs/better-sqlite3

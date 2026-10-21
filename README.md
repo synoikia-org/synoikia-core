@@ -105,7 +105,7 @@ cp .env.example .env   # set MASTER_KEY, PUBLIC_MCP_URL, …
 docker compose -f docker-compose.example.yml up -d
 ```
 
-Pulls the published image from `ghcr.io/via-justa/synoikia`. `latest` tracks the newest stable release. Pin an explicit version tag (e.g. `ghcr.io/via-justa/synoikia:0.2.0`) in production. Deploys with [Docker Compose][compose]. Put `:8080` behind your reverse proxy (such as [Caddy][caddy], [Traefik][traefik] or a [Cloudflare Tunnel][cf-tunnel]) as the public MCP hostname and set `PUBLIC_MCP_URL` to it. The admin portal runs on its own dedicated port (`ADMIN_PORT`, 8081 by default). See [Reverse proxy](#reverse-proxy) and ADR-0015.
+Pulls the published image from `ghcr.io/synoikia-org/synoikia`. `latest` tracks the newest stable release. Pin an explicit version tag (e.g. `ghcr.io/synoikia-org/synoikia:0.2.0`) in production. Deploys with [Docker Compose][compose]. Put `:8080` behind your reverse proxy (such as [Caddy][caddy], [Traefik][traefik] or a [Cloudflare Tunnel][cf-tunnel]) as the public MCP hostname and set `PUBLIC_MCP_URL` to it. The admin portal runs on its own dedicated port (`ADMIN_PORT`, 8081 by default). See [Reverse proxy](#reverse-proxy) and ADR-0015.
 
 On first start, open the admin portal and create the first account (or set `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` once). Then install and enable plugins, create an endpoint, raise the access groups you want above Read, and connect your MCP client to `PUBLIC_MCP_URL/<slug>`.
 
@@ -127,7 +127,7 @@ Core logs each refused MCP request with its reason. The reason can be the endpoi
 
 On first start Synoikia adds the [Synoikia plugins repository][core-plugins] with its signing key pinned:
 
-- index: `https://github.com/via-justa/synoikia-core-plugins/releases/download/index/index.json`
+- index: `https://github.com/synoikia-org/synoikia-core-plugins/releases/download/index/index.json`
 - public key: `RWSDbQe7ylyyieEU0Yh/bxR53m+N/0VrVMru5WCzv1/Yvt5td92t/21e`
 
 Install plugins from it on the Plugins page; every download is checked against that key. Removing the repository is permanent: it isn't added again on the next start. To add it back, add it as a signed repository with the URL and key above. Other repositories are added the same way, signed with their publisher's key or unsigned.
@@ -158,7 +158,7 @@ Bug reports, feature requests and pull requests are welcome — see [CONTRIBUTIN
 
 <!-- External links -->
 
-[core-plugins]: https://github.com/via-justa/synoikia-core-plugins
+[core-plugins]: https://github.com/synoikia-org/synoikia-core-plugins
 [mcp]: https://modelcontextprotocol.io/
 [mcp-tools]: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 [elicitation]: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation

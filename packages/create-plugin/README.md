@@ -1,6 +1,6 @@
 # @synoikia/create-plugin
 
-Create [Synoikia](https://github.com/via-justa/synoikia-core) plugin repositories and plugins, then build, check and publish them. Guide: [`docs/plugin-authoring.md`](https://github.com/via-justa/synoikia-core/blob/main/docs/plugin-authoring.md).
+Create [Synoikia](https://github.com/synoikia-org/synoikia-core) plugin repositories and plugins, then build, check and publish them. Guide: [`docs/plugin-authoring.md`](https://github.com/synoikia-org/synoikia-core/blob/main/docs/plugin-authoring.md).
 
 ```sh
 pnpm create @synoikia/plugin my-plugins [--repository owner/name] [--release] [--claude]
