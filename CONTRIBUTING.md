@@ -38,7 +38,7 @@ When a change affects what the docs describe, update them in the same pull reque
 
 ## Releases
 
-This repo publishes three npm packages (`@synoikia/plugin-sdk`, `@synoikia/core`, `@synoikia/create-plugin`) and a Docker image, each versioned independently — see [Publishing the npm packages](DEVELOPMENT.md#publishing-the-npm-packages) and [Publishing the Docker image](DEVELOPMENT.md#publishing-the-docker-image) in DEVELOPMENT.md. A pull request that changes what a package or the image ships bumps its `version`; [CLAUDE.md](CLAUDE.md) › Releases says which bump. If you're unsure, leave it and a maintainer will bump it before merge.
+This repo publishes three npm packages (`@synoikia/plugin-sdk`, `@synoikia/core` and `@synoikia/create-plugin`) and a Docker image. Each has its own version. See [Publishing the npm packages](DEVELOPMENT.md#publishing-the-npm-packages) and [Publishing the Docker image](DEVELOPMENT.md#publishing-the-docker-image) in DEVELOPMENT.md. A pull request that changes what a package or the image ships bumps its `version`. [Which versions a change bumps](DEVELOPMENT.md#which-versions-a-change-bumps) says which bump. If you're unsure, leave it, and a maintainer bumps it before the merge.
 
 ## Code of Conduct
 

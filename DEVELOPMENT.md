@@ -106,7 +106,20 @@ Prerelease versions (`0.3.0-rc.0`) are never published by a merge. Publish them 
 
 The Docker image ships as one unit (core + admin UI, with the SDK only as a build dependency), so it carries its own version in the root `package.json`, separate from the package versions above. To release a new image, bump that `version` and merge to `main`; the same `release.yml` builds and pushes `ghcr.io/via-justa/synoikia:<version>` (and moves `latest` to it, for stable versions) whenever that tag isn't already published. Prereleases follow the same manual-dispatch rule as the npm packages.
 
-Which versions a change bumps is set in [CLAUDE.md](CLAUDE.md) › Releases.
+### Which versions a change bumps
+
+A pull request bumps the version of each published package, and of the image, whose shipped content it changes, in the same pull request. Docs-, test- and CI-only changes bump nothing.
+
+| Version                         | Bump when the pull request changes                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@synoikia/core`                | `packages/core/src`, including `testing/`, or its runtime dependencies                                                                           |
+| `@synoikia/plugin-sdk`          | `packages/plugin-sdk/src` or its dependencies                                                                                                    |
+| `@synoikia/create-plugin`       | its own files. Also a patch whenever core or the SDK takes a minor bump, because its `workspace:^` ranges are packed with the minor pinned       |
+| Root `package.json` (the image) | anything that the image ships: core, the admin UI, the `Dockerfile` and image dependencies. Bump it by the same step as the largest package bump |
+
+- While at 0.x, a breaking change or a new feature bumps the minor, and a fix bumps the patch.
+- Name the new versions in the pull request title, for example "(core 0.7.0, image 0.5.0)".
+- A breaking change to the SDK or to `@synoikia/core/testing` breaks every plugin repository, so call it out in the pull request.
 
 <!-- External links -->
 
