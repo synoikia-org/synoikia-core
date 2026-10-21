@@ -2,12 +2,7 @@
 
 The feature files specify the behavior of each package. Each scenario runs as a test against the real interface of its package.
 
-| Package                   | Feature files                                                                |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| `@synoikia/core`          | [`packages/core/features/`](../../packages/core/features/)                   |
-| Admin portal              | [`packages/admin-ui/features/`](../../packages/admin-ui/features/)           |
-| `@synoikia/plugin-sdk`    | [`packages/plugin-sdk/features/`](../../packages/plugin-sdk/features/)       |
-| `@synoikia/create-plugin` | [`packages/create-plugin/features/`](../../packages/create-plugin/features/) |
+The feature files are in [`features/`](../../features/), one folder for each domain. The `features` project of each package's `vitest.config.ts` lists the domains that the package runs. The steps and the World of each package are in `packages/<package>/features/`.
 
 [`DEVELOPMENT.md`](../../DEVELOPMENT.md#checks) › Checks tells how to run them. The rules for feature files and tests are in [`docs/workflow.md`](../workflow.md).
 

@@ -64,13 +64,15 @@ pnpm --filter @synoikia/core test:coverage                        # enforces the
 
 ## Feature files
 
-Core's feature files are in `packages/core/features/`. Quickpickle runs them in vitest, in the `features` project of `packages/core/vitest.config.ts`. `features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
+All feature files are in `features/<domain>/` at the repository root. A domain is what the system does, so one domain can hold the feature files of several packages. The `features` project in each package's `vitest.config.ts` lists the domains and files that its World runs. The steps and the World of a package stay in `packages/<package>/features/`.
 
-The portal's feature files are in `packages/admin-ui/features/`. Their World builds the portal once and starts core with it for each scenario. Steps drive the portal in Chromium through Playwright, by roles, labels and visible text. CI installs Chromium with `pnpm --filter @synoikia/admin-ui exec playwright install --with-deps chromium`.
+The `features` project of `packages/core/vitest.config.ts` runs core's feature files with Quickpickle in vitest. `packages/core/features/support/world.ts` gives each scenario a new World. It starts core on real listeners with a temporary data directory. It signs in a bootstrap admin on the Admin API and connects agents over MCP. The "Acme Tasks" fixture plugin calls a fake upstream. Steps use only these interfaces.
 
-The plugin SDK's feature files are in `packages/plugin-sdk/features/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
+The portal's feature files are the `portal-*.feature` files of `features/instances/` and `features/plugins/`, and the domains that only the portal has. Their World builds the portal once and starts core with it for each scenario. Steps drive the portal in Chromium through Playwright, by roles, labels and visible text. CI installs Chromium with `pnpm --filter @synoikia/admin-ui exec playwright install --with-deps chromium`.
 
-The feature files of `@synoikia/create-plugin` are in `packages/create-plugin/features/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
+The plugin SDK's feature files are in `features/catalogs/`, `conformance/`, `manifest/`, `rules/`, `runtime/` and `upstream/`. Their World gives plugin author 3 a temporary plugin folder and a fake "Acme Tasks" upstream on a real listener. Steps use only the published API of `@synoikia/plugin-sdk`.
+
+The feature files of `@synoikia/create-plugin` are in `features/build/`, `release/`, `scaffold/` and `workflow/`. Their World runs the commands of its bins from the sources of this checkout, in a work folder of plugin author 3. A fake `gh` stands in for GitHub releases.
 
 ## Architecture model
 
