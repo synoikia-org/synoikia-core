@@ -42,7 +42,8 @@
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
         "Dockerfile",
-        ".github/workflows/**"
+        ".github/workflows/**",
+        ".claude/**"
       ]
     }
   },
