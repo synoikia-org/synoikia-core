@@ -36,6 +36,8 @@ Feature: Scaffold
       Given plugin author 3 has an empty folder "acme-plugins"
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins"
       Then the repository has a secret scan setting that keeps the default rules
+      And CI scans each pull request for secrets with that setting
+      And the repository ignores local environment files
 
   Rule: The assistant files of a new repository load the Synoikia dev kit
 
@@ -44,6 +46,7 @@ Feature: Scaffold
       When plugin author 3 creates a plugin repository in "acme-plugins" for "acme/plugins" with the assistant files
       Then the assistant settings enable the plugin development plugin of the Synoikia dev kit
       And a session start hook recommends the plugin when it is not loaded
+      And the path guard refuses edits to the lockfile and the built bundles, and asks before an edit to the signing key
       And the repository has no skills or agents of its own, and no assistant file names e2e tests or golden records
 
   Rule: A new plugin needs a valid id and namespace
