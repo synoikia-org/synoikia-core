@@ -18,7 +18,7 @@ export const WIDGETS = [
 ] as const;
 export type Widget = (typeof WIDGETS)[number];
 
-/** Operators understood by the core pre-approval match evaluator (design §5.2). */
+/** Operators understood by the core pre-approval match evaluator (ADR-0003). */
 export const MATCH_OPS = ['eq', 'in', 'prefix', 'range', 'bool'] as const;
 export type MatchOp = (typeof MATCH_OPS)[number];
 

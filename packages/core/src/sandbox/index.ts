@@ -1,6 +1,6 @@
 import ivm from 'isolated-vm';
 
-/** Runs model code in a fresh V8 isolate with no Node APIs (design §5.4); only `bindings` reach out, and
+/** Runs model code in a fresh V8 isolate with no Node APIs (ADR-0005); only `bindings` reach out, and
  * values cross as JSON. `code` is an async function body. */
 
 export interface SandboxLimits {

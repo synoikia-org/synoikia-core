@@ -54,9 +54,9 @@ export interface AppContext {
   seenClients: SeenClients;
   instances: InstanceManager;
   approvals: ApprovalService;
-  /** Session grants (design §5.8). */
+  /** Session grants (ADR-0006). */
   grants: SessionGrantService;
-  /** Parked executions (design §5.6). */
+  /** Parked executions (ADR-0006). */
   executions: ExecutionRegistry;
   limiter: SlidingWindowLimiter;
   links: ApprovalLinkService;

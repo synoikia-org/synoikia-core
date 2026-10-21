@@ -17,9 +17,9 @@ import type { ExecuteResult } from './executions.js';
 import { BindingError, runInSandbox } from '../sandbox/index.js';
 import type { Binding, SandboxResult } from '../sandbox/index.js';
 
-/** The engines behind the `search` and `execute` tools (design §5.1–§5.2). */
+/** The engines behind the `search` and `execute` tools (ADR-0003). */
 
-/** Sandbox caps (design §5.2): runs per minute per principal and instance, and concurrent isolates per
+/** Sandbox caps (ADR-0003): runs per minute per principal and instance, and concurrent isolates per
  * instance and in total; over a cap the run is refused before an isolate exists. */
 export const SANDBOX_CONCURRENCY = { perInstance: 4, total: 16 };
 const running = new Map<string, number>();
@@ -62,7 +62,7 @@ export async function executeCode(
   const release = admit(deps, rt, caller);
   if (typeof release !== 'function') return release;
   // Ends with the sandbox (return, error or timeout) or earlier, when the request or session goes away;
-  // once parked, only the registry ends it (design §5.6).
+  // once parked, only the registry ends it (ADR-0006).
   const run = new AbortController();
   const stop = () => run.abort();
   signal?.addEventListener('abort', stop);
@@ -131,7 +131,7 @@ export async function executeCode(
   return pendingResult(executionId, first.approval);
 }
 
-/** `resume(executionId)` (design §5.6): the parked run's result, or that it still waits. */
+/** `resume(executionId)` (ADR-0006): the parked run's result, or that it still waits. */
 export async function resumeExecution(
   deps: GateDeps,
   rt: InstanceRuntime,
@@ -194,7 +194,7 @@ function describeOp(
   access: ReturnType<typeof effectiveAccess>,
   granted = false,
 ) {
-  // A session grant (design §5.8) turns Ask into auto-approval, except for locked and typed-confirmation ops.
+  // A session grant (ADR-0006) turns Ask into auto-approval, except for locked and typed-confirmation ops.
   const mode =
     access.reachable &&
     access.mode === 'approve' &&
@@ -305,7 +305,7 @@ function catalogBindings(
 }
 
 /** `guides.get(key)`: returns the current guide and the session-bound attestation key `execute` must
- * present (design §5.1); every read is audited. */
+ * present (ADR-0003); every read is audited. */
 function guideBindings(deps: GateDeps, rt: InstanceRuntime, caller: CallerContext): Record<string, Binding> {
   return {
     get: async ([key]) => {

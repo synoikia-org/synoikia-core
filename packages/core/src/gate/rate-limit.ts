@@ -46,7 +46,7 @@ export class HitWindows {
   }
 }
 
-/** In-memory limiter for per-instance execute/write caps (design §5.2), separate from rule limits. */
+/** In-memory limiter for per-instance execute/write caps (ADR-0003), separate from rule limits. */
 export class SlidingWindowLimiter {
   private readonly hits: HitWindows;
 

@@ -265,7 +265,7 @@ export interface ApprovalView {
   diff: unknown;
   expiresAt: Date;
   confirmLiteral: string | null;
-  /** "Approve for this session" lengths (design §5.8); empty hides the option. */
+  /** "Approve for this session" lengths (ADR-0006); empty hides the option. */
   grantOptions: { value: string; label: string }[];
   /** The client's audit label, so the approver knows who a session grant covers. */
   client: string | null;

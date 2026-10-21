@@ -22,7 +22,7 @@ import type { SlidingWindowLimiter } from './rate-limit.js';
 import { redactDiff, redactPaths, redactResult } from './redact.js';
 import type { Redactor } from './redact.js';
 
-/** The permission gate (design §5.2), the only path from sandboxed code to `invoke`: resolve → access →
+/** The permission gate (ADR-0003), the only path from sandboxed code to `invoke`: resolve → access →
  * attest → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
 
 export interface GateDeps {
@@ -31,13 +31,13 @@ export interface GateDeps {
   limiter: SlidingWindowLimiter;
   attestationKey: Buffer;
   now?: () => Date;
-  /** Session grants (design §5.8); without it, no grant applies. */
+  /** Session grants (ADR-0006); without it, no grant applies. */
   grants?: SessionGrantService;
-  /** Parked executions (design §5.6); without it, nothing parks. */
+  /** Parked executions (ADR-0006); without it, nothing parks. */
   executions?: ExecutionRegistry;
 }
 
-/** How an execution parks (design §5.6): the gate audits the hand-over and reports each decision. */
+/** How an execution parks (ADR-0006): the gate audits the hand-over and reports each decision. */
 export interface GatePark extends ParkHook {
   settled(approvalId: string, decision: { outcome: string; decidedBy?: string }): void;
 }
@@ -65,7 +65,7 @@ export interface CallerContext {
   principal: AccessPrincipal;
   /** Present only for a live session whose client advertised elicitation. */
   prompts?: ClientPrompts;
-  /** Without a usable prompt, the execution may park and hand out the approval link (design §5.6). */
+  /** Without a usable prompt, the execution may park and hand out the approval link (ADR-0006). */
   parkable?: boolean;
   /** False once the caller's credential was revoked; a parked run outlives the request that authenticated it. */
   stillAuthorized?: () => boolean;
@@ -73,7 +73,7 @@ export interface CallerContext {
 
 type OperationRow = typeof operations.$inferSelect;
 
-/** How an approved call runs besides its classification: a sync must not change it during the wait (§5.3). */
+/** How an approved call runs besides its classification: a sync must not change it during the wait (ADR-0006). */
 const runRules = (op: OperationRow) =>
   canonicalJson({
     typedConfirmation: op.typedConfirmation,
@@ -252,7 +252,7 @@ export function createGateBindings(
       // The row that redacts the result: re-read after a human approval.
       let resultRules = operation;
 
-      // 2. Attestation (design §5.2), for an operation this caller can reach.
+      // 2. Attestation (ADR-0003), for an operation this caller can reach.
       if (operation.attestationRequired) {
         const presented = (resolved.params as { best_practice_key?: unknown } | null)?.best_practice_key;
         if (
@@ -317,7 +317,7 @@ export function createGateBindings(
           preapproved = true;
           decision = 'auto-approved:level';
         } else if (!operation.locked && access.reachable && access.level === 'ask') {
-          // A session grant (§5.8) covers Ask, but never typed-confirmation ops nor locked ones.
+          // A session grant (ADR-0006) covers Ask, but never typed-confirmation ops nor locked ones.
           const grant = operation.typedConfirmation
             ? undefined
             : deps.grants?.active(rt.instanceId, principalKey(caller));
@@ -408,7 +408,7 @@ export function createGateBindings(
             mcpSessionId: caller.mcpSessionId,
             timeoutMs: rt.settings.approvalTimeoutMs,
             prompts: caller.prompts,
-            // In-session approval (§5.3) covers every Ask operation that is not locked, reads too.
+            // In-session approval (ADR-0006) covers every Ask operation that is not locked, reads too.
             formApprovals:
               rt.settings.formElicitationApprovals === 'ask' && !operation.locked && !operation.typedConfirmation,
             park,
@@ -450,7 +450,7 @@ export function createGateBindings(
               new BindingError('OPERATION_DISABLED', `${operation.key} was disabled while waiting for approval`),
             );
           }
-          // The human approved one classification and its run rules; a sync during the wait may change them (§5.3).
+          // The human approved one classification and its run rules; a sync during the wait may change them (ADR-0006).
           const opNow = deps.db.select().from(operations).where(eq(operations.id, operation.id)).get();
           if (
             !opNow ||

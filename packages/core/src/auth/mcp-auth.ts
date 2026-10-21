@@ -123,7 +123,7 @@ export function ownerLive(ctx: AppContext, identity: McpIdentity, instanceId: st
 }
 
 /** Whether the credential behind a principal still reaches the instance; external identities have no
- * credential to revoke. A parked execution checks this on each call (design §5.6). */
+ * credential to revoke. A parked execution checks this on each call (ADR-0006). */
 export function principalLive(ctx: AppContext, principal: string, instanceId: string): boolean {
   if (principal.startsWith('token:')) return ctx.tokens.liveFor(principal.slice('token:'.length), instanceId);
   if (principal.startsWith('grant:')) return ctx.oauth.grantLiveFor(principal.slice('grant:'.length), instanceId);

@@ -94,7 +94,7 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.json(await ctx.instances.syncNow(c.req.param('id')));
   });
 
-  // ── access groups & operations (design §5.2.1) ──
+  // ── access groups & operations (ADR-0004) ──
 
   app.get('/api/instances/:id/groups', (c) => {
     exists(c.req.param('id'));
@@ -195,7 +195,7 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
 
-  // ── session grants (design §5.8) ──
+  // ── session grants (ADR-0006) ──
 
   app.get('/api/instances/:id/session-grants', (c) => {
     exists(c.req.param('id'));

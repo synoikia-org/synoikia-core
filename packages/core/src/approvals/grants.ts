@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { writeAudit } from '../audit.js';
 import type { Db } from '../db/index.js';
 
-/** Session grants (design §5.8): an approver lets one client credential run Ask operations on one endpoint
+/** Session grants (ADR-0006): an approver lets one client credential run Ask operations on one endpoint
  * for a while, except locked and typed-confirmation ones. In memory only, so a restart ends them all. */
 
 export interface SessionGrant {

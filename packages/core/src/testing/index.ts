@@ -49,7 +49,7 @@ export interface HarnessApproval {
 export interface ExecuteOptions {
   /** Decides each approval; without it, or if it throws or leaves one open, the approval is denied. */
   onApproval?: (approval: HarnessApproval) => void | Promise<void>;
-  /** Without `onApproval`, act as a client with no prompts: the call parks (design §5.6). Decide it with
+  /** Without `onApproval`, act as a client with no prompts: the call parks (ADR-0006). Decide it with
    * `parkedApproval(result)`, then collect it with `resume`. */
   park?: boolean;
 }

@@ -3,7 +3,7 @@ import { z } from 'zod';
 /** Shapes a plugin returns over RPC; core validates every result against them (design §3.3). */
 
 /** Secrets in a result no key name gives away: the whole result, or fields named `keys` (any depth with
- * `deep`). Core masks them before anything else sees the result (design §5.5). */
+ * `deep`). Core masks them before anything else sees the result (ADR-0007). */
 export const SensitiveResultSchema = z.union([
   z.literal('whole'),
   z
@@ -21,7 +21,7 @@ export const OperationDescriptorSchema = z.object({
   displayName: z.string().optional(),
   /** Plugin-defined kind. `config` is reserved: its writes go through `prepareWrite` with `configTransform`. */
   kind: z.string().min(1),
-  /** Access group admins set levels on (design §5.2.1): a method namespace, OpenAPI tag or service domain. */
+  /** Access group admins set levels on (ADR-0004): a method namespace, OpenAPI tag or service domain. */
   group: z
     .string()
     .max(128)

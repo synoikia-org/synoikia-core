@@ -1,4 +1,4 @@
-/** The approval card (design §5.7): an MCP Apps view that hosts render for `execute` and `resume` results.
+/** The approval card (ADR-0006): an MCP Apps view that hosts render for `execute` and `resume` results.
  * It shows state, decides only in-session approvals, and opens the approval page. Static, no external origins. */
 
 export const APPROVAL_CARD_URI = 'ui://synoikia/approval';
@@ -147,7 +147,7 @@ button.quiet { background: transparent; color: var(--no); border-color: var(--li
       state.status = s.state; state.decision = s.decision || s.state;
       render();
     }
-    // Ask the chat to continue only when no resume has waited for three polls in a row (§5.7).
+    // Ask the chat to continue only when no resume has waited for three polls in a row (ADR-0006).
     idle = s.resumeWaiting ? 0 : idle + 1;
     if (idle < 3) return;
     stop();

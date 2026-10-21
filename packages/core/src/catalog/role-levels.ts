@@ -19,7 +19,7 @@ import type { AccessCaps, AccessLevel, AccessPrincipal, LevelLayer } from '../ga
 import { accessInput, describeOf } from './groups.js';
 import type { Actor } from './groups.js';
 
-/** Role maximum levels and users' own levels (design §5.2.1, §6.4), on top of the endpoint's levels. */
+/** Role maximum levels and users' own levels (ADR-0004, design §6.4), on top of the endpoint's levels. */
 
 type GroupRow = typeof operationGroups.$inferSelect;
 type OperationRow = typeof operations.$inferSelect;
