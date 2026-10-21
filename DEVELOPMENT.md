@@ -1,6 +1,6 @@
 # Developing Synoikia
 
-How to build, test and release Synoikia core. To contribute a change, also read [CONTRIBUTING.md](CONTRIBUTING.md). The software design description is in [`docs/design/`](docs/design/README.md).
+How to build, test and release Synoikia core. To contribute a change, also read [CONTRIBUTING.md](CONTRIBUTING.md). The design is in [`docs/adrs/`](docs/adrs/), [`docs/architecture/`](docs/architecture/README.md) and [`docs/reference.md`](docs/reference.md).
 
 ## Layout
 

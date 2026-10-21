@@ -211,6 +211,259 @@ An example `index.json` of a plugin repository (ADR-0013). `signature` is requir
 }
 ```
 
+## Topology
+
+The model views `containers` and `deployment` in [`architecture/`](architecture/README.md) show the container, the two listeners, the core process, the plugin children and the upstreams. ADR-0015 describes the listeners.
+
+## Data
+
+Core keeps all data in one SQLite file, `DATA_DIR/synoikia.sqlite` (default `/data`). It opens the file with better-sqlite3 in WAL mode. The schema is in `packages/core/src/db/schema.ts`. Drizzle generates the migrations in `packages/core/drizzle/`, and core applies them at start. JSON values are stored as `TEXT`. Timestamps are epoch milliseconds.
+
+### Tables
+
+**Identity and admin authentication**
+
+| Table         | Holds                                                                                                                                                                                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`       | `username` (unique), `password_hash`, `totp_secret_enc`, `totp_enabled`, `totp_last_step`, `recovery_codes_hash`, `oidc_issuer`, `oidc_subject`, `last_login_at`, `disabled`, `role_id`, `registered_via` (`oidc`, `external`, `signup`, or NULL when an admin made the user) |
+| `roles`       | `name` (unique), `built_in` (the Admin role, id `admin`), `can_see_other_endpoints`                                                                                                                                                                                           |
+| `sessions`    | `id_hash` (key), `user_id`, `kind` (`admin`, `oauth_ui`, `approval_ui`), `last_seen_at`, `expires_at`, `ip`, `user_agent`                                                                                                                                                     |
+| `settings`    | `key`, `value` (JSON): authentication defaults, rate limits, flags                                                                                                                                                                                                            |
+| `oidc_config` | One row: `issuer`, `client_id`, `client_secret_enc`, `scopes`, `allow_policy`, `auto_provision`, `enabled`                                                                                                                                                                    |
+
+**Plugins**
+
+| Table              | Holds                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugin_repos`     | `url` (unique), `name`, `signing_mode` (`signed`, `unsigned`), `public_key`, `key_fingerprint`, `key_status` (`ok`, `key_changed`), `index_cache`, `last_fetched_at`, `last_fetch_error`                                                                                                                                                                                                                                    |
+| `plugins`          | `plugin_id` (unique: one installed version for each id), `version`, `repo_id`, `path`, `sha256`, `signature_verified`, `manifest`, `status` (`ok`, `invalid`, `incompatible`), `status_error`, `instructions` (text of the instructions file, ADR-0011), `enabled`, `manual` (uploaded build, ADR-0013)                                                                                                                     |
+| `plugin_instances` | `plugin_id`, `slug` (unique), `display_name`, `enabled`, `config`, `secrets_enc`, `auth_methods` (JSON list of client auth methods, or NULL for all enabled methods), `settings` (approval timeout, rate limits, sandbox limits), `status` (`stopped`, `starting`, `ready`, `error`), `status_error`, `upstream_version`, `source_ref`, `last_synced_at`, `last_sync_status`, `catalog_plugin_version` (Maintenance, below) |
+
+**Catalog** (for each instance)
+
+| Table                     | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation_groups`        | `instance_id`, `key`, `label`, `level` (`none`, `read`, `ask`, `write`), `level_changed_at`, `level_changed_by`, `first_seen_at`, `stale`                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `operation_group_aliases` | `instance_id`, `plugin_group`, `group_key`: the merges of the admin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `operations`              | `instance_id`, `key`, `display_name`, `kind`, `tag`, `classification` (`read`, `write`: locked means write), `classification_source` (`locked`, `inferred`), `inferred_classification`, `inferred_reason`, `plugin_group`, `group_id`, `locked`, `level_override` (NULL: follows the group), `write_acknowledged`, `acknowledged_at`, `acknowledged_by`, `typed_confirmation`, `attestation_required`, `attestation_waived`, `needs_review`, `match_profile`, `params_schema`, `sensitive_params`, `sensitive_result`, `docs`, `first_seen_at`, `last_seen_at`, `stale` |
+| `registry_entries`        | `instance_id`, `kind`, `ext_id`, `name`, `parent_ext_id`, `scopes`, `attrs`, `stale`, `last_synced_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `guides`                  | `instance_id`, `operation_id`, `version`, `content`, `fetched_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**Gate**
+
+| Table                | Holds                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pre_approval_rules` | `instance_id`, `operation_id`, `match`, `rate_limit`, `window_seconds`, `expires_at`, `reason` (required), `enabled`, `created_by`, `owner_user_id` (NULL: an admin rule), `updated_at`, `last_triggered_at`, `strict_miss_at`                                                                                                |
+| `pre_approval_hits`  | `rule_id`, `occurred_at`                                                                                                                                                                                                                                                                                                      |
+| `pending_approvals`  | `instance_id`, `operation_id`, `params_display` (redacted), `params_hash`, `resolved_targets`, `summary`, `confirm_literal`, `diff`, `expected_hash`, `client_kind`, `client_id`, `mcp_session_id`, `requested_at`, `expires_at`, `status`, `decided_by`, `decided_via` (`elicitation`, `url`), `decided_at`, `owner_user_id` |
+| `approval_links`     | `token_hash` (key), `approval_id`, `action`, `expires_at`, `used_at`                                                                                                                                                                                                                                                          |
+| `audit_log`          | `at`, `kind` (`call`, `search`, `config`, `auth`, `plugin`), `instance_id`, `operation_key`, `classification`, `decision`, `actor_kind` (`mcp_client`, `user`, `system`), `actor_id`, `decided_by`, `decided_via`, `params` (redacted), `resolved_targets`, `result_status`, `duration_ms`, `detail`                          |
+
+The `decision` of a call is one of: `auto-executed`, `auto-approved:level`, `auto-approved:rule:<id>`, `human-approved`, `denied`, `timed-out`, `rejected:<reason>`, `error:<code>`.
+
+The `auth` event `user_deleted` keeps the `user_id`, `username` and `registered_via` of a deleted user in `detail` (ADR-0008). The audit log reads take the user name from it for the events of that user, with `actorDeleted` true. The CSV export has the same column.
+
+**Roles** (ADR-0010)
+
+| Table            | Holds                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `role_instances` | `role_id`, `instance_id`: the endpoints of a role, with `can_set_own_levels`, `can_manage_own_rules`, `can_see_status` |
+| `role_levels`    | `role_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`, `changed_by`: role maximums             |
+| `user_levels`    | `user_id`, `instance_id`, `group_id` or `operation_id`, `level`, `changed_at`: own levels                              |
+
+**MCP client authentication**
+
+| Table           | Holds                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `mcp_tokens`    | `name`, `token_hash` (unique), `scope`, `access` (`read`, `write`), `created_by`, `expires_at`, `last_used_at`, `revoked_at` |
+| `oauth_clients` | `client_id` (unique), `client_secret_hash`, `name`, `redirect_uris`, `registered_via` (`dcr`, `admin`), `revoked_at`         |
+| `oauth_grants`  | `client_id`, `user_id`, `resources`, `instance_ids`, `access`, `revoked_at`                                                  |
+| `oauth_codes`   | `code_hash` (key), `grant_id`, `code_challenge`, `redirect_uri`, `resources`, `expires_at`, `used_at`                        |
+| `oauth_tokens`  | `token_hash` (key), `grant_id`, `kind` (`access`, `refresh`), `family_id`, `resources`, `expires_at`, `revoked_at`           |
+
+**Notifications**
+
+| Table               | Holds                                                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `notifier_channels` | `kind` (`ntfy`, `webhook`), `name`, `config`, `secrets_enc`, `events`, `instance_filter`, `enabled`, `last_sent_at`, `last_error` |
+
+### Stored JSON from an older release
+
+Core reads stored JSON settings (global and for each instance) in a lenient mode. If the current schema refuses a field, core uses its default and logs a warning. At start, core removes the refused fields from the stored JSON once. It keeps valid fields as they are, so new defaults apply to fields that nobody set. Discovery validates plugin manifests again at each start. Core marks a plugin with a manifest that is no longer valid as unusable, and its endpoints return 503.
+
+Feature files: `@id:stored-settings-upgrade`, `@id:upgrades`.
+
+## Admin portal
+
+The admin portal is a Vue 3 single-page app (Vite, vue-router). The Admin listener serves it as static files. Its visual style uses the Synoikia brand, in a light and a dark theme. Terracotta marks the one primary action of a page. The fonts are Fraunces for the word mark and IBM Plex Sans and Mono for all other text.
+
+| Concern       | Design                                                                                                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server data   | `@tanstack/vue-query`. Pages read and change Admin API data through shared composables. A sign-out or a change of user clears the cached data.                                                                                                                      |
+| Client state  | Two Pinia setup stores: the sign-in session, and the `/api/events` stream. An event makes the queries of its data stale.                                                                                                                                            |
+| Confirmations | `ModalDialog`, also through the shared confirm and prompt dialog. The portal does not use the native browser dialogs.                                                                                                                                               |
+| Accessibility | A skip link to the page content. On a route change, the portal moves focus to the content, sets the page title and announces it. One polite live region announces short messages, for example "Copied". The arrow keys, Home and End operate tabs and radio groups. |
+
+### Navigation
+
+```
+┌ Sidebar ──────────────────┐
+│ Synoikia                  │
+│ Overview                  │  all endpoints
+│ ENDPOINTS                 │
+│ ▾ /acme      ● Ready      │  open when selected
+│     Connection            │
+│     Access                │  access levels (ADR-0004)
+│     Pre-Approval Rules    │
+│     Settings              │
+│ ▸ /other     ● Error      │
+│ + New endpoint            │
+│ Plugins                   │
+│ Clients & Tokens          │
+│ Settings                  │
+│ Audit Log                 │  all instances
+│ ───────────────────────── │
+│ My profile                │
+│ admin · Sign out          │
+└───────────────────────────┘
+```
+
+The sidebar above is the one of an admin. A user with another role (ADR-0010) sees only "My endpoints", the endpoints of the role, and "My profile". "My profile" and the user name in the sidebar footer open `/profile` for every role. The portal sends a user with another role from an admin page, and from all Settings tabs, to "My endpoints". The Admin API refuses the admin routes anyway (Admin API, below).
+
+### Pages
+
+Each page reads and changes data only through the Admin API (Admin API, below). The Admin API decides who can do what. The portal only hides what a role cannot use.
+
+| Page                   | Content                                                                                                                                             | Feature files                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Sign in**            | Password, the TOTP step, OIDC, lockout messages, and the sign-up form while it is on (ADR-0010).                                                    | `@id:sign-in`                                                 |
+| **Setup**              | Only while there are no users: the first admin.                                                                                                     | `@id:sign-in`                                                 |
+| **My endpoints**       | For every user: the endpoints of the role, their operations and the level in force. Personal levels and own rules as the switches allow (ADR-0010). | `@id:portal-my-instances`                                     |
+| **Overview**           | Admin only. A card for each instance, plugin child and notifier health, and how to connect a client.                                                | `@id:portal-shell`                                            |
+| **New endpoint**       | Plugin, slug, display name, client auth methods, in-session approval (ADR-0006), and the connection form (ADR-0018).                                | `@id:portal-instances`                                        |
+| **Connection**         | The connection form (ADR-0018), Test connection, the status and the last sync.                                                                      | `@id:portal-instances`                                        |
+| **Access**             | The levels of the endpoint (ADR-0004), or the role maximums of another role.                                                                        | `@id:portal-instances`, `@id:portal-roles`                    |
+| **Pre-Approval Rules** | The rules of the endpoint (ADR-0003). Locked operations are not in the picker.                                                                      | `@id:portal-instances`                                        |
+| **Endpoint Settings**  | The settings of the instance: client auth methods, approvals, session grants (ADR-0006), limits, extra redaction keys, and delete.                  | `@id:portal-instances`                                        |
+| **Audit Log**          | All instances, with filters and CSV export.                                                                                                         | `@id:portal-audit`                                            |
+| **Plugins**            | Installed plugins, install from file (ADR-0013), available plugins and repositories (ADR-0013).                                                     | `@id:portal-plugins`                                          |
+| **Clients & Tokens**   | Bearer tokens, OAuth clients and OAuth grants (ADR-0009).                                                                                           | `@id:portal-tokens`                                           |
+| **Settings**           | Admin only. Six tabs: Client auth, User auth, Users, Roles, Notifications and Server settings.                                                      | `@id:portal-settings`, `@id:portal-users`, `@id:portal-roles` |
+| **My profile**         | Every user, at `/profile`. Own bearer tokens and OAuth grants, password, TOTP and new recovery codes, OIDC link, theme, and approval browsers.      | `@id:portal-profile`                                          |
+
+Keyboard and screen reader use: `@id:portal-accessibility`.
+
+### Admin API
+
+All routes are on the Admin listener and return JSON. `/api/*` routes need a session cookie. Routes that change state need the CSRF token.
+
+Only an admin can use a route (ADR-0010), with these exceptions: `/api/session`, `/api/setup`, `/api/profile/*` and `/api/me/*`. Core refuses all other routes with 403 for a user with another role. A new route is therefore admin-only. The `/api/me/*` routes check the switches of the role on the endpoint, and return 404 for an endpoint that is not in the role.
+
+```
+POST   /auth/login | /auth/totp | /auth/logout | /auth/register (sign-up form, ADR-0010)
+GET    /auth/oidc/start | /auth/oidc/callback | /auth/oidc/link
+GET    /api/session              POST /api/setup (only while there are no users)
+GET    /api/overview             GET  /api/events (SSE: instance status, sync progress, lockouts)
+GET    /api/profile              POST /api/profile/password | /totp/begin | /totp/confirm | /totp/disable | /oidc/unlink
+POST   /api/profile/totp/recovery-codes {code}   (new recovery codes, ADR-0008)
+GET/POST /api/users              PATCH /api/users/:id         POST /api/users/:id/reset-totp
+GET    /api/settings             PUT  /api/settings/:section   PUT /api/settings/oidc
+GET    /api/settings/mcp/clients-seen (client names seen at initialize, @id:client-policy)
+GET    /api/plugins              PATCH /api/plugins/:id {enabled}   DELETE /api/plugins/:id
+POST   /api/plugins/install {repoId, pluginId, version}    POST /api/plugins/rescan
+POST   /api/plugins/uploads (raw tarball, ADR-0013)   POST /api/plugins/uploads/:uploadId/install
+POST   /api/plugins/:id/revert
+GET/POST /api/plugin-repos       DELETE /api/plugin-repos/:id
+POST   /api/plugin-repos/:id/refresh | /confirm-key {publicKey}     GET /api/plugin-repos/available
+GET/POST /api/instances          GET/PATCH/DELETE /api/instances/:id
+GET/PUT  /api/instances/:id/connection     POST /api/instances/:id/connection/test
+POST   /api/instances/:id/sync
+GET    /api/instances/:id/groups
+PATCH  /api/instances/:id/groups/:key {level?, label?, acknowledge?}
+         (level write needs acknowledge = the exact list of writes; 409 if not current)
+POST   /api/instances/:id/groups/merge {from, into, label?}
+POST   /api/instances/:id/groups/bulk-level {level, confirm?, acknowledge?}
+         (write needs confirm = the slug and the acknowledge list; 409 if not current)
+GET    /api/instances/:id/operations?group=&q=&reason=
+PATCH  /api/instances/:id/operations/:opId {level? (null = follow the group), acknowledged?, attestationRequired?}
+         (409 for level write on a locked operation)
+GET    /api/instances/:id/registry          GET /api/instances/:id/options/:source
+GET/POST /api/instances/:id/rules           PATCH/DELETE /api/instances/:id/rules/:ruleId (409 on a locked operation)
+GET    /api/audit                           GET /api/audit/export.csv
+GET/POST/DELETE /api/tokens {name, scope, access, expiresAt}
+GET/POST/DELETE /api/oauth/clients          GET/DELETE /api/oauth/grants
+GET/POST/PATCH/DELETE /api/notifiers        POST /api/notifiers/:id/test
+GET    /api/roles  → [{…, endpoints: [{instanceId, canSetOwnLevels, canManageOwnRules, canSeeStatus}]}]
+POST   /api/roles                   PATCH/DELETE /api/roles/:id        PUT /api/roles/:id/instances {instanceIds}
+PATCH  /api/roles/:id/endpoints/:instanceId {canSetOwnLevels?, canManageOwnRules?, canSeeStatus?}
+GET    /api/roles/:id/endpoints/:instanceId/access
+PUT    /api/roles/:id/endpoints/:instanceId/groups/:key | /operations/:opId {level (null = not set)}
+POST   /api/roles/:id/endpoints/:instanceId/bulk-level {level}
+
+Every user:
+GET    /api/me/endpoints  → {assigned, unassigned}   GET /api/me/endpoints/:id/access
+GET    /api/me/endpoints/:id/about         (an unassigned endpoint, with "See other endpoints"; else 404)
+PUT    /api/me/endpoints/:id/groups/:key | /operations/:opId {level (null = follow the role)}   (Set personal levels)
+GET    /api/me/endpoints/:id/rule-form     GET/POST /api/me/endpoints/:id/rules
+GET    /api/me/endpoints/:id/options/:source   GET /api/me/endpoints/:id/registry?kind=
+PATCH/DELETE /api/me/endpoints/:id/rules/:ruleId                                             (Own pre-approval rules)
+GET/POST/DELETE /api/me/tokens      GET/DELETE /api/me/grants
+```
+
+Each route that changes state writes a `config` audit event with the values before and after, with secrets redacted. The "configuration changes" filter of the audit log is `kind=config`.
+
+Feature files: `@id:admin-api-basics`, `@id:audit-log`.
+
+## Maintenance
+
+The core scheduler keeps the catalog of each instance current. An in-process lock for each instance makes calls that start at the same time share one sync.
+
+**When a sync runs.**
+
+| Trigger                     | Rule                                                                                                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Each `search` and `execute` | If the catalog was never synced, or it came from another bundle version, the sync runs first and must succeed (see below).                                                  |
+| Session start               | If `last_synced_at` is older than `syncMaxAge` (default 1 hour), or `getUpstreamVersion()` is not `upstream_version`, the sync runs before the first `search` or `execute`. |
+| Open sessions               | Each 30 minutes, a fast version check. If the version changed, the sync runs before the next call.                                                                          |
+| Each day                    | A sync for each instance, at a different time for each.                                                                                                                     |
+| Admin                       | "Sync now", or `POST /api/instances/:id/sync`.                                                                                                                              |
+| Plugin                      | The `catalogChanged` notification starts a sync after a short delay.                                                                                                        |
+
+**Bundle version.** Core records on the instance the bundle version that the catalog came from (`catalog_plugin_version`). Core reads this version from the `manifest.json` of the bundle just before each fork (ADR-0014).
+
+- If the version of the running child is not the recorded one, the sync must succeed first. This happens after an install, an update, or files copied by hand and a restart.
+- Until the sync succeeds, the endpoint answers `PLUGIN_UNAVAILABLE`. It never serves a catalog of another bundle, with its locks and its `sensitiveResult`.
+- The gate also checks this version for each call (ADR-0003).
+
+**What a sync does.**
+
+- Core maps the `plugin_group` of each operation through `operation_group_aliases`.
+- Core creates missing groups at `ask`.
+- Core marks groups without operations as `stale` and keeps their level, in case they come back.
+- Core marks operations that are missing as `stale`. It never deletes them.
+- New writes start without acknowledgement. At level `write` they ask until the admin acknowledges them (ADR-0004).
+- `syncRegistry` runs with each sync and after `catalogChanged`. `resolveTargets` uses the live view of the plugin, so scope membership is as it is at the time of the call.
+
+**Sync failure.**
+
+- Core continues to serve the last catalog. It sets `last_sync_status = error` and sends `sync.failed`.
+- "Sync now" answers `502 sync_failed` with the redacted reason that `last_sync_status` shows. A plugin that is not running or does not answer in time gives `503 plugin_unavailable`.
+- An exception: a bundle version that is not the recorded one (see above).
+- An instance without any synced catalog stays in `error`, and its endpoint returns 503.
+
+Feature files: `@id:catalog-sync-schedule`, `@id:catalog-sync`, `@id:catalog-access-on-sync`.
+
+**Repository index refresh.** Each day (ADR-0013). It shows available updates and key changes. It never installs anything. Feature files: `@id:plugin-repositories`.
+
+**Housekeeping** (each hour, idempotent):
+
+- Delete `pre_approval_hits` older than the largest rule window.
+- Delete expired sessions, OAuth codes, OAuth tokens and approval-page tokens.
+- Delete decided approvals older than 7 days. The audit log keeps their record.
+- Delete `audit_log` rows older than `audit.retentionDays`. The default is 90 days, and the minimum is 7. When the admin clears it, core keeps the audit log forever. Core audits a change to this setting and each purge.
+
+Feature files: `@id:housekeeping`.
+
 ## Environment
 
 `.env.example` lists every variable: `DATA_DIR`, `MASTER_KEY`, `MCP_HOST`, `MCP_PORT`, `ADMIN_HOST`, `ADMIN_PORT`, `PUBLIC_MCP_URL`, `PUBLIC_ADMIN_URL`, `MCP_ALLOWED_HOSTS`, `TRUST_PROXY`, `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD`, `ADMIN_FORCE_LOCAL_LOGIN` and `LOG_LEVEL`.
