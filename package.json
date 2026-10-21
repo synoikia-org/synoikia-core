@@ -24,6 +24,13 @@
   },
   "synoikia": {
     "workflow": {
+      "prose": [
+        "*.md",
+        "docs/**/*.md",
+        "packages/**/*.md",
+        "features/**/*.feature",
+        ".claude/**/*.md"
+      ],
       "securityPaths": [
         "packages/core/src/gate/**",
         "packages/core/src/sandbox/**",
