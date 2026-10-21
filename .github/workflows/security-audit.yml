@@ -1,0 +1,25 @@
+name: security-audit
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions: {}
+
+jobs:
+  recorded:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: The PR records its security audit, or why none was needed
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          value=$(printf '%s\n' "$PR_BODY" | tr -d '\r' | awk 'tolower($0) ~ /^[[:space:]>*_-]*security audit:/ { sub(/^[^:]*:[*_]*[[:space:]]*/, ""); print; exit }')
+          reason=$(printf '%s' "$value" | sed -E 's/^[Nn][Oo][Nn][Ee][[:space:]:–—-]*//')
+          case "$value" in *"<"*">"*) reason= ;; esac
+          [ "${#reason}" -ge 10 ] && exit 0
+          echo "The PR description records no security audit, or only a placeholder. Add a line of its own:"
+          echo "  Security audit: <the boundary audited, and what the audit found>"
+          echo "  Security audit: none — <why this slice crosses no trust boundary>"
+          exit 1
