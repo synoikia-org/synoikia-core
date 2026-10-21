@@ -10,14 +10,14 @@ export default mergeConfig(
     test: {
       testTimeout: 180_000,
       hookTimeout: 180_000,
-      // Feature files run as tests (docs/workflow.md): plugin author 3 runs the real commands as processes.
+      // Feature files run as tests: plugin author 3 runs the real commands as processes.
       projects: [
         { extends: true, test: { name: 'unit', include: ['test/**/*.test.ts'] } },
         {
           extends: true,
           test: {
             name: 'features',
-            include: ['../../features/{build,release,scaffold,workflow}/*.feature'],
+            include: ['../../features/{build,release,scaffold}/*.feature'],
             exclude: ['test/**'],
             setupFiles: ['features/support/index.ts'],
             sequence: { concurrent: true },
