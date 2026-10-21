@@ -25,10 +25,10 @@ import type { PublicRole } from './roles.js';
 import { randomToken, sha256 } from './tokens.js';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './totp.js';
 
-/** Portal accounts (design §6.1): argon2id passwords, optional TOTP with recovery codes and OIDC link,
- * and one role each (design §6.4). */
+/** Portal accounts (ADR-0008): argon2id passwords, optional TOTP with recovery codes and OIDC link,
+ * and one role each (ADR-0010). */
 
-// argon2id, m = 64 MiB, t = 3, p = 1 (design §6.1). @node-rs/argon2 defaults to argon2id.
+// argon2id, m = 64 MiB, t = 3, p = 1 (ADR-0008). @node-rs/argon2 defaults to argon2id.
 export const PASSWORD_HASH = { memoryCost: 65536, timeCost: 3, parallelism: 1 };
 export type PasswordHashCost = typeof PASSWORD_HASH;
 const USERNAME = /^[a-zA-Z0-9._@:-]{2,64}$/;
@@ -48,7 +48,7 @@ export interface PublicUser {
   role: PublicRole;
 }
 
-/** How a user came to exist without an admin creating them (design §6.5). */
+/** How a user came to exist without an admin creating them (ADR-0010). */
 export type RegistrationSource = 'oidc' | 'external' | 'signup';
 
 const toPublicUser = (u: UserRow, role: PublicRole): PublicUser => ({
@@ -134,7 +134,7 @@ export class UserService {
     return this.db.select().from(users).where(eq(users.username, username)).get();
   }
 
-  /** The user a proxy-named identity is (design §6.2): only one an admin made or that `external` mode
+  /** The user a proxy-named identity is (ADR-0009): only one an admin made or that `external` mode
    * registered, so nobody can claim a proxy identity by signing up or through OIDC first. */
   byExternalIdentity(identity: string): UserRow | undefined {
     const found = this.byUsernameInsensitive(identity);
@@ -174,7 +174,7 @@ export class UserService {
         'Usernames are 2–64 letters, digits, dots, dashes, underscores or @',
       );
     }
-    // Unique regardless of case: proxy identities match names that way (design §6.2).
+    // Unique regardless of case: proxy identities match names that way (ADR-0009).
     if (this.byUsernameInsensitive(username)) throw new ConflictError('username_taken', 'That username is taken');
     if (input.password !== undefined) checkPasswordPolicy(input.password);
     const row = {
@@ -210,7 +210,7 @@ export class UserService {
     return this.toPublic(this.get(row.id));
   }
 
-  /** Self-registration (design §6.5): only while an admin has set a default role, which the user gets. */
+  /** Self-registration (ADR-0010): only while an admin has set a default role, which the user gets. */
   async register(input: { username: string; password?: string }, source: RegistrationSource): Promise<PublicUser> {
     const roleId = getSettings(this.db, 'security').defaultRoleId;
     if (!roleId) throw new ConflictError('registration_closed', 'This server does not accept new accounts');
@@ -258,7 +258,7 @@ export class UserService {
     });
   }
 
-  /** First-run setup: only while no users exist (design §6.1). */
+  /** First-run setup: only while no users exist (ADR-0008). */
   async setupFirstUser(username: string, password: string): Promise<PublicUser> {
     if (this.count() > 0) throw new ConflictError('setup_done', 'Setup has already been completed');
     return this.create({ username, password }, {}, { onlyIfFirst: true });
@@ -335,7 +335,7 @@ export class UserService {
     return user;
   }
 
-  /** Hard delete (design §6.1): the caller revokes credentials and cancels approvals first. History stays. */
+  /** Hard delete (ADR-0008): the caller revokes credentials and cancels approvals first. History stays. */
   delete(userId: string, actor: { userId?: string } = {}) {
     this.db.transaction((tx) => {
       const user = this.assertDeletable(userId);
@@ -428,7 +428,7 @@ export class UserService {
   }
 
   /** Replaces every recovery code. Needs a current code from the app, so a recovery code cannot renew the
-   * set. Null on a wrong code (design §6.1). */
+   * set. Null on a wrong code (ADR-0008). */
   rotateRecoveryCodes(userId: string, code: string): string[] | null {
     const user = this.get(userId);
     if (!user.totpEnabled) throw new ConflictError('totp_disabled', 'Two-factor authentication is off');
@@ -544,7 +544,7 @@ export class UserService {
     this.unlinkOidc(u.id);
   }
 
-  /** While local login is off, refuse any change that would leave no enabled user linked to SSO (§6.1). */
+  /** While local login is off, refuse any change that would leave no enabled user linked to SSO (ADR-0008). */
   assertSsoRemains(change: { oidcOff?: boolean; losingUser?: string }) {
     if (!getSettings(this.db, 'security').disableLocalLogin) return;
     if (change.oidcOff || !this.hasOidcLinkedUser(change.losingUser)) {
@@ -563,7 +563,7 @@ export class UserService {
       .some((u) => !!u.oidcSubject && !u.disabled && u.id !== except);
   }
 
-  // ── the user's own endpoints (design §6.4) ──
+  // ── the user's own endpoints (ADR-0010) ──
 
   /** An endpoint of the user's role; any other answers 404, as if it didn't exist. */
   ownEndpoint(u: UserRow, instanceId: string): string {
@@ -575,7 +575,7 @@ export class UserService {
     return roleHasInstance(this.db, u.roleId, instanceId);
   }
 
-  /** The role's switch on one of its endpoints (design §6.4). */
+  /** The role's switch on one of its endpoints (ADR-0010). */
   assertAllowed(u: UserRow, instanceId: string, cap: 'canSetOwnLevels' | 'canManageOwnRules') {
     if (!roleEndpointSwitches(this.db, u.roleId, instanceId)?.[cap])
       throw new ForbiddenError('forbidden', 'Your role does not allow this on this endpoint');

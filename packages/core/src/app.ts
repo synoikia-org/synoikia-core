@@ -50,7 +50,7 @@ export interface AppContext {
   oidc: OidcService;
   tokens: McpTokenService;
   oauth: OAuthService;
-  /** Client names seen at MCP `initialize` (design §6.6). */
+  /** Client names seen at MCP `initialize` (@id:client-policy). */
   seenClients: SeenClients;
   instances: InstanceManager;
   approvals: ApprovalService;
@@ -248,7 +248,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
       db.$client.close();
     },
   };
-  // Grants from before instance binding (design §6.2) get the ids their slugs name today.
+  // Grants from before instance binding (ADR-0009) get the ids their slugs name today.
   ctx.oauth.backfillInstanceIds(instances.list());
   return ctx;
 }

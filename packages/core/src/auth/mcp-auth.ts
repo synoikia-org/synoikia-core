@@ -14,7 +14,7 @@ import { externalProvider } from './external.js';
 import { claimedIssuer } from './external-cloudflare.js';
 import { requestOrigin } from '../http/common.js';
 
-/** Authentication for `/{slug}` (design §6.2): the endpoint's client auth methods narrowed to the enabled
+/** Authentication for `/{slug}` (ADR-0009): the endpoint's client auth methods narrowed to the enabled
  * ones; every accepted request yields an identity recorded on each audited call. */
 
 export interface McpIdentity {
@@ -23,10 +23,10 @@ export interface McpIdentity {
   principal: string;
   /** Human-readable, shown in audit and approvals: `token:Claude Code`, `oauth:Claude for admin`. */
   label: string;
-  /** Ceiling on what this principal can reach (design §6.3): from OAuth consent or the bearer token;
+  /** Ceiling on what this principal can reach (ADR-0009): from OAuth consent or the bearer token;
    * `external` is not limited here. */
   access: AccessCeiling;
-  /** The user who owns the credential, or whom the external provider named; their role decides the reach (§6.4). */
+  /** The user who owns the credential, or whom the external provider named; their role decides the reach (ADR-0010). */
   userId: string;
   roleId: string;
 }
@@ -51,7 +51,7 @@ export function publicMcpBase(ctx: AppContext, c: Context): string {
 
 export const resourceUrl = (base: string, slug: string) => canonicalResource(`${base}/${slug}`);
 
-/** The endpoints that accept OAuth (design §6.2), with their resource URLs under `base`. */
+/** The endpoints that accept OAuth (ADR-0009), with their resource URLs under `base`. */
 export function oauthEndpoints(ctx: AppContext, base: string) {
   return ctx.instances
     .list()
@@ -78,7 +78,7 @@ const refuse = (status: 401 | 403, error: string, message: string, detail: strin
   detail,
 });
 
-/** The credential's owner must be enabled and their role must have this endpoint (design §6.4). */
+/** The credential's owner must be enabled and their role must have this endpoint (ADR-0010). */
 function owned(ctx: AppContext, base: Unowned, userId: string | null | undefined, instanceId: string): McpAuthResult {
   const user = userId ? ctx.db.select().from(users).where(eq(users.id, userId)).get() : undefined;
   if (!user || user.disabled)
@@ -98,7 +98,7 @@ function owned(ctx: AppContext, base: Unowned, userId: string | null | undefined
   return { ok: true, identity: { ...base, userId: user.id, roleId: user.roleId } };
 }
 
-/** A user named by the external provider: matched by username, else registered with the default role (design §6.5). */
+/** A user named by the external provider: matched by username, else registered with the default role (ADR-0010). */
 async function externalUser(ctx: AppContext, name: string): Promise<string | undefined> {
   const found = ctx.users.byExternalIdentity(name);
   if (found) return found.id;
@@ -138,14 +138,14 @@ const unknownUser = (base: Unowned) =>
     `${base.label}: no user has that username and self-registration is off or the name is not a valid username`,
   );
 
-/** The configured external provider names the caller, who must match an enabled user (design §6.2, §6.5). */
+/** The configured external provider names the caller, who must match an enabled user (ADR-0009, ADR-0010). */
 async function authenticateExternal(ctx: AppContext, c: Context, instanceId: string): Promise<McpAuthResult> {
   const settings = getSettings(ctx.db, 'mcp');
   const provider = externalProvider(settings);
   if (!provider.configured(settings))
     return refuse(401, 'unauthorized', 'Authentication required', `${provider.name} is not configured`);
   const found = await provider.identify(c.req.raw.headers, settings, ctx.externalKeys);
-  // Every call belongs to a user (design §6.4): a caller the provider didn't name is refused.
+  // Every call belongs to a user (ADR-0010): a caller the provider didn't name is refused.
   if (!found.ok) return refuse(401, 'unauthorized', `${provider.name} did not identify the caller`, found.reason);
   const who = found.identity;
   const base: Unowned = {

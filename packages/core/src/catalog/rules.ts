@@ -94,7 +94,7 @@ function firesForSomeRole(db: Db, instanceId: string, key: string): boolean {
 }
 
 function describe(db: Db, instanceId: string, rule: RuleRow, op: OperationRow, owner?: UserRow) {
-  // An own rule fires only where its owner's levels put the operation at Ask (design §6.4).
+  // An own rule fires only where its owner's levels put the operation at Ask (ADR-0010).
   const principal: AccessPrincipal = owner ? { ceiling: 'write', roleId: owner.roleId, userId: owner.id } : FULL_ACCESS;
   const access = resolveAccess(db, instanceId, op.key, principal);
   const inert = !rule.enabled
@@ -241,7 +241,7 @@ export function deleteRule(
   });
 }
 
-// ── own rules (design §6.4) ──
+// ── own rules (ADR-0010) ──
 
 /** A user writing their own rules, with the operations they can reach. */
 export interface RuleOwner {

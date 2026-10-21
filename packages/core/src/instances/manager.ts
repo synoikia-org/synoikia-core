@@ -39,7 +39,7 @@ import type { InstanceSettings } from './settings.js';
 export const AUTH_METHODS = ['bearer', 'oauth', 'external'] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
 
-/** An endpoint's stored method list (design §6.2): null inherits every enabled method; anything unreadable
+/** An endpoint's stored method list (ADR-0009): null inherits every enabled method; anything unreadable
  * allows none. */
 export function storedAuthMethods(raw: unknown): AuthMethod[] | null {
   if (raw === null || raw === undefined) return null;
@@ -177,7 +177,7 @@ export class InstanceManager {
   }
 
   /** The role's endpoints at `mcpBase`, each with the role's switches on it and live status only where
-   * its switch shows it (design §6.4). */
+   * its switch shows it (ADR-0010). */
   listForRole(role: PublicRole, mcpBase: string) {
     return this.list().flatMap((i) => {
       const switches = roleEndpointSwitches(this.db, role.id, i.id);
@@ -208,7 +208,7 @@ export class InstanceManager {
     });
   }
 
-  /** Endpoints outside the role, by name only, when the role may see them (design §6.4). Admins have every one. */
+  /** Endpoints outside the role, by name only, when the role may see them (ADR-0010). Admins have every one. */
   listUnassigned(role: PublicRole) {
     if (role.isAdmin || !role.canSeeOtherEndpoints) return [];
     return this.db

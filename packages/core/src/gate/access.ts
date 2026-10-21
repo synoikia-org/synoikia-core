@@ -1,7 +1,7 @@
 /** Access levels (ADR-0004): an operation follows its group's level unless given its own, limited to
  * what its kind allows; locked ops open only with their own Ask, and a `read` ceiling never reaches a write. */
 
-/** The built-in Admin role's fixed id (design §6.4): its levels are the endpoint's own. */
+/** The built-in Admin role's fixed id (ADR-0010): its levels are the endpoint's own. */
 export const ADMIN_ROLE_ID = 'admin';
 
 export const ACCESS_LEVELS = ['none', 'read', 'ask', 'write'] as const;
@@ -40,7 +40,7 @@ export interface AccessGroup {
 
 export interface AccessPrincipal {
   ceiling: AccessCeiling;
-  /** The role of the user behind the credential (design §6.4). */
+  /** The role of the user behind the credential (ADR-0010). */
   roleId: string;
   userId?: string;
 }

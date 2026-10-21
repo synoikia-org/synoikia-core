@@ -1,6 +1,6 @@
 import type { Settings } from '../settings.js';
 
-/** MCP client policy (design §6.6): matches the self-declared `clientInfo.name` of `initialize`. */
+/** MCP client policy (@id:client-policy): matches the self-declared `clientInfo.name` of `initialize`. */
 
 export type ClientPolicy = Settings<'mcp'>['clientPolicy'];
 

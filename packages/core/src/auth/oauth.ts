@@ -8,7 +8,7 @@ import { oauthClients, oauthCodes, oauthGrants, oauthTokens, users } from '../db
 import { NotFoundError, ServiceError } from '../errors.js';
 import { randomToken, safeEqual, sha256 } from './tokens.js';
 
-/** Built-in OAuth 2.1 server (design §6.2): DCR, code + PKCE S256, resource indicators binding tokens to
+/** Built-in OAuth 2.1 server (ADR-0009): DCR, code + PKCE S256, resource indicators binding tokens to
  * endpoints, short opaque access tokens, rotating refresh tokens with reuse detection; secrets hashed. */
 
 export const ACCESS_PREFIX = 'syno_';

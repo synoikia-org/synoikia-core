@@ -19,7 +19,7 @@ import type { AccessCaps, AccessLevel, AccessPrincipal, LevelLayer } from '../ga
 import { accessInput, describeOf } from './groups.js';
 import type { Actor } from './groups.js';
 
-/** Role maximum levels and users' own levels (ADR-0004, design §6.4), on top of the endpoint's levels. */
+/** Role maximum levels and users' own levels (ADR-0004, ADR-0010), on top of the endpoint's levels. */
 
 type GroupRow = typeof operationGroups.$inferSelect;
 type OperationRow = typeof operations.$inferSelect;
@@ -67,7 +67,7 @@ export type EndpointSwitches = Pick<
 
 const ALL_ON: EndpointSwitches = { canSetOwnLevels: true, canManageOwnRules: true, canSeeStatus: true };
 
-/** A role's switches on one endpoint (design §6.4); null when the role lacks it. The Admin role has every one on. */
+/** A role's switches on one endpoint (ADR-0010); null when the role lacks it. The Admin role has every one on. */
 export function roleEndpointSwitches(db: DbLike, roleId: string, instanceId: string): EndpointSwitches | null {
   if (roleId === ADMIN_ROLE_ID) return ALL_ON;
   return (
@@ -175,7 +175,7 @@ export function levelView(
     const cap = caps?.(op);
     const roleMax = cap?.role ? capLevel(input, endpointLevel, cap.role) : cap ? 'none' : endpointLevel;
     const access = effectiveAccess(input, group, principal, cap);
-    // Closed by the user's own level alone: shown, so the user can open it again (§6.4).
+    // Closed by the user's own level alone: shown, so the user can open it again (ADR-0010).
     const ownClosed =
       !access.reachable && !!cap?.own && effectiveAccess(input, group, principal, { role: cap.role }).reachable;
     return {
@@ -333,7 +333,7 @@ export function setRoleBulkLevel(
   for (const g of groups) setRoleLevel(db, roleId, instanceId, { group: g.key }, level, opts);
 }
 
-/** A user's own level (design §6.4): only with the endpoint's switch, on the role's endpoints, and never
+/** A user's own level (ADR-0010): only with the endpoint's switch, on the role's endpoints, and never
  * above the role's maximum. */
 export function setOwnLevel(
   db: Db,

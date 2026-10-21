@@ -4,7 +4,7 @@ import { AUTH_METHOD_LABELS } from '../format';
 import { AUTH_METHODS } from '../types';
 import type { AuthMethod } from '../types';
 
-/** An endpoint's accepted client auth methods (design §6.2): null accepts every globally enabled method. */
+/** An endpoint's accepted client auth methods (ADR-0009): null accepts every globally enabled method. */
 const methods = defineModel<AuthMethod[] | null>({ required: true });
 const props = defineProps<{
   /** The globally enabled methods; undefined while the settings load. */

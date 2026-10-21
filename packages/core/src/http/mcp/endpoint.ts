@@ -46,7 +46,7 @@ interface Session {
   closed: AbortController;
   instanceId: string;
   principal: string;
-  /** The self-declared `clientInfo.name` of its `initialize` (design §6.6). */
+  /** The self-declared `clientInfo.name` of its `initialize` (@id:client-policy). */
   clientName?: string;
   lastSeen: number;
 }
@@ -539,7 +539,7 @@ export class McpEndpoints {
     });
   }
 
-  /** Applies the client policy (design §6.6); a refusal is logged and audited, and gets 403. */
+  /** Applies the client policy (@id:client-policy); a refusal is logged and audited, and gets 403. */
   private refuseClient(c: Context, slug: string, instanceId: string, identity: McpIdentity, name: string | undefined) {
     const { clientPolicy } = getSettings(this.ctx.db, 'mcp');
     if (clientAllowed(clientPolicy, name)) return undefined;

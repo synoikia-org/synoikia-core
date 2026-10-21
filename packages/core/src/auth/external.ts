@@ -2,7 +2,7 @@ import type { JWTVerifyGetKey } from 'jose';
 import type { Settings } from '../settings.js';
 import { cloudflareAccess } from './external-cloudflare.js';
 
-/** External client auth (design §6.2): a provider in front of the MCP port names the user behind a request.
+/** External client auth (ADR-0009): a provider in front of the MCP port names the user behind a request.
  * A new provider is one module here and one id in {@link EXTERNAL_PROVIDER_IDS}. */
 
 export const EXTERNAL_PROVIDER_IDS = ['cloudflare'] as const;

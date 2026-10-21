@@ -42,7 +42,7 @@ export const users = sqliteTable('users', {
   disabled: flag('disabled').notNull().default(false),
   /** References `roles`; SQLite can't add that constraint to an existing table, so RoleService keeps it. */
   roleId: text('role_id').notNull().default(ADMIN_ROLE_ID),
-  /** How the user came to exist without an admin (design §6.5); null: an admin or setup made it. */
+  /** How the user came to exist without an admin (ADR-0010); null: an admin or setup made it. */
   registeredVia: text('registered_via', { enum: ['oidc', 'external', 'signup'] }),
 });
 
@@ -127,7 +127,7 @@ export const pluginInstances = sqliteTable('plugin_instances', {
   enabled: flag('enabled').notNull().default(true),
   config: json('config').notNull().default({}),
   secretsEnc: blob('secrets_enc', { mode: 'buffer' }),
-  /** Client auth methods the endpoint accepts; NULL = every globally enabled method (design §6.2). */
+  /** Client auth methods the endpoint accepts; NULL = every globally enabled method (ADR-0009). */
   authMethods: json('auth_methods').$type<AuthMethod[]>(),
   settings: json('settings').notNull().default({}),
   status: text('status', { enum: ['stopped', 'starting', 'ready', 'error'] })
@@ -279,7 +279,7 @@ export const preApprovalRules = sqliteTable('pre_approval_rules', {
   reason: text('reason').notNull(),
   enabled: flag('enabled').notNull().default(true),
   createdBy: text('created_by').references(() => users.id),
-  /** Null: an admin rule for every caller. Set: applies only to this user's calls (design §6.4). */
+  /** Null: an admin rule for every caller. Set: applies only to this user's calls (ADR-0010). */
   ownerUserId: text('owner_user_id').references(() => users.id),
   createdAt: createdAt(),
   updatedAt: ts('updated_at'),
@@ -356,7 +356,7 @@ export const auditLog = sqliteTable(
   (t) => [index('audit_at_idx').on(t.at), index('audit_instance_at_idx').on(t.instanceId, t.at)],
 );
 
-// ── roles (design §6.4) ──────────────────────────────────────────────────────────────────────────
+// ── roles (ADR-0010) ──────────────────────────────────────────────────────────────────────────
 
 /** The endpoints a role has; outside them its users reach nothing. */
 export const roleInstances = sqliteTable(
@@ -460,9 +460,9 @@ export const oauthGrants = sqliteTable('oauth_grants', {
     .references(() => users.id, { onDelete: 'cascade' }),
   resources: json('resources').$type<string[]>().notNull(),
   /** Instance ids the consented resources named at consent; tokens are checked against these, not slugs
-   * (design §6.2). NULL only for grants from before this column. */
+   * (ADR-0009). NULL only for grants from before this column. */
   instanceIds: json('instance_ids').$type<string[]>(),
-  /** Chosen on the consent page (design §6.3); `read` hides and blocks every write. */
+  /** Chosen on the consent page (ADR-0009); `read` hides and blocks every write. */
   access: text('access', { enum: ['read', 'write'] })
     .notNull()
     .default('read'),

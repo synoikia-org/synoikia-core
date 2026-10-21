@@ -17,7 +17,7 @@ export function useRulesQuery(base: Base) {
   }));
 }
 
-/** The match fields and targets for a user's own rule editor (design §6.4). */
+/** The match fields and targets for a user's own rule editor (ADR-0010). */
 export function useRuleFormQuery(base: Base, enabled: MaybeRefOrGetter<boolean> = true) {
   return useQuery(() => ({
     queryKey: pathKey(`${toValue(base)}/rule-form`),

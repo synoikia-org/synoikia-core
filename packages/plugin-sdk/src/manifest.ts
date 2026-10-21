@@ -195,7 +195,7 @@ export const ManifestSchema = z
         });
       }
     }
-    // Rule pickers can be served to non-admins (core §6.4); `optionsFor` can't tell the two callers apart.
+    // Rule pickers can be served to non-admins (ADR-0010); `optionsFor` can't tell the two callers apart.
     const formSources = new Set(
       Object.values(m.connection.ui)
         .map((h) => h.optionsSource)

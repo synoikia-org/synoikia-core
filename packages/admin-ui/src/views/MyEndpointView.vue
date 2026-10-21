@@ -8,7 +8,7 @@ import { ago } from '../format';
 import AccessView from './instance/AccessView.vue';
 import RulesView from './instance/RulesView.vue';
 
-/** One endpoint as a user sees it (design §6.4): their operations and levels, read-only unless the role's
+/** One endpoint as a user sees it (ADR-0010): their operations and levels, read-only unless the role's
  * switch on this endpoint lets them set their own, and their own pre-approval rules where it allows them. */
 const route = useRoute();
 const id = computed(() => String(route.params.id));

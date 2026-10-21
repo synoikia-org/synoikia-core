@@ -1,6 +1,6 @@
 /** Admin API response shapes (design §8.4), mirrored from packages/core. */
 
-/** A client auth method on the MCP port (design §6.2). */
+/** A client auth method on the MCP port (ADR-0009). */
 export type AuthMethod = 'bearer' | 'oauth' | 'external';
 export const AUTH_METHODS: AuthMethod[] = ['bearer', 'oauth', 'external'];
 export type ExternalProvider = 'cloudflare';
@@ -15,7 +15,7 @@ export interface PublicRole {
   canSeeOtherEndpoints: boolean;
 }
 
-/** A role's switches on one of its endpoints (design §6.4). */
+/** A role's switches on one of its endpoints (ADR-0010). */
 export interface EndpointSwitches {
   canSetOwnLevels: boolean;
   canManageOwnRules: boolean;
@@ -261,7 +261,7 @@ export interface Rule {
   inert: string | null;
   /** Last time the conditions held but the call had parameters the rule doesn't accept. */
   strictMissAt: string | null;
-  /** A user's own rule (design §6.4); null for an admin rule. */
+  /** A user's own rule (ADR-0010); null for an admin rule. */
   owner?: { id: string; username: string } | null;
   /** On `/api/me`: whether the caller may change it. */
   editable?: boolean;
@@ -427,7 +427,7 @@ export interface Settings {
     approvalSessionIdleHours: number;
     approvalSessionAbsoluteDays: number;
     sessionAbsoluteHours: number;
-    /** Role of self-registered users; null turns self-registration off (design §6.5). */
+    /** Role of self-registered users; null turns self-registration off (ADR-0010). */
     defaultRoleId: string | null;
     localSignup: boolean;
   };
@@ -438,7 +438,7 @@ export interface Settings {
     cfAccess: { teamDomain: string; aud: string };
     accessTokenTtlMinutes: number;
     refreshTokenTtlDays: number;
-    /** Allowed or denied MCP clients by their self-declared name (design §6.6). */
+    /** Allowed or denied MCP clients by their self-declared name (@id:client-policy). */
     clientPolicy: { mode: ClientPolicyMode; names: string[] };
   };
   audit: { retentionDays: number | null };
@@ -502,7 +502,7 @@ export interface LevelView {
   }[];
 }
 
-/** `/api/me/endpoints`: the role's endpoints, and the others by name when the role may see them (design §6.4). */
+/** `/api/me/endpoints`: the role's endpoints, and the others by name when the role may see them (ADR-0010). */
 export interface MyEndpoints {
   assigned: MyEndpoint[];
   unassigned: UnassignedEndpoint[];

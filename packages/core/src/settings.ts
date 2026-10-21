@@ -42,7 +42,7 @@ const SETTINGS_SCHEMAS = {
         .max(24 * 7)
         .default(12),
       approvalSessionAbsoluteDays: z.number().int().min(1).max(30).default(7),
-      /** Role of self-registered users (design §6.5); null turns self-registration off. */
+      /** Role of self-registered users (ADR-0010); null turns self-registration off. */
       defaultRoleId: z.string().min(1).max(64).nullable().default(null),
       /** The "Create account" form on the sign-in page; needs a default role. */
       localSignup: z.boolean().default(false),
@@ -50,7 +50,7 @@ const SETTINGS_SCHEMAS = {
     .prefault({}),
   mcp: z
     .object({
-      /** Client auth methods enabled on the MCP port (design §6.2); an endpoint can only narrow them. */
+      /** Client auth methods enabled on the MCP port (ADR-0009); an endpoint can only narrow them. */
       clientAuth: z
         .object({
           bearer: z.boolean().default(true),
@@ -60,7 +60,7 @@ const SETTINGS_SCHEMAS = {
         .prefault({}),
       external: z.object({ provider: z.enum(EXTERNAL_PROVIDER_IDS).default('cloudflare') }).prefault({}),
       allowDynamicRegistration: z.boolean().default(true),
-      /** The Cloudflare Access provider's application (design §6.2). */
+      /** The Cloudflare Access provider's application (ADR-0009). */
       cfAccess: z.object({ teamDomain: z.string().default(''), aud: z.string().default('') }).prefault({}),
       accessTokenTtlMinutes: z
         .number()
@@ -69,7 +69,7 @@ const SETTINGS_SCHEMAS = {
         .max(24 * 60)
         .default(60),
       refreshTokenTtlDays: z.number().int().min(1).max(365).default(30),
-      /** Allowed or denied MCP clients by their self-declared name (design §6.6). */
+      /** Allowed or denied MCP clients by their self-declared name (@id:client-policy). */
       clientPolicy: z
         .object({
           mode: z.enum(['off', 'allow', 'deny']).default('off'),
@@ -105,7 +105,7 @@ export function isSettingsSection(name: string): name is SettingsSection {
   return Object.prototype.hasOwnProperty.call(SETTINGS_SCHEMAS, name);
 }
 
-/** Stored fields that read as off, not as their open defaults, when they can't be read (design §6.2). */
+/** Stored fields that read as off, not as their open defaults, when they can't be read (ADR-0009). */
 const FAIL_CLOSED: { [S in SettingsSection]?: Record<string, unknown> } = {
   mcp: { clientAuth: { bearer: false, oauth: false, external: false } },
 };

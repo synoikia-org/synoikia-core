@@ -7,7 +7,7 @@ import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
 import { ago } from '../format';
 import type { Ceiling } from '../types';
 
-/** A user's own MCP credentials (design §6.2, §6.4): bearer tokens they create and OAuth grants they gave. */
+/** A user's own MCP credentials (ADR-0009, ADR-0010): bearer tokens they create and OAuth grants they gave. */
 const tokensQuery = useMyTokensQuery();
 const grantsQuery = useMyGrantsQuery();
 const endpointsQuery = useMyEndpointsQuery();

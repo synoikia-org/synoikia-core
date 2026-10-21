@@ -5,7 +5,7 @@ import { ACCESS_LEVELS } from '../../gate/access.js';
 import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
-/** Role management (design §6.4, §8.4): admin only, like everything outside `/api/me` and the profile. */
+/** Role management (ADR-0010, design §8.4): admin only, like everything outside `/api/me` and the profile. */
 export function registerRoleRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const actor = (c: { get: (k: 'user') => { id: string } }) => ({ userId: c.get('user').id });
   const Level = z.object({ level: z.enum(ACCESS_LEVELS).nullable() });

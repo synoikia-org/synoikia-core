@@ -2,7 +2,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
 import { checkCloudflareAccess } from '../src/auth/external-cloudflare.js';
 
-/** Cloudflare Access assertions (design §6.2 `external` method). */
+/** Cloudflare Access assertions (ADR-0009 `external` method). */
 describe('checkCloudflareAccess', () => {
   const TEAM = 'home.cloudflareaccess.com';
   const AUD = 'aud-tag-123';
