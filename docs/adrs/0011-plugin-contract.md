@@ -66,7 +66,7 @@ Core calls `invoke` only after the gate lets the call through. The admin accepts
 
 - Each request has a timeout of 30 s. `invoke` gets the time that remains in the sandbox budget.
 - The SDK function `runPlugin(handlers)` is the child side. The core class `PluginProcess` is the parent side.
-- Core validates all plugin output against the SDK schemas.
+- Core validates each plugin message: the envelope against its own schemas, each result against the SDK schemas.
 
 | Method                                                          | Required               | Purpose                                                                                              |
 | --------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |

@@ -120,6 +120,9 @@ model {
     technology 'OIDC code flow with PKCE'
   }
   synoikia.core -> notificationReceiver 'sends events to'
+  synoikia.instance -> synoikia.core 'answers calls and sends log and catalog notices to' {
+    technology 'JSON-RPC 2.0 over IPC'
+  }
   synoikia.instance -> synoikia.bundles 'loads its own bundle, read only'
   synoikia.instance -> upstream 'calls the upstream API'
 }
