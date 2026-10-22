@@ -16,6 +16,7 @@ import {
 } from '@synoikia/plugin-sdk';
 import type { ErrorCode, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
+import { guardDebugger } from './debugger-guard.js';
 
 /** One plugin child and its JSON-RPC-over-IPC channel (ADR-0011, ADR-0014); every result is validated. */
 
@@ -119,6 +120,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     // The permission model checks real paths, but the grant is taken literally: through a symlinked dir (macOS's
     // /var -> /private/var tmpdir, a symlinked DATA_DIR) the child could not even load its own entry.
     const dir = realpathSync(path.resolve(this.opts.dir));
+    guardDebugger();
     this.child = fork(path.resolve(dir, this.opts.entry), [], {
       cwd: dir,
       execArgv: ['--permission', `--allow-fs-read=${dir}`, `--max-old-space-size=${this.opts.memoryMb ?? 256}`],

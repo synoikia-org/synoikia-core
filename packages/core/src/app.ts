@@ -4,6 +4,7 @@ import { ApprovalLinkService } from './approvals/links.js';
 import { ApprovalService } from './approvals/service.js';
 import { SeenClients } from './auth/client-policy.js';
 import type { ExternalKeys } from './auth/external.js';
+import { writeAudit } from './audit.js';
 import { McpTokenService } from './auth/mcp-tokens.js';
 import { OAuthService } from './auth/oauth.js';
 import { OidcService } from './auth/oidc.js';
@@ -26,6 +27,7 @@ import { runHousekeeping } from './maintenance.js';
 import type { ManagerOptions } from './instances/manager.js';
 import { NotifierService } from './notify/service.js';
 import type { FetchLike } from './notify/service.js';
+import { onDebuggerRefused } from './plugins/debugger-guard.js';
 import { discoverPlugins, syncPluginRegistry } from './plugins/discovery.js';
 import { PluginRepoService } from './plugins/repos.js';
 import type { FetchBytes } from './plugins/repos.js';
@@ -221,6 +223,24 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     gateDeps: () => ({ db, approvals, limiter, attestationKey: keys.attestation, now, grants, executions }),
     discoverPlugins: discover,
     async start() {
+      // ADR-0014: at most one audit row a minute, so a child that keeps signalling cannot fill the audit log.
+      let refused = 0;
+      let auditedAt = -Infinity;
+      stopHooks.push(
+        onDebuggerRefused(() => {
+          refused++;
+          if (nowMs() - auditedAt < 60_000) return;
+          auditedAt = nowMs();
+          ctx.log.warn('refused a signal to open the debugger', { signals: refused });
+          writeAudit(db, {
+            kind: 'plugin',
+            decision: 'debugger_refused',
+            actorKind: 'system',
+            detail: { signals: refused },
+          });
+          refused = 0;
+        }),
+      );
       await instances.startAll();
       // Hourly: daily backstop sync per instance and per plugin repo (@id:catalog-sync-schedule), staggered by their
       // own last-run times, plus housekeeping.
