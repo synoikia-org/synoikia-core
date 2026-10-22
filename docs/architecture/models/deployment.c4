@@ -8,9 +8,7 @@ deployment {
     host docker 'Docker host' {
       runtime container 'Synoikia container' {
         technology 'ghcr.io/synoikia-org/synoikia, non-root'
-        coreProcess = instanceOf synoikia.core {
-          technology 'Node.js, --no-node-snapshot, --disable-sigusr1'
-        }
+        coreProcess = instanceOf synoikia.core
         isolates = instanceOf synoikia.sandbox
         children = instanceOf synoikia.instance
         portal = instanceOf synoikia.adminPortal
