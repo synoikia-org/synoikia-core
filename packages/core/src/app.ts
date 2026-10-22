@@ -226,21 +226,33 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
       // ADR-0014: at most one audit row a minute, so a child that keeps signalling cannot fill the audit log.
       let refused = 0;
       let auditedAt = -Infinity;
-      stopHooks.push(
-        onDebuggerRefused(() => {
-          refused++;
-          if (nowMs() - auditedAt < 60_000) return;
-          auditedAt = nowMs();
-          ctx.log.warn('refused a signal to open the debugger', { signals: refused });
+      let pending: NodeJS.Timeout | undefined;
+      const report = () => {
+        pending = undefined;
+        auditedAt = nowMs();
+        ctx.log.warn('refused a signal to open the debugger', { signals: refused });
+        try {
           writeAudit(db, {
             kind: 'plugin',
             decision: 'debugger_refused',
             actorKind: 'system',
             detail: { signals: refused },
           });
-          refused = 0;
-        }),
-      );
+        } catch (err) {
+          ctx.log.error('could not audit a refused debugger signal', { error: String(err) });
+        }
+        refused = 0;
+      };
+      const unsubscribe = onDebuggerRefused(() => {
+        refused++;
+        const wait = auditedAt + 60_000 - nowMs();
+        if (wait <= 0) report();
+        else pending ??= setTimeout(report, wait).unref();
+      });
+      stopHooks.push(() => {
+        unsubscribe();
+        clearTimeout(pending);
+      });
       await instances.startAll();
       // Hourly: daily backstop sync per instance and per plugin repo (@id:catalog-sync-schedule), staggered by their
       // own last-run times, plus housekeeping.
