@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_IMAGE=node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
-
 # ── build ─────────────────────────────────────────────────────────────────────────────────────────
-FROM ${NODE_IMAGE} AS build
+FROM node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS build
 WORKDIR /app
 RUN corepack enable
 
@@ -20,7 +18,7 @@ COPY packages packages
 RUN pnpm --filter @synoikia/plugin-sdk --filter @synoikia/core --filter @synoikia/admin-ui build
 
 # ── runtime ───────────────────────────────────────────────────────────────────────────────────────
-FROM ${NODE_IMAGE} AS runtime
+FROM node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS runtime
 ENV NODE_ENV=production \
     DATA_DIR=/data \
     MCP_PORT=8080 \
