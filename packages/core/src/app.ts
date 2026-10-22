@@ -252,6 +252,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
       stopHooks.push(() => {
         unsubscribe();
         clearTimeout(pending);
+        if (pending) report();
       });
       await instances.startAll();
       // Hourly: daily backstop sync per instance and per plugin repo (@id:catalog-sync-schedule), staggered by their
