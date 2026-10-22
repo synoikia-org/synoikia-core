@@ -33,6 +33,22 @@ Given('the folder of Acme Tasks in the plugins folder is a link to another folde
   symlinkSync(path.join(elsewhere, 'tasks'), folder);
 });
 
+Given('the plugin of {string} signals core to open its debugger and tries to connect to it', (world: SynoikiaWorld) => {
+  world.pluginFlag('debugger');
+});
+
+Then(
+  'Acme hears that the plugin found no debugger of core, and agent {word} gets {string}, {string} and {string}',
+  (world: SynoikiaWorld, _agent: string, a: string, b: string, c: string) => {
+    expect(world.upstreamRequests('POST', '/debugger').at(-1)?.body).toEqual({ debugger: 'none' });
+    expect(world.answer).toEqual({ result: [a, b, c] });
+  },
+);
+
+Then('the audit log warns that core refused to open its debugger', async (world: SynoikiaWorld) => {
+  expect(await world.audit({ decision: 'debugger_refused' })).toHaveLength(1);
+});
+
 Given('the plugin of {string} sends an operation without its classification', (world: SynoikiaWorld) => {
   world.pluginFlag('catalog-output', 'no-classification');
 });

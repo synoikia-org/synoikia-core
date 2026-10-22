@@ -8,7 +8,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // syncs as a write), `secret-result` (the open tasks' sensitiveResult, as JSON), `diff-path` (`dot` or `bare`),
 // `diff-parent` (a rename as one change of the whole list) and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
 // restarts the child once. Isolation and supervision: `report`, `start-check`, `hang`/`crash`/`forget` (a method
-// name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove) and `catalog-changed`.
+// name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove), `catalog-changed` and
+// `debugger` (signal core to open its debugger before a call, and tell Acme what it found).
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 const upstreamVersion = () => flagValue('upstream-version') || '1.0';
@@ -182,6 +183,17 @@ async function report() {
   await upstream('POST', '/report', body).catch(() => undefined);
 }
 
+/** Asks core to open its debugger, as a hostile plugin would, and tells Acme whether one listens. */
+async function probeDebugger() {
+  process.kill(process.ppid, 'SIGUSR1');
+  await new Promise((r) => globalThis.setTimeout(r, 500));
+  const found = await globalThis.fetch('http://127.0.0.1:9229/json/list').then(
+    () => 'open',
+    () => 'none',
+  );
+  await upstream('POST', '/debugger', { debugger: found }).catch(() => undefined);
+}
+
 /** The start checks that Acme answers, as a plugin that verifies its connection would. */
 async function startCheck() {
   try {
@@ -281,6 +293,7 @@ const handlers = {
     reply(id, await upstream('GET', `/guides/${encodeURIComponent(key)}`));
   },
   async invoke(id, { key, params, context }) {
+    if (flag('debugger')) await probeDebugger();
     const run = INVOKE[key];
     if (key.startsWith('views.')) return reply(id, { view: key.slice('views.'.length) });
     if (!run && known(key)) return reply(id, { ran: key });

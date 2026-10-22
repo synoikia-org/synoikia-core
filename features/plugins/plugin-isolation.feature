@@ -1,8 +1,8 @@
 @id:plugin-isolation
 Feature: Plugin isolation
   Each plugin runs in its own process, apart from core.
-  The process may read only its own folder, and it gets only what its instance needs.
-  Core checks each answer of the plugin. A broken or dead plugin fails the call, and core keeps running.
+  The process may read only its own folder, and it gets only what its instance needs. It cannot take control of core.
+  Core checks each message of the plugin. A broken or dead plugin fails the call, and core keeps running.
 
   Rule: A plugin reads only its own folder and gets only its own secrets
 
@@ -23,7 +23,17 @@ Feature: Plugin isolation
       When the admin enables Acme Tasks and adds the instance "tasks"
       Then "tasks" is ready
 
-  Rule: Broken plugin answers are rejected
+  Rule: A plugin cannot take control of core
+
+    Scenario: A plugin that asks core to open its debugger finds none, and the admin is warned
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 belongs to the admin and may read and write
+      And the plugin of "tasks" signals core to open its debugger and tries to connect to it
+      When agent 7 asks for the open tasks of "Groceries"
+      Then Acme hears that the plugin found no debugger of core, and agent 7 gets "milk", "bread" and "eggs"
+      And the audit log warns that core refused to open its debugger
+
+  Rule: Broken plugin messages are rejected
 
     Scenario: A catalog that breaks the plugin contract is refused
       Given Acme Tasks runs as the instance "tasks"
@@ -38,6 +48,22 @@ Feature: Plugin isolation
       And the plugin of "tasks" no longer knows how to run a call
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that the plugin failed with "method not found: invoke"
+
+    @backlog
+    Scenario: A broken answer from the plugin fails the call, and core keeps running
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 belongs to the admin and may read and write
+      And the plugin of "tasks" answers each call with an error that has no details
+      When agent 7 asks for the open tasks of "Groceries"
+      Then agent 7 is told that the plugin sent an answer that is not valid
+
+    @backlog
+    Scenario: A broken message that answers no call is ignored, and core keeps running
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 belongs to the admin and may read and write
+      And the plugin of "tasks" sends a log message without content
+      When agent 7 asks for the open tasks of "Groceries"
+      Then agent 7 gets "milk", "bread" and "eggs", and the server log notes that "tasks" sent a message that is not valid
 
     Scenario: A plugin that never answers a call times out
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
