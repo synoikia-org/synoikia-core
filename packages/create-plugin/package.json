@@ -1,11 +1,11 @@
 {
   "name": "@synoikia/create-plugin",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Create Synoikia plugin repositories and plugins, then build, check and publish them",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/via-justa/synoikia-core.git",
+    "url": "git+https://github.com/synoikia-org/synoikia-core.git",
     "directory": "packages/create-plugin"
   },
   "type": "module",

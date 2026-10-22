@@ -1,11 +1,11 @@
 {
   "name": "@synoikia/core",
-  "version": "0.17.3",
+  "version": "0.17.4",
   "description": "Core process: MCP endpoints, Admin API, plugin host, permission gate",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/via-justa/synoikia-core.git",
+    "url": "git+https://github.com/synoikia-org/synoikia-core.git",
     "directory": "packages/core"
   },
   "type": "module",

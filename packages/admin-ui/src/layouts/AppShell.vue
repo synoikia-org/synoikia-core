@@ -51,7 +51,7 @@ function closeMenu(e: KeyboardEvent) {
 }
 
 const endpoints = computed(() => overview.value?.instances ?? []);
-const ISSUES_URL = 'https://github.com/via-justa/synoikia-core/issues';
+const ISSUES_URL = 'https://github.com/synoikia-org/synoikia-core/issues';
 
 const adminNav = [
   { to: '/plugins', label: 'Plugins' },

@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/via-justa/synoikia-core.git",
+    "url": "git+https://github.com/synoikia-org/synoikia-core.git",
     "directory": "packages/plugin-sdk"
   },
   "type": "module",

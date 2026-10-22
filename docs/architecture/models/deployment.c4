@@ -7,7 +7,7 @@ deployment {
   zone lan 'LAN or VPN' {
     host docker 'Docker host' {
       runtime container 'Synoikia container' {
-        technology 'ghcr.io/via-justa/synoikia, non-root'
+        technology 'ghcr.io/synoikia-org/synoikia, non-root'
         coreProcess = instanceOf synoikia.core
         isolates = instanceOf synoikia.sandbox
         children = instanceOf synoikia.instance

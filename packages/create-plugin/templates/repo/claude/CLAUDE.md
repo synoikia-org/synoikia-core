@@ -1,6 +1,6 @@
 # {{repoName}}
 
-Plugins for [Synoikia](https://github.com/via-justa/synoikia-core). Authoring guide: `https://github.com/via-justa/synoikia-core/blob/main/docs/plugin-authoring.md`.
+Plugins for [Synoikia](https://github.com/synoikia-org/synoikia-core). Authoring guide: `https://github.com/synoikia-org/synoikia-core/blob/main/docs/plugin-authoring.md`.
 
 The Synoikia skills, rules and hooks for this repository come from the `synoikia-plugin-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). `.claude/settings.json` enables it, and a session start hook says when it is not loaded. `.claude/guard-paths.json` lists the files that the path guard protects.
 

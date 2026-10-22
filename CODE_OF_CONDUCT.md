@@ -54,7 +54,7 @@ representing the community in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the project maintainers via [GitHub private security
-advisories](https://github.com/via-justa/synoikia-core/security/advisories/new)
+advisories](https://github.com/synoikia-org/synoikia-core/security/advisories/new)
 or by directly messaging a maintainer. All complaints will be reviewed and
 investigated promptly and fairly.
 

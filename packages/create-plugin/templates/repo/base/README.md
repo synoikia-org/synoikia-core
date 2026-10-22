@@ -1,8 +1,8 @@
 # {{repoName}}
 
-Plugins for [Synoikia](https://github.com/via-justa/synoikia-core), the self-hosted MCP control plane.
+Plugins for [Synoikia](https://github.com/synoikia-org/synoikia-core), the self-hosted MCP control plane.
 
-A plugin only describes its upstream API: its operations, which ones read or write, which are destructive, and which fields hold secrets. Synoikia's core decides what is allowed and runs every call through its sandbox, permission gate, approvals, redaction and audit log. See the [plugin authoring guide](https://github.com/via-justa/synoikia-core/blob/main/docs/plugin-authoring.md).
+A plugin only describes its upstream API: its operations, which ones read or write, which are destructive, and which fields hold secrets. Synoikia's core decides what is allowed and runs every call through its sandbox, permission gate, approvals, redaction and audit log. See the [plugin authoring guide](https://github.com/synoikia-org/synoikia-core/blob/main/docs/plugin-authoring.md).
 
 ## Layout
 
@@ -37,7 +37,7 @@ Work on one plugin with `pnpm --filter ./plugins/<id> test`. The run must end wi
 
 Each plugin's `test` script runs `synoikia-plugin check` (manifest, `plugin.yaml`, versions) and `synoikia-plugin build` (the self-contained bundle, `plugin.yaml` validated and inlined). Then it runs the unit tests, core's compliance suite and the plugin's features.
 
-`test/compliance.yaml` is the profile that core's compliance suite certifies the plugin against. It names the reads, writes, rejects, a lock case for each locked operation, the secrets and the connection test. A change there is a security change. Review its diff like a `plugin.yaml` diff. The format is in the [plugin authoring guide](https://github.com/via-justa/synoikia-core/blob/main/docs/plugin-authoring.md) › The compliance suite.
+`test/compliance.yaml` is the profile that core's compliance suite certifies the plugin against. It names the reads, writes, rejects, a lock case for each locked operation, the secrets and the connection test. A change there is a security change. Review its diff like a `plugin.yaml` diff. The format is in the [plugin authoring guide](https://github.com/synoikia-org/synoikia-core/blob/main/docs/plugin-authoring.md) › The compliance suite.
 
 ## Adding a plugin
 

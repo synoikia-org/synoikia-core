@@ -1,6 +1,6 @@
 # @synoikia/plugin-sdk
 
-The plugin side of [Synoikia](https://github.com/via-justa/synoikia-core): the manifest schema, the core ⇄ plugin RPC contract and `runPlugin()`, plus the building blocks a plugin is made of. Everything here is bundled into each plugin, so it runs inside the plugin's permission-confined child, never in core. Guide: [`docs/plugin-authoring.md`](https://github.com/via-justa/synoikia-core/blob/main/docs/plugin-authoring.md).
+The plugin side of [Synoikia](https://github.com/synoikia-org/synoikia-core): the manifest schema, the core ⇄ plugin RPC contract and `runPlugin()`, plus the building blocks a plugin is made of. Everything here is bundled into each plugin, so it runs inside the plugin's permission-confined child, never in core. Guide: [`docs/plugin-authoring.md`](https://github.com/synoikia-org/synoikia-core/blob/main/docs/plugin-authoring.md).
 
 | Module                                                  | What                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
