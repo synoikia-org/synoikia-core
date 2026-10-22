@@ -14,6 +14,7 @@ export interface SupervisorOptions extends SpawnOptions {
   onStatus?: (status: InstanceStatus, error?: string) => void;
   onLog?: (level: string, message: string) => void;
   onCatalogChanged?: (reason?: string) => void;
+  onInvalidMessage?: () => void;
   initTimeoutMs?: number;
   backoff?: { initialMs: number; maxMs: number };
 }
@@ -100,6 +101,7 @@ export class PluginSupervisor {
     this.proc = proc;
     proc.on('log', (level, message) => this.opts.onLog?.(level, message));
     proc.on('catalogChanged', (reason) => this.opts.onCatalogChanged?.(reason));
+    proc.on('invalidMessage', () => this.opts.onInvalidMessage?.());
     proc.on('exit', (code, signal) => {
       if (this.stopping || generation !== this.generation) return;
       this.scheduleRestart(`plugin exited unexpectedly (${signal ?? `code ${code}`})`);

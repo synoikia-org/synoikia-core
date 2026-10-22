@@ -43,3 +43,26 @@ export function createLogger(
     };
   return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
 }
+
+const THROTTLE_WINDOW_MS = 60_000;
+const THROTTLE_MAX_KEYS = 1000;
+
+/** At most one refusal log line per key per minute; the next one reports how many were dropped. */
+export class LogThrottle {
+  private readonly windows = new Map<string, { until: number; dropped: number }>();
+
+  /** The number of lines dropped since the last one for this key, or null to drop this one too. */
+  admit(key: string, now: number): number | null {
+    const w = this.windows.get(key);
+    if (w && now < w.until) {
+      w.dropped++;
+      return null;
+    }
+    if (!w && this.windows.size >= THROTTLE_MAX_KEYS) {
+      for (const [k, v] of this.windows) if (v.until <= now) this.windows.delete(k);
+      if (this.windows.size >= THROTTLE_MAX_KEYS) this.windows.clear();
+    }
+    this.windows.set(key, { until: now + THROTTLE_WINDOW_MS, dropped: 0 });
+    return w?.dropped ?? 0;
+  }
+}

@@ -18,6 +18,8 @@ import { isValidSlug } from '../endpoints/slug.js';
 import { BadGatewayError, ConflictError, NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
 import type { CoreEvents } from '../events.js';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../gate/redact.js';
+import { LogThrottle } from '../log.js';
+import type { Logger } from '../log.js';
 import type { InstanceRuntime } from '../gate/pipeline.js';
 import { PluginProcess, PluginTimeoutError, PluginUnavailableError } from '../plugins/process.js';
 import { getSettings } from '../settings.js';
@@ -65,6 +67,7 @@ export interface ManagerOptions {
   secrets: SecretBox;
   events: CoreEvents;
   now?: () => Date;
+  log: Logger;
   /** Test hooks: faster restarts and shorter RPC/init timeouts. */
   supervisor?: { backoff?: { initialMs: number; maxMs: number }; initTimeoutMs?: number; rpcTimeoutMs?: number };
   /** How often a live session may trigger the cheap upstream version check. */
@@ -105,6 +108,7 @@ export interface Actor {
 
 export class InstanceManager {
   private readonly live = new Map<string, Live>();
+  private readonly invalidMessages = new LogThrottle();
   private readonly db: Db;
   private readonly now: () => Date;
 
@@ -711,6 +715,15 @@ export class InstanceManager {
         }
       },
       onCatalogChanged: () => this.scheduleSync(instanceId),
+      onInvalidMessage: () => {
+        // @id:plugin-isolation: one line a minute for each instance, so a plugin cannot fill the server log.
+        const suppressed = this.invalidMessages.admit(instanceId, this.now().getTime());
+        if (suppressed === null) return;
+        this.opts.log.warn('Plugin sent a message that is not valid', {
+          slug: this.db.select().from(pluginInstances).where(eq(pluginInstances.id, instanceId)).get()?.slug,
+          suppressed: suppressed || undefined,
+        });
+      },
     });
     const live: Live = { supervisor, lastVersionCheck: 0 };
     this.live.set(instanceId, live);

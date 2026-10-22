@@ -9,7 +9,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // `diff-parent` (a rename as one change of the whole list) and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
 // restarts the child once. Isolation and supervision: `report`, `start-check`, `hang`/`crash`/`forget` (a method
 // name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove), `catalog-changed` and
-// `debugger` (signal core to open its debugger before a call, and tell Acme what it found).
+// `debugger` (signal core to open its debugger before a call, and tell Acme what it found). Broken messages:
+// `broken-answer` (each answer an error without details) and `broken-log` (counts: each new one sends that many empty logs).
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 const upstreamVersion = () => flagValue('upstream-version') || '1.0';
@@ -314,10 +315,19 @@ globalThis.setInterval(() => {
   catalogChangedSeen = flagValue('catalog-changed');
   process.send({ jsonrpc: '2.0', method: 'catalogChanged', params: { reason: 'Acme changed' } });
 }, 25);
+let brokenLogSeen = '';
+globalThis.setInterval(() => {
+  if (flagValue('broken-log') === brokenLogSeen) return;
+  brokenLogSeen = flagValue('broken-log');
+  const count = Number(brokenLogSeen.split(',').at(-1));
+  for (let i = 0; i < count; i++) process.send({ jsonrpc: '2.0', method: 'log' });
+}, 25);
 
 process.on('message', (msg) => {
   if (flag('down') || flagValue('crash') === msg.method) process.exit(1);
   if (flagValue('hang') === msg.method) return;
+  if (flag('broken-answer') && msg.method !== 'shutdown')
+    return process.send({ jsonrpc: '2.0', id: msg.id, error: null });
   const handler = flagValue('forget') === msg.method ? undefined : handlers[msg.method];
   if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', `method not found: ${msg.method}`);
   Promise.resolve(handler(msg.id, msg.params)).catch((err) =>

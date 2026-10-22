@@ -470,4 +470,4 @@ Feature files: `@id:housekeeping`.
 
 ## Server log
 
-Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`. A refused MCP request logs its reason, but never a credential value. Request lines hold the path only, because query strings hold OAuth state. The feature files `@id:server-log` and `@id:listeners` specify the log and the health checks.
+Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`. A refused MCP request logs its reason, but never a credential value. Request lines hold the path only, because query strings hold OAuth state. A plugin message that breaks the contract logs a warning with the instance slug, never the message. Each instance logs one such line a minute at most, with `suppressed=` for the dropped repeats. The feature files `@id:server-log` and `@id:listeners` specify the log and the health checks.

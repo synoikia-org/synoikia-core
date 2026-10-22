@@ -12,6 +12,7 @@ import { ConflictError, ValidationError } from '../src/errors.js';
 import { CoreEvents } from '../src/events.js';
 import { SlidingWindowLimiter } from '../src/gate/rate-limit.js';
 import { InstanceManager } from '../src/instances/manager.js';
+import { createLogger } from '../src/log.js';
 import { discoverPlugins, syncPluginRegistry } from '../src/plugins/discovery.js';
 import { executeCode, searchCode } from '../src/runtime/index.js';
 
@@ -36,6 +37,7 @@ function setup(opts: { versionCheckIntervalMs?: number; pluginsDir?: string; now
     db,
     secrets,
     events,
+    log: createLogger('error', () => undefined),
     supervisor: { backoff: { initialMs: 20, maxMs: 100 }, initTimeoutMs: 2000, rpcTimeoutMs: 5000 },
     versionCheckIntervalMs: opts.versionCheckIntervalMs ?? 0,
     now: opts.now,

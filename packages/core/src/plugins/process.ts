@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import {
+  ErrorCodes,
   GuideSchema,
   OptionSchema,
   PrepareWriteResultSchema,
@@ -71,6 +72,28 @@ const RESULT_SCHEMAS: { [M in RpcMethod]: z.ZodType } = {
   shutdown: nullish,
 };
 
+// ADR-0011: the envelope of each plugin message. RESULT_SCHEMAS then checks each result.
+const RpcAnswerSchema = z.union([
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    id: z.number(),
+    error: z.object({ code: z.enum(ErrorCodes), message: z.string(), data: z.unknown().optional() }),
+  }),
+  z.object({ jsonrpc: z.literal('2.0'), id: z.number(), result: z.unknown(), error: z.undefined().optional() }),
+]) satisfies z.ZodType<RpcResponse>;
+const RpcNotificationSchema = z.discriminatedUnion('method', [
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    method: z.literal('log'),
+    params: z.object({ level: z.enum(['debug', 'info', 'warn', 'error']), message: z.string() }),
+  }),
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    method: z.literal('catalogChanged'),
+    params: z.object({ reason: z.string().optional() }).optional(),
+  }),
+]) satisfies z.ZodType<RpcNotification>;
+
 type Params<M extends RpcMethod> = Parameters<NonNullable<PluginHandlers[M]>>[0];
 type Result<M extends RpcMethod> = Awaited<ReturnType<NonNullable<PluginHandlers[M]>>>;
 
@@ -94,6 +117,8 @@ export interface PluginProcessEvents {
   exit: [code: number | null, signal: NodeJS.Signals | null];
   log: [level: string, message: string];
   catalogChanged: [reason?: string];
+  /** A message that breaks the contract and answers no call; never with its content. */
+  invalidMessage: [];
 }
 
 export class PluginProcess extends EventEmitter<PluginProcessEvents> {
@@ -131,7 +156,14 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     });
     this.child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
     this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
-    this.child.on('message', (msg) => this.onMessage(msg));
+    this.child.on('message', (msg) => {
+      // @id:plugin-isolation: a broken message never stops core.
+      try {
+        this.onMessage(msg);
+      } catch {
+        this.emit('invalidMessage');
+      }
+    });
     this.child.on('error', (err) => this.emit('log', 'error', `plugin process error: ${err.message}`));
     this.child.on('exit', (code, signal) => {
       this.exited = true;
@@ -188,19 +220,24 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   }
 
   private onMessage(msg: unknown): void {
-    if (typeof msg !== 'object' || msg === null || (msg as { jsonrpc?: unknown }).jsonrpc !== '2.0') return;
-    if ('id' in msg && typeof msg.id === 'number') {
-      const pending = this.pending.get(msg.id);
-      if (!pending) return;
-      this.pending.delete(msg.id);
+    const answer = RpcAnswerSchema.safeParse(msg);
+    const id = answer.success ? answer.data.id : (msg as { id?: unknown } | null)?.id;
+    const pending = typeof id === 'number' ? this.pending.get(id) : undefined;
+    if (pending && typeof id === 'number') {
+      this.pending.delete(id);
       clearTimeout(pending.timer);
-      const res = msg as RpcResponse;
-      if ('error' in res) pending.reject(new PluginRpcError(res.error.code, res.error.message, res.error.data));
-      else pending.resolve(res.result);
+      if (!answer.success) pending.reject(new PluginProtocolError(pending.method, 'the answer is not valid'));
+      else if (answer.data.error) {
+        const { code, message, data } = answer.data.error;
+        pending.reject(new PluginRpcError(code, message, data));
+      } else pending.resolve(answer.data.result);
       return;
     }
-    const note = msg as RpcNotification;
-    if (note.method === 'log') this.emit('log', note.params.level, note.params.message);
-    else if (note.method === 'catalogChanged') this.emit('catalogChanged', note.params?.reason);
+    // A valid answer to a call that already timed out is late, not broken.
+    if (answer.success) return;
+    const note = RpcNotificationSchema.safeParse(msg);
+    if (!note.success) return void this.emit('invalidMessage');
+    if (note.data.method === 'log') this.emit('log', note.data.params.level, note.data.params.message);
+    else this.emit('catalogChanged', note.data.params?.reason);
   }
 }
