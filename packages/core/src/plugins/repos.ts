@@ -343,10 +343,14 @@ export class PluginRepoService {
   }
 
   /** Adds a signed repo whose key ships with core, once per `marker`, so a removed repo stays removed. */
-  addPreconfigured(repo: { url: string; name: string; publicKey: string }, marker = DEFAULT_REPO_MARKER) {
-    if (this.db.select().from(settings).where(eq(settings.key, marker)).get()) return null;
+  addPreconfigured(
+    repo: { url: string; name: string; publicKey: string; formerUrls?: readonly string[] },
+    marker = DEFAULT_REPO_MARKER,
+  ) {
     const url = this.checkUrl(repo.url);
     const key = parsePublicKey(repo.publicKey);
+    this.moveFormer(url, key.base64, repo.formerUrls ?? []);
+    if (this.db.select().from(settings).where(eq(settings.key, marker)).get()) return null;
     const exists = this.db.select().from(pluginRepos).where(eq(pluginRepos.url, url)).get();
     const id = randomUUID();
     this.db.transaction((tx) => {
@@ -373,6 +377,29 @@ export class PluginRepoService {
       });
     });
     return exists ? null : this.publicRepo(this.repoRow(id));
+  }
+
+  /** Points a repo still at a former address to `url`, keeping its id, when it pins the same key (ADR-0013). */
+  private moveFormer(url: string, publicKey: string, formerUrls: readonly string[]) {
+    if (this.db.select().from(pluginRepos).where(eq(pluginRepos.url, url)).get()) return;
+    for (const former of formerUrls) {
+      const row = this.db
+        .select()
+        .from(pluginRepos)
+        .where(eq(pluginRepos.url, this.checkUrl(former)))
+        .get();
+      if (row?.publicKey !== publicKey) continue;
+      this.db.transaction((tx) => {
+        tx.update(pluginRepos).set({ url }).where(eq(pluginRepos.id, row.id)).run();
+        writeAudit(tx, {
+          kind: 'config',
+          decision: 'plugin_repo_moved',
+          actorKind: 'system',
+          detail: { id: row.id, name: row.name, from: row.url, to: url },
+        });
+      });
+      return;
+    }
   }
 
   /** Re-reads the index. A changed signing key blocks installs until re-confirmed. */

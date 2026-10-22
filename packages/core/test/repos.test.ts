@@ -300,6 +300,37 @@ describe('plugin repositories', () => {
     expect(old.status).toBe(201);
     expect(await old.json()).toMatchObject({ id: before.id, version: '2.0.0' });
   });
+
+  it('moves a repo at a former address of a preconfigured repo when it pins the same key, keeping its id', async () => {
+    const t = await setup();
+    const pinned = testKey();
+    const former = 'https://old.example.com/index.json';
+    const otherKeyed = 'https://older.example.com/index.json';
+    const add = async (url: string, key: ReturnType<typeof testKey>) => {
+      t.files.set(
+        url,
+        Buffer.from(JSON.stringify({ schema: 1, name: 'Synoikia plugins', publicKey: key.publicKey, plugins: [] })),
+      );
+      const res = await t.b.post('/api/plugin-repos', { url, signingMode: 'signed', confirmPublicKey: key.publicKey });
+      return ((await res.json()) as { id: string }).id;
+    };
+    const movedId = await add(former, pinned);
+    const keptId = await add(otherKeyed, testKey());
+    const preconfigured = {
+      url: INDEX_URL,
+      name: 'Synoikia plugins',
+      publicKey: pinned.publicKey,
+      formerUrls: [otherKeyed, former],
+    };
+
+    t.ctx.repos.addPreconfigured(preconfigured, 'test.preconfigured');
+    t.ctx.repos.addPreconfigured(preconfigured, 'test.preconfigured');
+
+    const urls = Object.fromEntries(t.ctx.repos.list().map((r) => [r.id, r.url]));
+    expect(urls).toEqual({ [movedId]: INDEX_URL, [keptId]: otherKeyed });
+    const moves = t.ctx.db.select().from(auditLog).where(eq(auditLog.decision, 'plugin_repo_moved')).all();
+    expect(moves).toMatchObject([{ actorKind: 'system', detail: { id: movedId, from: former, to: INDEX_URL } }]);
+  });
 });
 
 // ── manual plugins (ADR-0013) ──
