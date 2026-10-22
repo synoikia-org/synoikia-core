@@ -32,7 +32,7 @@ Core starts each enabled instance with `child_process.fork(entry)` and these lim
 - **Clean environment.** The child gets only `NODE_ENV` and `PLUGIN_INSTANCE_ID`. It never sees `MASTER_KEY`, database paths, or admin configuration.
 - **Memory limit.** `--max-old-space-size`, 256 MB by default, set for each instance.
 - **Secrets only through `init`.** Core decrypts the secrets of that instance only and sends them in `init` (ADR-0011).
-- **No debugger.** A child can send signals to the process that started it. Before the first fork, the plugin host listens for `SIGUSR1` for the rest of the process. Node then never opens its debugger on that signal, so a child cannot run code in core. This holds in each process that starts plugins, such as the plugin harness. Core audits a refused signal, at most once a minute with the count.
+- **No debugger.** A child can send signals to the process that started it. Before the first fork, the plugin host listens for `SIGUSR1` for the rest of the process. Node then never opens its debugger on that signal, so a child cannot run code in core. This holds in each process that starts plugins, such as the plugin harness. Core audits a refused signal, at most once a minute with the count. The health check of the image starts Node with `--disable-sigusr1`, because it runs beside the plugins with the environment of core.
 
 **Supervision.**
 
