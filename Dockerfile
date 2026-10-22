@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:22-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 
 # ── build ─────────────────────────────────────────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS build
@@ -38,7 +38,8 @@ COPY --from=build /app/packages/core/dist packages/core/dist
 COPY --from=build /app/packages/core/drizzle packages/core/drizzle
 COPY --from=build /app/packages/admin-ui/package.json packages/admin-ui/
 COPY --from=build /app/packages/admin-ui/dist packages/admin-ui/dist
-RUN pnpm install --frozen-lockfile --prod \
+# Core's tree only: the portal ships prebuilt, so its Vue and Vite dependencies stay out of the image.
+RUN pnpm install --frozen-lockfile --prod --filter @synoikia/core... \
  && mkdir -p /data && chown node:node /data
 
 USER node

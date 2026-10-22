@@ -14,7 +14,7 @@ How to build, test and release Synoikia core. To contribute a change, also read 
 
 ## Setup
 
-Requires [Node.js][node] 22 (≥ 22.12) or 24 and [pnpm][pnpm] 10 (`corepack enable`). `isolated-vm` has no build for other Node.js versions.
+Requires [Node.js][node] 22 (≥ 22.14) or 24 and [pnpm][pnpm] 10 (`corepack enable`). `isolated-vm` has no build for other Node.js versions.
 
 ```sh
 pnpm install

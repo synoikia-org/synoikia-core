@@ -19,7 +19,7 @@ Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plug
 
 ## Commands
 
-Node 22.12+ or 24 (`.nvmrc` pins 22), pnpm 10.
+Node 22.14+ or 24 (`.nvmrc` pins 22), pnpm 10.
 
 ```sh
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test   # what CI runs, in that order
