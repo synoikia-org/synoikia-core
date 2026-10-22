@@ -12,8 +12,8 @@ jobs:
   architecture-diff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: novibe-org/novibe/actions/architecture-diff@ba50c9791f8a2c3f29bc909106565ec6e450b2ae # main, 2026-10-20
+      - uses: novibe-org/likec4-architecture-diff-action@8a80c2c9d716b1e0a72f5afb958f24947e4bab62 # v1.1.0

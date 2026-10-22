@@ -53,7 +53,7 @@
     "@types/semver": "^7.8.0",
     "drizzle-kit": "^0.31.11",
     "quickpickle": "1.11.2",
-    "vitest": "^5.0.2",
+    "vitest": "^5.0.5",
     "yaml": "^2.9.1"
   },
   "peerDependencies": {
