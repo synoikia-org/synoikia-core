@@ -111,20 +111,20 @@ graph TB
     SynoikiaCore.AdminApi@{ shape: rectangle, label: "Admin API" }
     SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
     SynoikiaCore.Notify@{ shape: rectangle, label: "Notifications" }
-    SynoikiaCore.Audit@{ shape: rectangle, label: "Audit log" }
     SynoikiaCore.Runtime@{ shape: rectangle, label: "Runtime" }
     SynoikiaCore.Approvals@{ shape: rectangle, label: "Approvals" }
     SynoikiaCore.Auth@{ shape: rectangle, label: "Auth" }
     SynoikiaCore.Instances@{ shape: rectangle, label: "Instance manager" }
     SynoikiaCore.PluginHost@{ shape: rectangle, label: "Plugin host" }
     SynoikiaCore.Crypto@{ shape: rectangle, label: "Secret box" }
+    SynoikiaCore.Audit@{ shape: rectangle, label: "Audit log" }
   end
   NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
-  SynoikiaDatabase@{ shape: disk, label: "Database" }
   PluginRepository@{ shape: rectangle, label: "Plugin repository" }
   SynoikiaInstance@{ shape: rectangle, label: "Instance" }
   SynoikiaBundles@{ shape: disk, label: "Plugin bundles" }
+  SynoikiaDatabase@{ shape: disk, label: "Database" }
   SynoikiaSandbox -. "`sends binding calls to`" .-> SynoikiaCore.Gate
   SynoikiaCore.McpEndpoints -. "`authenticates the client and the 
 approver with`" .-> SynoikiaCore.Auth
@@ -139,6 +139,7 @@ in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.Gate -. "`records each decision in`" .-> SynoikiaCore.Audit
   SynoikiaCore.Instances -. "`starts and stops instances with`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Instances -. "`encrypts connection secrets with`" .-> SynoikiaCore.Crypto
+  SynoikiaCore.PluginHost -. "`warns of each refused debugger signal in`" .-> SynoikiaCore.Audit
   SynoikiaCore.CatalogSync -. "`reads catalogs and registries through`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Auth -. "`signs users in with`" .-> IdentityProvider
   SynoikiaCore.Auth -. "`stores users, sessions and tokens in`" .-> SynoikiaDatabase
