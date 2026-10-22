@@ -64,6 +64,7 @@ model {
   synoikia.core.pluginHost -> synoikia.instance 'sends operation calls to'
   synoikia.core.pluginHost -> pluginRepository 'downloads indexes and bundles from'
   synoikia.core.pluginHost -> synoikia.bundles 'installs bundles into'
+  synoikia.core.pluginHost -> synoikia.core.audit 'warns of each refused debugger signal in'
   synoikia.core.instances -> synoikia.core.crypto 'encrypts connection secrets with'
   synoikia.core.instances -> synoikia.core.pluginHost 'starts and stops instances with'
   synoikia.core.catalogSync -> synoikia.core.pluginHost 'reads catalogs and registries through'

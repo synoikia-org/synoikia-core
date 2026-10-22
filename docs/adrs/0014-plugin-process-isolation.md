@@ -32,6 +32,7 @@ Core starts each enabled instance with `child_process.fork(entry)` and these lim
 - **Clean environment.** The child gets only `NODE_ENV` and `PLUGIN_INSTANCE_ID`. It never sees `MASTER_KEY`, database paths, or admin configuration.
 - **Memory limit.** `--max-old-space-size`, 256 MB by default, set for each instance.
 - **Secrets only through `init`.** Core decrypts the secrets of that instance only and sends them in `init` (ADR-0011).
+- **No debugger.** A child can send signals to core. Core starts with `--disable-sigusr1`, and the plugin host ignores `SIGUSR1` in every core. So a child cannot open the debugger of core and run code there. Core audits each refused signal.
 
 **Supervision.**
 
@@ -45,11 +46,13 @@ Core starts each enabled instance with `child_process.fork(entry)` and these lim
 
 A container egress policy restricts network access (README › Deployment › Network egress). Issues #108 and #111 track network control in core.
 
+**Known limit: a child can stop core.** The child runs as the same user as core, so it can send `SIGTERM` or `SIGKILL` to core. Core then stops until a restart policy starts it again, as in `docker-compose.example.yml`. A separate user for each child would stop this.
+
 ### Consequences
 
 - Good, because a plugin never sees the master key, the database or another instance's secrets.
 - Good, because a crash affects one instance, and its calls fail closed until it is back.
-- Bad, because a plugin can reach any network host. ADR-0002 lists this risk.
+- Bad, because a plugin can reach any network host, and it can stop core. ADR-0002 lists these risks.
 - Bad, because each instance costs a Node process and its memory.
 
 The model views `containers` and `deployment` show the children. The feature files `@id:plugin-isolation`, `@id:instance-supervision` and `@id:plugin-runtime` specify its behavior.
