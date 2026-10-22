@@ -16,4 +16,4 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: novibe-org/novibe/actions/architecture-diff@e97419a96d5cb2354db8804135d7f500386951a3 # main, 2026-10-22
+      - uses: novibe-org/likec4-architecture-diff-action@8a80c2c9d716b1e0a72f5afb958f24947e4bab62 # v1.1.0
