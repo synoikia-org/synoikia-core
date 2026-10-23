@@ -49,7 +49,6 @@ Feature: Instance lifecycle
 
   Rule: Switches start and stop the instance
 
-    @backlog
     Scenario: A disabled instance is stopped, and agents are told that it is unavailable
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
       And agent 7 of the admin has an open session on "tasks"

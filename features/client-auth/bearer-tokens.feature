@@ -35,7 +35,6 @@ Feature: Agent credentials
       When a stranger opens a session on "tasks" with no credential, and then with a made-up one
       Then the stranger is asked to sign in both times, and pointed to the OAuth description of "tasks"
 
-    @backlog
     Scenario: A credential for all instances follows the instances of the role at each call
       Given agent 9 belongs to user 12, whose role "family" has the instance "tasks"
       And Acme Tasks also runs as the instance "shopping"
