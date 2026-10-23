@@ -34,9 +34,10 @@ Feature: Redaction
       Then agent 7 sees "doorCode" of "milk" as [REDACTED]
 
     Scenario: A key that the admin lists for the instance is hidden
-      Given the admin lists "loyaltyNumber" as a sensitive key of "tasks"
-      And Acme keeps "loyaltyNumber" on the task "milk"
-      When agent 7 reads the open tasks of "Groceries" in full
+      Given Acme keeps "loyaltyNumber" on the task "milk"
+      And agent 7 has an open session on "tasks"
+      When the admin lists "loyaltyNumber" as a sensitive key of "tasks"
+      And agent 7 reads the open tasks of "Groceries" in full in the same session
       Then agent 7 sees "loyaltyNumber" of "milk" as [REDACTED]
 
     Scenario: A plugin that lists "code" as sensitive does not hide the refusal code

@@ -10,7 +10,7 @@ model {
     }
     auth = component 'Auth' {
       technology 'auth/'
-      description 'Users, sessions, TOTP, OIDC, MCP tokens, OAuth grants and external providers.'
+      description 'Users, sessions, TOTP, OIDC, MCP tokens, OAuth grants and external providers, with an in-memory cache of the credentials that calls present.'
     }
     runtime = component 'Runtime' {
       technology 'runtime/'
@@ -26,7 +26,7 @@ model {
     }
     instances = component 'Instance manager' {
       technology 'instances/'
-      description 'Instance configuration, encrypted connection secrets and settings.'
+      description 'Instance configuration, encrypted connection secrets and settings, with an in-memory cache of instances and their settings.'
     }
     pluginHost = component 'Plugin host' {
       technology 'plugins/'
@@ -34,7 +34,7 @@ model {
     }
     catalogSync = component 'Catalog sync' {
       technology 'catalog/'
-      description 'Syncs the catalog, groups and registry of each instance from its plugin.'
+      description 'Syncs the catalog, groups and registry of each instance from its plugin, and keeps each catalog with its access levels in memory.'
     }
     notify = component 'Notifications' {
       technology 'events.ts, notify/'
@@ -43,6 +43,10 @@ model {
     audit = component 'Audit log' {
       technology 'audit.ts'
       description 'Appends every call, search, configuration change, sign-in and plugin event.'
+    }
+    dbAccess = component 'Database access' {
+      technology 'db/, Drizzle, better-sqlite3'
+      description 'Opens the database, runs its migrations and counts the writes to each table.'
     }
     crypto = component 'Secret box' {
       technology 'crypto/'
@@ -72,9 +76,16 @@ model {
   synoikia.core.catalogSync -> synoikia.core.pluginHost 'reads catalogs and registries through'
   synoikia.core.notify -> notificationReceiver 'sends events to'
   synoikia.core.auth -> identityProvider 'signs users in with'
-  synoikia.core.auth -> synoikia.database 'stores users, sessions and tokens in'
-  synoikia.core.approvals -> synoikia.database 'stores pending approvals in'
-  synoikia.core.audit -> synoikia.database 'appends to'
-  synoikia.core.catalogSync -> synoikia.database 'stores catalogs in'
-  synoikia.core.instances -> synoikia.database 'stores instances in'
+  synoikia.core.mcpEndpoints -> synoikia.core.instances 'looks up the instance of each endpoint in'
+  synoikia.core.gate -> synoikia.core.catalogSync 'reads operations and access levels from'
+  synoikia.core.runtime -> synoikia.core.catalogSync 'reads the catalog for search from'
+  synoikia.core.auth -> synoikia.core.dbAccess 'stores users, sessions and tokens through'
+  synoikia.core.auth -> synoikia.core.dbAccess 'checks the write counters of its cached tables in'
+  synoikia.core.approvals -> synoikia.core.dbAccess 'stores pending approvals through'
+  synoikia.core.audit -> synoikia.core.dbAccess 'appends through'
+  synoikia.core.catalogSync -> synoikia.core.dbAccess 'stores catalogs through'
+  synoikia.core.catalogSync -> synoikia.core.dbAccess 'checks the write counters of its cached tables in'
+  synoikia.core.instances -> synoikia.core.dbAccess 'stores instances through'
+  synoikia.core.instances -> synoikia.core.dbAccess 'checks the write counters of its cached tables in'
+  synoikia.core.dbAccess -> synoikia.database 'reads and writes'
 }

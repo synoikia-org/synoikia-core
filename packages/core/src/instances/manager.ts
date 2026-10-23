@@ -13,6 +13,7 @@ import type { SyncSummary } from '../catalog/sync.js';
 import { aad, DecryptionError } from '../crypto/index.js';
 import type { SecretBox } from '../crypto/index.js';
 import type { Db } from '../db/index.js';
+import { tableCache } from '../db/writes.js';
 import { pendingApprovals, pluginInstances, plugins } from '../db/schema.js';
 import { isValidSlug } from '../endpoints/slug.js';
 import { BadGatewayError, ConflictError, NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
@@ -106,6 +107,22 @@ export interface Actor {
   userId?: string;
 }
 
+const instanceRow = tableCache([pluginInstances], (db, id: string) =>
+  db.select().from(pluginInstances).where(eq(pluginInstances.id, id)).get(),
+);
+const pluginRow = tableCache([plugins], (db, id: string) => {
+  const p = db.select().from(plugins).where(eq(plugins.id, id)).get();
+  return p && { ...p, parsed: p.status === 'ok' ? parseManifest(p.manifest) : undefined };
+});
+const instanceBySlug = tableCache([pluginInstances, plugins], (db, slug: string) =>
+  db
+    .select({ instance: pluginInstances, plugin: plugins })
+    .from(pluginInstances)
+    .innerJoin(plugins, eq(pluginInstances.pluginId, plugins.id))
+    .where(eq(pluginInstances.slug, slug))
+    .get(),
+);
+
 export class InstanceManager {
   private readonly live = new Map<string, Live>();
   private readonly invalidMessages = new LogThrottle();
@@ -120,13 +137,13 @@ export class InstanceManager {
   // ── lookups ────────────────────────────────────────────────────────────────────────────────────
 
   private row(id: string): InstanceRow {
-    const row = this.db.select().from(pluginInstances).where(eq(pluginInstances.id, id)).get();
+    const row = instanceRow(this.db, id);
     if (!row) throw new NotFoundError('instance_not_found', 'No such instance');
     return row;
   }
 
   private plugin(pluginRowId: string): PluginRow & { parsed: Manifest } {
-    const p = this.db.select().from(plugins).where(eq(plugins.id, pluginRowId)).get();
+    const p = pluginRow(this.db, pluginRowId);
     if (!p) throw new NotFoundError('plugin_not_found', 'No such plugin');
     // Discovery re-validates manifests against the current SDK on every start and marks failures; a
     // row it marked unusable is reported as such rather than failing deep inside a request.
@@ -135,7 +152,7 @@ export class InstanceManager {
         'plugin_unusable',
         `Plugin ${p.pluginId} is ${p.status}${p.statusError ? `: ${p.statusError}` : ''}`,
       );
-    return { ...p, parsed: parseManifest(p.manifest) };
+    return { ...p, parsed: p.parsed! };
   }
 
   /** Resolves a plugin by row id or by manifest id (`acme`). */
@@ -247,13 +264,7 @@ export class InstanceManager {
   }
 
   bySlug(slug: string): { instance: InstanceRow; plugin: PluginRow } | undefined {
-    const found = this.db
-      .select({ instance: pluginInstances, plugin: plugins })
-      .from(pluginInstances)
-      .innerJoin(plugins, eq(pluginInstances.pluginId, plugins.id))
-      .where(eq(pluginInstances.slug, slug))
-      .get();
-    return found ?? undefined;
+    return instanceBySlug(this.db, slug);
   }
 
   private describe(instance: InstanceRow, plugin: PluginRow) {
@@ -323,8 +334,14 @@ export class InstanceManager {
     return { changed, inSessionOff };
   }
 
-  /** Everything the gate needs for one instance. */
+  private readonly runtimes = tableCache([pluginInstances, plugins], (_db, id: string) => this.buildRuntime(id));
+
+  /** Everything the gate needs for one instance, kept until the instance or its plugin is written (ADR-0021). */
   runtime(instanceId: string): InstanceRuntime {
+    return this.runtimes(this.db, instanceId)!;
+  }
+
+  private buildRuntime(instanceId: string): InstanceRuntime {
     const instance = this.row(instanceId);
     const plugin = this.plugin(instance.pluginId);
     const settings = this.settingsOf(instance);
@@ -345,11 +362,7 @@ export class InstanceManager {
       },
       catalogVersion: () => {
         const version = this.live.get(instanceId)?.version;
-        const synced = this.db
-          .select({ v: pluginInstances.catalogPluginVersion })
-          .from(pluginInstances)
-          .where(eq(pluginInstances.id, instanceId))
-          .get()?.v;
+        const synced = instanceRow(this.db, instanceId)?.catalogPluginVersion;
         return version && synced === version ? version : undefined;
       },
     };

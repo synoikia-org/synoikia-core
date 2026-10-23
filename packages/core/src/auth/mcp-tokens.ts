@@ -5,6 +5,7 @@ import { writeAudit } from '../audit.js';
 import { roleInstanceIds } from '../catalog/role-levels.js';
 import type { Db } from '../db/index.js';
 import { mcpTokens, pluginInstances } from '../db/schema.js';
+import { tableCache } from '../db/writes.js';
 import { NotFoundError, ValidationError } from '../errors.js';
 import { ACCESS_CEILINGS, ADMIN_ROLE_ID } from '../gate/access.js';
 import { randomToken, sha256 } from './tokens.js';
@@ -13,6 +14,13 @@ import { randomToken, sha256 } from './tokens.js';
  * or `*`; outside its scope a token gets 403. */
 
 export const TOKEN_PREFIX = 'syn_';
+
+const tokenByHash = tableCache([mcpTokens], (db, hash: string) =>
+  db.select().from(mcpTokens).where(eq(mcpTokens.tokenHash, hash)).get(),
+);
+const tokenById = tableCache([mcpTokens], (db, id: string) =>
+  db.select().from(mcpTokens).where(eq(mcpTokens.id, id)).get(),
+);
 
 const CreateTokenSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -166,11 +174,7 @@ export class McpTokenService {
   /** Returns the token row if the value is live (not revoked/expired), regardless of scope. */
   verify(value: string): TokenRow | null {
     if (!value.startsWith(TOKEN_PREFIX) || value.length > 200) return null;
-    const row = this.db
-      .select()
-      .from(mcpTokens)
-      .where(eq(mcpTokens.tokenHash, sha256(value)))
-      .get();
+    const row = tokenByHash(this.db, sha256(value));
     if (!row || row.revokedAt) return null;
     const now = this.now();
     if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) return null;
@@ -182,7 +186,7 @@ export class McpTokenService {
 
   /** The token is still live and scoped to the instance (a parked execution re-checks this, ADR-0006). */
   liveFor(id: string, instanceId: string): boolean {
-    const row = this.db.select().from(mcpTokens).where(eq(mcpTokens.id, id)).get();
+    const row = tokenById(this.db, id);
     if (!row || row.revokedAt) return false;
     if (row.expiresAt && row.expiresAt.getTime() <= this.now().getTime()) return false;
     return McpTokenService.inScope(row, instanceId);

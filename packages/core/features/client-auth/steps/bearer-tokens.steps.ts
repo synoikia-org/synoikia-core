@@ -1,7 +1,7 @@
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import type { SynoikiaWorld } from '../../support/world.js';
-import { bearerOf, clientAuth, expectRefusal, keepAnswer, knock } from './client-auth.js';
+import { bearerOf, clientAuth, expectRefusal, keepAnswer, knock, ping } from './client-auth.js';
 
 const MADE_UP = { authorization: 'Bearer syn_madeUpCredentialThatCoreNeverIssued0000' };
 
@@ -53,6 +53,17 @@ Then('agent {word} is asked to sign in, as with a made-up credential', async (wo
   expect(got.status).toBe(401);
   expect({ www: got.www, body: got.body }).toEqual({ www: madeUp.www, body: madeUp.body });
 });
+
+Then(
+  'agent {word} is asked to sign in, as with a made-up credential, and gets no tasks',
+  async (world: SynoikiaWorld, agent: string) => {
+    expect(world.answer.result).toBeUndefined();
+    const got = await ping(world, world.lastInstance, bearerOf(world, agent), world.sessionId(agent)!);
+    const madeUp = await knock(world, world.lastInstance, MADE_UP);
+    expect(got.status).toBe(401);
+    expect({ www: got.www, body: got.body }).toEqual({ www: madeUp.www, body: madeUp.body });
+  },
+);
 
 Given(
   'user {int} has the role {string}, which has the instances {string} and {string}',
@@ -162,5 +173,25 @@ Then(
     expect(first).toBeTruthy();
     expect(second).toBe(first);
     expect(new Date(third!).getTime() - new Date(first!).getTime()).toBeGreaterThanOrEqual(90_000);
+  },
+);
+
+Given(
+  'agent {word} belongs to user {int}, whose role {string} has the instance {string}',
+  async (world: SynoikiaWorld, agent: string, user: number, role: string, slug: string) => {
+    await world.user(`user ${user}`, role);
+    await world.setRoleInstances(role, [slug]);
+    await world.credential(agent, `user ${user}`, 'write');
+  },
+);
+
+Then(
+  'agent {word} is refused at its next call on {string}, and gets a session on {string}',
+  async (world: SynoikiaWorld, agent: string, closed: string, open: string) => {
+    expect(await ping(world, closed, bearerOf(world, agent), world.sessionId(agent)!)).toMatchObject({
+      status: 403,
+      body: { error: 'insufficient_scope', error_description: 'This endpoint is not available to your role' },
+    });
+    expect(await knock(world, open, bearerOf(world, agent))).toMatchObject({ status: 200 });
   },
 );
