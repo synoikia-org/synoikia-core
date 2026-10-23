@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { AppContext } from '../app.js';
 import { roleHasInstance } from '../catalog/role-levels.js';
 import { users } from '../db/schema.js';
+import { tableCache } from '../db/writes.js';
 import { ConflictError, ValidationError } from '../errors.js';
 import { getSettings } from '../settings.js';
 import { McpTokenService, TOKEN_PREFIX } from './mcp-tokens.js';
@@ -70,6 +71,8 @@ function describeToken(token: string): string {
 
 type Unowned = Omit<McpIdentity, 'userId' | 'roleId'>;
 
+const userById = tableCache([users], (db, id: string) => db.select().from(users).where(eq(users.id, id)).get());
+
 const refuse = (status: 401 | 403, error: string, message: string, detail: string): McpAuthResult => ({
   ok: false,
   status,
@@ -80,7 +83,7 @@ const refuse = (status: 401 | 403, error: string, message: string, detail: strin
 
 /** The credential's owner must be enabled and their role must have this endpoint (ADR-0010). */
 function owned(ctx: AppContext, base: Unowned, userId: string | null | undefined, instanceId: string): McpAuthResult {
-  const user = userId ? ctx.db.select().from(users).where(eq(users.id, userId)).get() : undefined;
+  const user = userId ? userById(ctx.db, userId) : undefined;
   if (!user || user.disabled)
     return refuse(
       403,
@@ -116,7 +119,7 @@ async function externalUser(ctx: AppContext, name: string): Promise<string | und
 
 /** The owner is still enabled, in the same role, and the role still has the endpoint (parked runs). */
 export function ownerLive(ctx: AppContext, identity: McpIdentity, instanceId: string): boolean {
-  const user = ctx.db.select().from(users).where(eq(users.id, identity.userId)).get();
+  const user = userById(ctx.db, identity.userId);
   return (
     !!user && !user.disabled && user.roleId === identity.roleId && roleHasInstance(ctx.db, user.roleId, instanceId)
   );

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { Db, DbLike } from '../db/index.js';
+import { tableCache } from '../db/writes.js';
 import { operationGroups, operations, roleInstances, roleLevels, roles, userLevels, users } from '../db/schema.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import {
@@ -51,13 +52,18 @@ export function roleInstanceIds(db: DbLike, roleId: string): string[] {
     .map((r) => r.id);
 }
 
-export function roleHasInstance(db: DbLike, roleId: string, instanceId: string): boolean {
-  if (roleId === ADMIN_ROLE_ID) return true;
-  return !!db
-    .select({ id: roleInstances.instanceId })
+const roleInstance = tableCache([roleInstances], (db, key: `${string} ${string}`) => {
+  const [roleId, instanceId] = key.split(' ') as [string, string];
+  return db
+    .select()
     .from(roleInstances)
     .where(and(eq(roleInstances.roleId, roleId), eq(roleInstances.instanceId, instanceId)))
     .get();
+});
+
+export function roleHasInstance(db: DbLike, roleId: string, instanceId: string): boolean {
+  if (roleId === ADMIN_ROLE_ID) return true;
+  return !!roleInstance(db, `${roleId} ${instanceId}`);
 }
 
 export type EndpointSwitches = Pick<
@@ -70,20 +76,34 @@ const ALL_ON: EndpointSwitches = { canSetOwnLevels: true, canManageOwnRules: tru
 /** A role's switches on one endpoint (ADR-0010); null when the role lacks it. The Admin role has every one on. */
 export function roleEndpointSwitches(db: DbLike, roleId: string, instanceId: string): EndpointSwitches | null {
   if (roleId === ADMIN_ROLE_ID) return ALL_ON;
-  return (
-    db
-      .select({
-        canSetOwnLevels: roleInstances.canSetOwnLevels,
-        canManageOwnRules: roleInstances.canManageOwnRules,
-        canSeeStatus: roleInstances.canSeeStatus,
-      })
-      .from(roleInstances)
-      .where(and(eq(roleInstances.roleId, roleId), eq(roleInstances.instanceId, instanceId)))
-      .get() ?? null
-  );
+  const row = roleInstance(db, `${roleId} ${instanceId}`);
+  return row
+    ? { canSetOwnLevels: row.canSetOwnLevels, canManageOwnRules: row.canManageOwnRules, canSeeStatus: row.canSeeStatus }
+    : null;
 }
 
 /** The caps a principal's role and own levels put on one endpoint's operations; undefined for admins. */
+const roleLayers = tableCache([roleLevels], (db, key: `${string} ${string}`) => {
+  const [roleId, instanceId] = key.split(' ') as [string, string];
+  return toLayers(
+    db
+      .select()
+      .from(roleLevels)
+      .where(and(eq(roleLevels.roleId, roleId), eq(roleLevels.instanceId, instanceId)))
+      .all(),
+  );
+});
+const userLayers = tableCache([userLevels], (db, key: `${string} ${string}`) => {
+  const [userId, instanceId] = key.split(' ') as [string, string];
+  return toLayers(
+    db
+      .select()
+      .from(userLevels)
+      .where(and(eq(userLevels.userId, userId), eq(userLevels.instanceId, instanceId)))
+      .all(),
+  );
+});
+
 export function loadCaps(
   db: DbLike,
   instanceId: string,
@@ -92,23 +112,9 @@ export function loadCaps(
   if (principal.roleId === ADMIN_ROLE_ID) return undefined;
   const switches = roleEndpointSwitches(db, principal.roleId, instanceId);
   if (!switches) return () => ({ role: null });
-  const roleRows = toLayers(
-    db
-      .select()
-      .from(roleLevels)
-      .where(and(eq(roleLevels.roleId, principal.roleId), eq(roleLevels.instanceId, instanceId)))
-      .all(),
-  );
+  const roleRows = roleLayers(db, `${principal.roleId} ${instanceId}`)!;
   const ownRows =
-    switches.canSetOwnLevels && principal.userId
-      ? toLayers(
-          db
-            .select()
-            .from(userLevels)
-            .where(and(eq(userLevels.userId, principal.userId), eq(userLevels.instanceId, instanceId)))
-            .all(),
-        )
-      : undefined;
+    switches.canSetOwnLevels && principal.userId ? userLayers(db, `${principal.userId} ${instanceId}`) : undefined;
   return (op) => ({ role: layerFor(roleRows, op), own: ownRows && layerFor(ownRows, op) });
 }
 

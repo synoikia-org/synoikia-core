@@ -113,6 +113,22 @@ When(
   },
 );
 
+Given(
+  'agent {word} completed {string} in {string}',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    await world.call(agent, 'complete a task', { list, title });
+    expect(world.answer).toHaveProperty('result');
+  },
+);
+
+When(
+  'agent {word} completes {string} in {string} in the same session',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    expect(world.agents.get(agent)!.client).toBeDefined();
+    await world.call(agent, 'complete a task', { list, title });
+  },
+);
+
 When('agent {word} deletes the list {string}', async (world: SynoikiaWorld, agent: string, list: string) => {
   await world.call(agent, 'delete a list', { list });
 });

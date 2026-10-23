@@ -4,6 +4,7 @@ import { writeAudit } from './audit.js';
 import { EXTERNAL_PROVIDER_IDS, externalProvider } from './auth/external.js';
 import type { Db } from './db/index.js';
 import { settings } from './db/schema.js';
+import { tableCache } from './db/writes.js';
 import { ValidationError } from './errors.js';
 import { cleanStored } from './lenient.js';
 
@@ -132,9 +133,14 @@ function readStored<S extends SettingsSection>(section: S, raw: unknown) {
 
 /** Stored settings are read leniently: a field a newer schema rejects falls back to its default. */
 export function getSettings<S extends SettingsSection>(db: Db, section: S): Settings<S> {
-  const row = db.select().from(settings).where(eq(settings.key, section)).get();
-  return readStored(section, row?.value).value;
+  return storedSettings(db, section) as Settings<S>;
 }
+
+// ADR-0021: read on each call, so kept until the settings table is written; frozen, as callers share it.
+const storedSettings = tableCache([settings], (db, section: SettingsSection) => {
+  const row = db.select().from(settings).where(eq(settings.key, section)).get();
+  return Object.freeze(readStored(section, row?.value).value);
+});
 
 /** Startup: removes stored settings fields the schema rejects, once; valid fields stay as stored. */
 export function normalizeStoredSettings(db: Db): string[] {

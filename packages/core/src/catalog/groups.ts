@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { Db, DbLike } from '../db/index.js';
+import { tableCache } from '../db/writes.js';
 import { operationGroupAliases, operationGroups, operations, pluginInstances } from '../db/schema.js';
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import {
@@ -189,19 +190,32 @@ export function listOperations(db: DbLike, instanceId: string, filter: Operation
 }
 
 /** Access decision for one operation key; unknown or stale operations are unreachable. */
+/** The catalog of an instance with its groups, kept until either table is written (ADR-0021). */
+export const catalogOf = tableCache([operations, operationGroups], (db, instanceId: string) => {
+  const ops = db
+    .select()
+    .from(operations)
+    .where(eq(operations.instanceId, instanceId))
+    .orderBy(asc(operations.key))
+    .all();
+  const groups = db.select().from(operationGroups).where(eq(operationGroups.instanceId, instanceId)).all();
+  return {
+    live: ops.filter((o) => !o.stale),
+    byKey: new Map(ops.map((o) => [o.key, o])),
+    groups: new Map(groups.map((g) => [g.id, g])),
+  };
+});
+
 export function resolveAccess(
   db: DbLike,
   instanceId: string,
   key: string,
   principal: AccessPrincipal = FULL_ACCESS,
 ): AccessDecision | { reachable: false; reason: 'unknown_operation' } {
-  const op = db
-    .select()
-    .from(operations)
-    .where(and(eq(operations.instanceId, instanceId), eq(operations.key, key)))
-    .get();
+  const catalog = catalogOf(db, instanceId)!;
+  const op = catalog.byKey.get(key);
   if (!op || op.stale) return { reachable: false, reason: 'unknown_operation' };
-  const group = db.select().from(operationGroups).where(eq(operationGroups.id, op.groupId)).get();
+  const group = catalog.groups.get(op.groupId);
   return effectiveAccess(accessInput(op), group, principal, loadCaps(db, instanceId, principal)?.(op));
 }
 
