@@ -175,3 +175,23 @@ Then(
     expect(new Date(third!).getTime() - new Date(first!).getTime()).toBeGreaterThanOrEqual(90_000);
   },
 );
+
+Given(
+  'agent {word} belongs to user {int}, whose role {string} has the instance {string}',
+  async (world: SynoikiaWorld, agent: string, user: number, role: string, slug: string) => {
+    await world.user(`user ${user}`, role);
+    await world.setRoleInstances(role, [slug]);
+    await world.credential(agent, `user ${user}`, 'write');
+  },
+);
+
+Then(
+  'agent {word} is refused at its next call on {string}, and gets a session on {string}',
+  async (world: SynoikiaWorld, agent: string, closed: string, open: string) => {
+    expect(await ping(world, closed, bearerOf(world, agent), world.sessionId(agent)!)).toMatchObject({
+      status: 403,
+      body: { error: 'insufficient_scope', error_description: 'This endpoint is not available to your role' },
+    });
+    expect(await knock(world, open, bearerOf(world, agent))).toMatchObject({ status: 200 });
+  },
+);

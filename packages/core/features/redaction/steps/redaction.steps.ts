@@ -231,6 +231,14 @@ When(
   },
 );
 
+When(
+  'agent {word} reads the open tasks of {string} in full in the same session',
+  async (world: SynoikiaWorld, agent: string, list: string) => {
+    expect(world.agents.get(agent)!.client).toBeDefined();
+    await world.call(agent, 'show the open tasks', { list });
+  },
+);
+
 When('the admin opens the approval page', async (world: SynoikiaWorld) => {
   await openPage(world);
 });

@@ -595,6 +595,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
       return edit(db);
     } finally {
       db.close();
+      // Core does not see writes of another connection (ADR-0021); raw SQL on its own connection makes its caches read again.
+      this.ctx?.db.$client.exec('select 1');
     }
   }
 
