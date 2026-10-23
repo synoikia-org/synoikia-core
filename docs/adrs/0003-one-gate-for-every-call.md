@@ -81,7 +81,7 @@ These rules apply to the pipeline:
 - `{ field: "/json/pointer", op: "eq" | "in" | "prefix" | "range" | "bool", value }` applies to the normalized parameters. A missing field gives no match. `prefix` matches at a path segment boundary.
 - `{ field: "$targets", ids?, scopes? }` is true only if each resolved target meets all given selectors. Zero targets gives no match. A rule uses only the scope keys that the operation's `$targets` field offers.
 - **Strict matching.** A condition must cover each parameter of the call, and a condition on a path covers everything below it. A `$targets` condition also covers the subtrees in its field's `covers`.
-- A parameter that the rule does not mention must be absent. `{ field, op: "any" }` accepts it. If the conditions were true but the call had extra parameters, core records `strict_miss_at` on the rule.
+- A parameter that the rule does not mention must be absent. An empty object or list is a parameter too. `{ field, op: "any" }` accepts it. If the conditions were true but the call had extra parameters, core records `strict_miss_at` on the rule.
 - Over its `rate_limit` in `window_seconds`, a rule sends the call to a human. Core does not refuse it.
 - A rule applies only at level `ask`. It never applies to a locked operation.
 - An admin rule applies to the calls of all users. An own rule applies only to the calls of its owner, while the owner's role allows own rules.
