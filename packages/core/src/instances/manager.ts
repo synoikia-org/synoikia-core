@@ -679,6 +679,17 @@ export class InstanceManager {
     this.opts.events.emit('instance.status', { instanceId, slug: row.slug, status, error });
   }
 
+  /** A listener of core threw on a plugin message (@id:plugin-isolation); never throws, because nothing above catches. */
+  private handlerFault(instanceId: string, err: unknown) {
+    const suppressed = this.invalidMessages.admit(`fault|${instanceId}`, this.now().getTime());
+    if (suppressed === null) return;
+    this.opts.log.error('Core failed to handle a plugin message', {
+      instanceId,
+      error: err instanceof Error ? err.name : typeof err,
+      suppressed: suppressed || undefined,
+    });
+  }
+
   private async start(instanceId: string) {
     if (this.live.has(instanceId)) return;
     const row = this.row(instanceId);
@@ -715,15 +726,20 @@ export class InstanceManager {
         }
       },
       onCatalogChanged: () => this.scheduleSync(instanceId),
+      // @id:plugin-isolation: one line a minute for each instance, so a plugin cannot fill the server log.
       onInvalidMessage: () => {
-        // @id:plugin-isolation: one line a minute for each instance, so a plugin cannot fill the server log.
-        const suppressed = this.invalidMessages.admit(instanceId, this.now().getTime());
-        if (suppressed === null) return;
-        this.opts.log.warn('Plugin sent a message that is not valid', {
-          slug: this.db.select().from(pluginInstances).where(eq(pluginInstances.id, instanceId)).get()?.slug,
-          suppressed: suppressed || undefined,
-        });
+        try {
+          const suppressed = this.invalidMessages.admit(instanceId, this.now().getTime());
+          if (suppressed === null) return;
+          this.opts.log.warn('Plugin sent a message that is not valid', {
+            slug: this.db.select().from(pluginInstances).where(eq(pluginInstances.id, instanceId)).get()?.slug,
+            suppressed: suppressed || undefined,
+          });
+        } catch (err) {
+          this.handlerFault(instanceId, err);
+        }
       },
+      onHandlerFault: (err) => this.handlerFault(instanceId, err),
     });
     const live: Live = { supervisor, lastVersionCheck: 0 };
     this.live.set(instanceId, live);

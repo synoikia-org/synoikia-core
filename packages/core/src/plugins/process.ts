@@ -119,6 +119,8 @@ export interface PluginProcessEvents {
   catalogChanged: [reason?: string];
   /** A message that breaks the contract and answers no call; never with its content. */
   invalidMessage: [];
+  /** A listener of core threw while it handled a plugin message: core's fault, not the plugin's. */
+  handlerFault: [error: unknown];
 }
 
 export class PluginProcess extends EventEmitter<PluginProcessEvents> {
@@ -158,11 +160,14 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
     this.child.on('message', (msg) => {
       // @id:plugin-isolation: a broken message never stops core.
+      let valid: boolean;
       try {
-        this.onMessage(msg);
-      } catch {
-        this.emit('invalidMessage');
+        valid = this.onMessage(msg);
+      } catch (err) {
+        this.emit('handlerFault', err);
+        return;
       }
+      if (!valid) this.emit('invalidMessage');
     });
     this.child.on('error', (err) => this.emit('log', 'error', `plugin process error: ${err.message}`));
     this.child.on('exit', (code, signal) => {
@@ -219,7 +224,8 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     this.child?.kill('SIGKILL');
   }
 
-  private onMessage(msg: unknown): void {
+  /** Settles or relays one message; false when it breaks the contract and answers no call. */
+  private onMessage(msg: unknown): boolean {
     const answer = RpcAnswerSchema.safeParse(msg);
     const id = answer.success ? answer.data.id : (msg as { id?: unknown } | null)?.id;
     const pending = typeof id === 'number' ? this.pending.get(id) : undefined;
@@ -231,13 +237,14 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
         const { code, message, data } = answer.data.error;
         pending.reject(new PluginRpcError(code, message, data));
       } else pending.resolve(answer.data.result);
-      return;
+      return true;
     }
     // A valid answer to a call that already timed out is late, not broken.
-    if (answer.success) return;
+    if (answer.success) return true;
     const note = RpcNotificationSchema.safeParse(msg);
-    if (!note.success) return void this.emit('invalidMessage');
+    if (!note.success) return false;
     if (note.data.method === 'log') this.emit('log', note.data.params.level, note.data.params.message);
     else this.emit('catalogChanged', note.data.params?.reason);
+    return true;
   }
 }
