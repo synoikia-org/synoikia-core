@@ -75,6 +75,14 @@
         "widget": "registry-picker",
         "covers": ["/list", "/title"]
       }
+    ],
+    "renamed": [
+      {
+        "field": "$targets",
+        "label": "List",
+        "widget": "registry-picker",
+        "covers": ["/list"]
+      }
     ]
   },
   "connection": {

@@ -23,7 +23,7 @@ import { redactDiff, redactPaths, redactResult } from './redact.js';
 import type { Redactor } from './redact.js';
 
 /** The permission gate (ADR-0003), the only path from sandboxed code to `invoke`: resolve → access →
- * attest → targets → prepareWrite → [grant | rule | human] → invoke → redact → audit (every branch audited). */
+ * attest → prepareWrite → targets → [grant | rule | human] → invoke → redact → audit (every branch audited). */
 
 export interface GateDeps {
   db: Db;
@@ -284,22 +284,24 @@ export function createGateBindings(
       const isWrite = operation.locked || operation.classification === 'write';
       audit.classification = operation.locked ? 'locked' : operation.classification;
 
-      // 3. Concrete targets, so rules and approvers see exactly what will be touched. Fails closed.
-      let targets: ResolvedTarget[] = [];
-      if (rt.manifest.capabilities.targets) {
-        targets = await rt.plugin().call('resolveTargets', { key: operation.key, params: resolved.params });
-        audit.resolvedTargets = targets;
-      }
-
-      // 4. Config transforms: compute the real diff against the live object.
+      // 3. Config transforms: compute the real diff against the live object.
       let params = resolved.params;
       let diff: unknown;
       let expectedHash: string | undefined;
       if (isWrite && rt.manifest.capabilities.configTransform && operation.kind === 'config') {
         const prepared = await rt.plugin().call('prepareWrite', { key: operation.key, params });
         params = prepared.params;
+        audit.params = redactParams(params);
         diff = prepared.diff;
         expectedHash = prepared.expectedHash;
+      }
+
+      // 4. Concrete targets of the params that will run (ADR-0003), so rules and approvers see exactly
+      //    what will be touched. Fails closed.
+      let targets: ResolvedTarget[] = [];
+      if (rt.manifest.capabilities.targets) {
+        targets = await rt.plugin().call('resolveTargets', { key: operation.key, params });
+        audit.resolvedTargets = targets;
       }
 
       // 5. Reads run straight away, unless the read has its own Ask.

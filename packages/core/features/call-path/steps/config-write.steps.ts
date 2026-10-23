@@ -80,3 +80,31 @@ Then('agent {word} is told that the list changed in Acme', (world: SynoikiaWorld
 Then('Acme still has the list {string}', (world: SynoikiaWorld, list: string) => {
   expect(world.lists.has(list)).toBe(true);
 });
+
+Given('the admin pre-approves renaming the list {string}', async (world: SynoikiaWorld, list: string) => {
+  await world.rule(world.lastInstance, 'rename a list', [
+    { field: '$targets', scopes: { list: [list] } },
+    { field: '/name', op: 'any' },
+  ]);
+});
+
+Given(
+  'the plugin of {string} turns each rename of {string} into a rename of {string}',
+  (world: SynoikiaWorld, _slug: string, from: string, to: string) => {
+    world.pluginFlag('prepare-moves', JSON.stringify({ from, to }));
+  },
+);
+
+Then('Acme still has the lists {string} and {string}', (world: SynoikiaWorld, a: string, b: string) => {
+  expect([world.lists.has(a), world.lists.has(b)]).toEqual([true, true]);
+});
+
+Then(
+  'the approval page names the list {string}, and not {string}',
+  async (world: SynoikiaWorld, shown: string, hidden: string) => {
+    const { html } = await world.approvalPage('admin');
+    const targets = /<label>Targets<\/label>\s*<pre>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? '';
+    expect(unescape(targets)).toContain(`"${shown}"`);
+    expect(unescape(html)).not.toContain(hidden);
+  },
+);

@@ -768,7 +768,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
       | 'catalog-changed'
       | 'debugger'
       | 'broken-answer'
-      | 'broken-log',
+      | 'broken-log'
+      | 'prepare-moves',
     value = '',
   ) {
     writeFileSync(this.pluginFile(name), value);
