@@ -21,6 +21,7 @@ import {
 import type { ErrorCode, Frame, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
 import { guardDebugger } from './debugger-guard.js';
+import { FrameBudget } from './frame-budget.js';
 
 /** One plugin child and its JSON-RPC message pipe (ADR-0011, ADR-0014, ADR-0020); every result is validated. */
 
@@ -181,20 +182,29 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     this.channel = channel;
     child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
     child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
+    // ADR-0020: a broken stream stops the child, and supervision starts it again.
+    const abort = (reason: string) => {
+      this.emit('log', 'error', reason);
+      channel.destroy();
+      child.kill('SIGKILL');
+    };
     const read = createFrameReader();
+    const budget = new FrameBudget();
     channel.on('data', (chunk: Buffer) => {
       const frames = read(chunk);
-      if (!frames) {
-        // A line over the cap cannot be resynced: stop the child, and supervision starts it again.
-        this.emit('log', 'error', 'plugin message over the size limit');
-        channel.destroy();
-        child.kill('SIGKILL');
-        return;
+      if (!frames) return abort('plugin message over the size limit');
+      for (const frame of frames) {
+        if (!this.receive(frame) && !budget.spend(Date.now()))
+          return abort('too many plugin messages that are not valid');
       }
-      for (const frame of frames) this.receive(frame);
     });
-    // The child closing or breaking its pipe shows up as its exit.
     channel.on('error', () => undefined);
+    // A child that closes its pipe but keeps running would hold its instance without answering.
+    channel.once('close', () => {
+      setTimeout(() => {
+        if (!this.exited) child.kill('SIGKILL');
+      }, 1000).unref();
+    });
   }
 
   async call<M extends RpcMethod>(method: M, params?: Params<M>, timeoutMs?: number): Promise<Result<M>> {
@@ -241,16 +251,18 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   }
 
   /** Settles or relays one message; false when it breaks the contract and answers no call. */
-  private receive(frame: Frame): void {
+  /** Handles one frame; false when the plugin broke the contract. */
+  private receive(frame: Frame): boolean {
     // @id:plugin-isolation: a broken message never stops core.
     let valid: boolean;
     try {
       valid = frame.ok && this.onMessage(frame.value);
     } catch (err) {
       this.emit('handlerFault', err);
-      return;
+      return true;
     }
     if (!valid) this.emit('invalidMessage');
+    return valid;
   }
 
   private onMessage(msg: unknown): boolean {

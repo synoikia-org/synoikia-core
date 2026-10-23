@@ -20,11 +20,13 @@ export function createFrameReader(maxBytes = MAX_FRAME_BYTES): (chunk: Buffer) =
     let start = 0;
     for (let end = chunk.indexOf(10); end !== -1; end = chunk.indexOf(10, start)) {
       const piece = chunk.subarray(start, end);
+      start = end + 1;
+      // An empty line carries nothing: skip it without parsing.
+      if (piece.length === 0 && size === 0) continue;
       if (size + piece.length > maxBytes) return null;
       const line = Buffer.concat([...parts, piece]).toString('utf8');
       parts = [];
       size = 0;
-      start = end + 1;
       try {
         frames.push({ ok: true, value: JSON.parse(line) as unknown });
       } catch {

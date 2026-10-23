@@ -13,6 +13,11 @@ describe('createFrameReader', () => {
     expect(read(Buffer.from(encodeFrame({ text: 'one\ntwo' })))).toEqual([{ ok: true, value: { text: 'one\ntwo' } }]);
   });
 
+  it('skips empty lines without a frame', () => {
+    const read = createFrameReader();
+    expect(read(Buffer.from('\n\n{"d":4}\n\n'))).toEqual([{ ok: true, value: { d: 4 } }]);
+  });
+
   it('marks a line that is not JSON and goes on with the next line', () => {
     const read = createFrameReader();
     expect(read(Buffer.from('not json\n{"c":3}\n'))).toEqual([{ ok: false }, { ok: true, value: { c: 3 } }]);
