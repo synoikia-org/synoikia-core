@@ -305,7 +305,9 @@ const handlers = {
     const passwordPath = form === 'dot' ? 'list.sharePassword' : form === 'bare' ? 'sharePassword' : '/sharePassword';
     if (params.sharePassword !== undefined)
       diff.push({ path: passwordPath, before: current.sharePassword ?? null, after: params.sharePassword });
-    if (params.lockCode !== undefined) diff.push({ path: '/lockCode', before: null, after: params.lockCode });
+    // Acme reads the lock code without case, as many upstreams do.
+    for (const key of Object.keys(params).filter((k) => k.toLowerCase() === 'lockcode'))
+      diff.push({ path: `/${key}`, before: null, after: params[key] });
     reply(id, { params, diff, expectedHash: current.version });
   },
   async getGuide(id, { key }) {
