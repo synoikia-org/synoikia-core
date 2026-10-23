@@ -20,7 +20,7 @@ export const InstanceSettingsSchema = z
     executePerMinute: z.number().int().min(1).max(10_000).default(30),
     writesPerMinute: z.number().int().min(1).max(10_000).default(10),
     /** Runs that go at once on this instance; more wait for a place (ADR-0003). */
-    runsAtOnce: z.number().int().min(1).max(256).default(4),
+    runsAtOnce: z.number().int().min(1, 'must be at least 1').max(256).default(4),
     sandbox: z
       .object({
         timeoutMs: z.number().int().min(100).max(120_000).default(10_000),

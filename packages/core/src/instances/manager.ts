@@ -35,7 +35,7 @@ import {
 } from './connection.js';
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
-import { runsOf, SANDBOX_CONCURRENCY } from '../runtime/index.js';
+import { RUNS_PER_CPU, runsOf } from '../runtime/index.js';
 
 /** Instance lifecycle (ADR-0013, @id:catalog-sync-schedule): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
@@ -78,6 +78,8 @@ export interface ManagerOptions {
     /** How often core looks for idle instances (ADR-0022). */
     idleSweepMs?: number;
   };
+  /** The total of sandbox runs at once (ADR-0003); without it, 16. */
+  runTotal?: () => number;
   /** How often a live session may trigger the cheap upstream version check. */
   versionCheckIntervalMs?: number;
 }
@@ -135,8 +137,7 @@ const instanceBySlug = tableCache([pluginInstances, plugins], (db, slug: string)
 );
 
 /** ADR-0003: one instance never takes every place, so another instance can always run. */
-function checkRunsAtOnce(slug: string, settings: InstanceSettings): InstanceSettings {
-  const total = SANDBOX_CONCURRENCY.total;
+function checkRunsAtOnce(slug: string, settings: InstanceSettings, total: number): InstanceSettings {
   if (settings.runsAtOnce > total - 1)
     throw new ValidationError(
       'invalid_settings',
@@ -155,6 +156,10 @@ export class InstanceManager {
   constructor(private readonly opts: ManagerOptions) {
     this.db = opts.db;
     this.now = opts.now ?? (() => new Date());
+  }
+
+  private runTotal() {
+    return this.opts.runTotal?.() ?? RUNS_PER_CPU;
   }
 
   // ── lookups ────────────────────────────────────────────────────────────────────────────────────
@@ -445,7 +450,7 @@ export class InstanceManager {
     if (input.authMethods?.some((m) => !(AUTH_METHODS as readonly string[]).includes(m))) {
       throw new ValidationError('invalid_auth_method', 'Unknown client auth method');
     }
-    const settings = checkRunsAtOnce(slug, parseInstanceSettings(input.settings));
+    const settings = checkRunsAtOnce(slug, parseInstanceSettings(input.settings), this.runTotal());
     const { config, secrets } = validateConnection(manifest, input.connection);
 
     const id = randomUUID();
@@ -512,7 +517,7 @@ export class InstanceManager {
       // rejects doesn't block saving an unrelated change.
       const stored = cleanInstanceSettings(before.settings, `/${before.slug} settings`).cleaned as object;
       const merged = { ...stored, ...(patch.settings as object) };
-      set.settings = checkRunsAtOnce(before.slug, parseInstanceSettings(merged));
+      set.settings = checkRunsAtOnce(before.slug, parseInstanceSettings(merged), this.runTotal());
     }
     if (Object.keys(set).length === 0) return this.get(id);
 

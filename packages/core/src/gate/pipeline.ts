@@ -35,6 +35,8 @@ export interface GateDeps {
   grants?: SessionGrantService;
   /** Parked executions (ADR-0006); without it, nothing parks. */
   executions?: ExecutionRegistry;
+  /** The total of sandbox runs at once (ADR-0003); without it, 16. */
+  runTotal?: () => number;
 }
 
 /** How an execution parks (ADR-0006): the gate audits the hand-over and reports each decision. */

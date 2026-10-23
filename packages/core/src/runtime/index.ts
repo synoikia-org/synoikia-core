@@ -6,6 +6,7 @@ import { loadCaps } from '../catalog/role-levels.js';
 import { findRegistryEntries } from '../catalog/registry.js';
 import type { Db } from '../db/index.js';
 import { guides, operationGroups, operations } from '../db/schema.js';
+import { getSettings } from '../settings.js';
 import { effectiveAccess } from '../gate/access.js';
 import type { AccessPrincipal } from '../gate/access.js';
 import { currentGuide, issueAttestationKey } from '../gate/attestation.js';
@@ -21,7 +22,7 @@ import type { Binding, SandboxResult } from '../sandbox/index.js';
 
 /** Sandbox caps (ADR-0003): runs per minute per principal and instance, and concurrent isolates per
  * instance (an instance setting) and in total. Over a cap a run waits for a place, first come first served. */
-export const SANDBOX_CONCURRENCY = { total: 16 };
+export const RUNS_PER_CPU = 16;
 /** How long a run waits for a place before core answers `BUSY`; the wait is not sandbox time. */
 export const ADMISSION_WAIT_MS = 2_000;
 const running = new Map<string, number>();
@@ -29,7 +30,7 @@ let runningTotal = 0;
 /** Runs of the instance that hold or wait for a place. */
 export const runsOf = (instanceId: string) =>
   (running.get(instanceId) ?? 0) + waiting.filter((w) => w.instanceId === instanceId).length;
-const waiting: { instanceId: string; cap: number; admit: () => void }[] = [];
+const waiting: { instanceId: string; cap: number; total: number; admit: () => void }[] = [];
 
 /** Parked scripts still running, across all registries (they gave back their concurrency slot). */
 let parkedRunning = 0;
@@ -43,8 +44,13 @@ const BUSY: SandboxResult = {
   logs: [],
 };
 
-const fits = (instanceId: string, cap: number) =>
-  (running.get(instanceId) ?? 0) < cap && runningTotal < SANDBOX_CONCURRENCY.total;
+const fits = (instanceId: string, cap: number, total: number) =>
+  (running.get(instanceId) ?? 0) < cap && runningTotal < total;
+
+/** The total of runs at once: the admin's, or 16 for each CPU, from 2 to 256. */
+export function sandboxTotal(db: Db, cpus: number): number {
+  return getSettings(db, 'runtime').runsAtOnce ?? Math.min(256, Math.max(2, RUNS_PER_CPU * cpus));
+}
 
 /** Takes a place; the returned release hands it to the oldest waiting run that fits. */
 function take(instanceId: string): () => void {
@@ -56,7 +62,7 @@ function take(instanceId: string): () => void {
     released = true;
     running.set(instanceId, (running.get(instanceId) ?? 1) - 1);
     runningTotal--;
-    const next = waiting.findIndex((w) => fits(w.instanceId, w.cap));
+    const next = waiting.findIndex((w) => fits(w.instanceId, w.cap, w.total));
     if (next >= 0) waiting.splice(next, 1)[0]!.admit();
   };
 }
@@ -78,9 +84,10 @@ async function admit(
     };
   }
   // Also capped here, in case the total is lowered below a stored limit (ADR-0003).
-  const cap = Math.min(rt.settings.runsAtOnce, SANDBOX_CONCURRENCY.total - 1);
+  const total = deps.runTotal?.() ?? RUNS_PER_CPU;
+  const cap = Math.min(rt.settings.runsAtOnce, total - 1);
   // A free place never waits beside a run that fits it: a release hands it over at once.
-  if (fits(rt.instanceId, cap)) return take(rt.instanceId);
+  if (fits(rt.instanceId, cap, total)) return take(rt.instanceId);
   return new Promise((resolve) => {
     const leave = () => {
       clearTimeout(timer);
@@ -95,6 +102,7 @@ async function admit(
     const entry = {
       instanceId: rt.instanceId,
       cap,
+      total,
       admit: () => {
         leave();
         resolve(take(rt.instanceId));
