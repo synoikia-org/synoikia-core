@@ -282,6 +282,16 @@ export class McpEndpoints {
     await s.server.close().catch(() => undefined);
   }
 
+  /** One principal can't pile up servers on an endpoint: past the cap, its least recently used sessions there go.
+   * Runs as the new session is kept, with no await, so opens that resume together cannot pass it (ADR-0015). */
+  private capSessions(principal: string, instanceId: string, kept: string) {
+    const mine = [...this.sessions]
+      .filter(([id, s]) => id !== kept && s.principal === principal && s.instanceId === instanceId)
+      .sort(([, a], [, b]) => a.lastSeen - b.lastSeen);
+    for (const [id] of mine.slice(0, Math.max(0, mine.length - (MAX_SESSIONS_PER_ENDPOINT - 1))))
+      void this.closeSession(id);
+  }
+
   async closeAll() {
     clearInterval(this.sweeper);
     await Promise.all([...this.sessions.keys()].map((id) => this.closeSession(id)));
@@ -650,14 +660,6 @@ export class McpEndpoints {
       return c.json(jsonRpcError(-32002, `Endpoint unavailable: ${message}`), 503);
     }
 
-    // One principal can't pile up servers on an endpoint: past the cap, its least recently used session there goes.
-    const mine = [...this.sessions].filter(
-      ([, s]) => s.principal === auth.identity.principal && s.instanceId === instance.id,
-    );
-    if (mine.length >= MAX_SESSIONS_PER_ENDPOINT) {
-      const [oldest] = mine.sort(([, a], [, b]) => a.lastSeen - b.lastSeen)[0]!;
-      await this.closeSession(oldest);
-    }
     const closed = new AbortController();
     const server = this.buildServer(instance.id, auth.identity, publicMcpBase(this.ctx, c), closed.signal);
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -672,6 +674,7 @@ export class McpEndpoints {
           clientName,
           lastSeen: this.ctx.now().getTime(),
         });
+        this.capSessions(auth.identity.principal, instance.id, id);
       },
       onsessionclosed: (id) => void this.closeSession(id),
     });
