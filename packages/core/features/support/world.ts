@@ -641,12 +641,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
       } catch {
         // Not encoded.
       }
-      return path.posix.normalize(decoded);
+      return decoded === '' ? '' : path.posix.normalize(decoded);
     };
-    const live = (name: string) => {
-      const resolved = resolve(name);
-      return this.archived.has(resolved) ? undefined : this.lists.get(resolved);
-    };
+    const nameOf = (req: FakeRequest) => resolve(req.params.name!);
+    const live = (name: string) => (this.archived.has(name) ? undefined : this.lists.get(name));
     const missing = { status: 404 };
     const slow = async () => {
       if (this.upstreamDelayMs) await sleep(this.upstreamDelayMs);
@@ -658,13 +656,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
           .map((name) => ({ name, description: this.descriptions.get(name) ?? '' })),
       }),
       'GET /lists/{name}': (req: FakeRequest) => {
-        const name = req.params.name!;
+        const name = nameOf(req);
         return live(name)
           ? { body: { name, version: this.listVersion(name), sharePassword: this.sharePasswords.get(name) ?? null } }
           : missing;
       },
       'GET /lists/{name}/tasks': async (req: FakeRequest) => {
-        const name = req.params.name!;
+        const name = nameOf(req);
         const tasks = live(name);
         if (!tasks) return missing;
         if (req.query.get('with') === 'ids')
@@ -675,7 +673,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
         return { body: tasks.filter((t) => !t.done) };
       },
       'POST /lists/{name}/tasks': async (req: FakeRequest) => {
-        const tasks = live(req.params.name!);
+        const tasks = live(nameOf(req));
         if (!tasks) return missing;
         await slow();
         const task = { title: String((req.body as { title?: unknown }).title), done: false };
@@ -685,13 +683,13 @@ export class SynoikiaWorld extends QuickPickleWorld {
       'POST /tasks/{id}/complete': (req: FakeRequest) => {
         const id = req.params.id!;
         const at = id.lastIndexOf('#');
-        const task = live(id.slice(0, at))?.[Number(id.slice(at + 1))];
+        const task = live(resolve(id.slice(0, at)))?.[Number(id.slice(at + 1))];
         if (!task || task.done) return missing;
         task.done = true;
         return { body: task };
       },
       'PUT /lists/{name}': (req: FakeRequest) => {
-        const name = req.params.name!;
+        const name = nameOf(req);
         const tasks = live(name);
         if (!tasks) return missing;
         if (req.headers['if-match'] !== this.listVersion(name)) return { status: 409 };
@@ -705,22 +703,24 @@ export class SynoikiaWorld extends QuickPickleWorld {
         return { body: { name: to } };
       },
       'POST /lists/{name}/archive': (req: FakeRequest) => {
-        const name = req.params.name!;
+        const name = nameOf(req);
         if (!live(name)) return missing;
         this.archived.add(name);
         return { body: { name, archived: true } };
       },
-      'DELETE /lists/{name}': (req: FakeRequest) =>
-        this.lists.delete(req.params.name!) ? { body: { deleted: req.params.name } } : missing,
+      'DELETE /lists/{name}': (req: FakeRequest) => {
+        const name = nameOf(req);
+        return this.lists.delete(name) ? { body: { deleted: name } } : missing;
+      },
       'POST /lists/{name}/import': (req: FakeRequest) => {
-        const tasks = live(req.params.name!);
+        const tasks = live(nameOf(req));
         if (!tasks) return missing;
         const titles = (req.body as { tasks?: unknown[] }).tasks ?? [];
         for (const title of titles) tasks.push({ title: String(title), done: false });
         return { body: { imported: titles.length } };
       },
       'GET /lists/{name}/share': (req: FakeRequest) => {
-        const name = req.params.name!;
+        const name = nameOf(req);
         if (!live(name)) return missing;
         return { body: { list: name, password: this.sharePasswords.get(name) ?? null } };
       },

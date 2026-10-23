@@ -52,12 +52,6 @@ export function matchMisfit(
   op: Pick<OperationRow, 'key' | 'matchProfile'>,
   match: RuleInput['match'],
 ): ValidationError | null {
-  // ADR-0003: a value with a dot part never matches a prefix, so such a rule could never apply.
-  const dotted = match.find(
-    (c) =>
-      c.field !== '$targets' && 'op' in c && c.op === 'prefix' && typeof c.value === 'string' && hasDotPart(c.value),
-  );
-  if (dotted) return new ValidationError('prefix_dot_part', `${dotted.field}: a prefix cannot have a "." or ".." part`);
   if (match.every((c) => c.field !== '$targets' && 'op' in c && c.op === 'any')) return null;
   const profile = op.matchProfile ? manifest.matchProfiles[op.matchProfile] : undefined;
   if (!profile) return new ValidationError('no_match_profile', `${op.key} has no matchable fields; use an empty match`);
@@ -78,6 +72,12 @@ export function matchMisfit(
       }
     }
   }
+  // ADR-0003: a value with a dot part never matches a prefix, so such a rule could never apply.
+  const dotted = match.find(
+    (c) =>
+      c.field !== '$targets' && 'op' in c && c.op === 'prefix' && typeof c.value === 'string' && hasDotPart(c.value),
+  );
+  if (dotted) return new ValidationError('prefix_dot_part', `${dotted.field}: a prefix cannot have a "." or ".." part`);
   return null;
 }
 
