@@ -191,13 +191,13 @@ export class ExecutionRegistry {
     }
   }
 
-  /** Ends the parked runs of one endpoint, or all of them. Their approvals are cancelled by the gate. */
   /** Whether a parked execution of the instance has not ended yet (ADR-0022). */
   parkedIn(instanceId: string): boolean {
     for (const e of this.entries.values()) if (!e.result && e.instanceId === instanceId) return true;
     return false;
   }
 
+  /** Ends the parked runs of one endpoint, or all of them. Their approvals are cancelled by the gate. */
   abort(instanceId?: string) {
     for (const e of this.entries.values()) if (!e.result && (!instanceId || e.instanceId === instanceId)) e.abort();
   }
