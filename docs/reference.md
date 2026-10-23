@@ -219,6 +219,8 @@ The model views `containers` and `deployment` in [`architecture/`](architecture/
 
 Core keeps all data in one SQLite file, `DATA_DIR/synoikia.sqlite` (default `/data`). It opens the file with better-sqlite3 in WAL mode. The schema is in `packages/core/src/db/schema.ts`. Drizzle generates the migrations in `packages/core/drizzle/`, and core applies them at start. JSON values are stored as `TEXT`. Timestamps are epoch milliseconds.
 
+Core keeps credentials, users, levels, catalogs and instances in memory, and reads them again after core writes their tables (ADR-0021). Core does not see a change that another process makes to the file, such as the `sqlite3` shell or `rotate-master-key --force` while core runs. Restart core after such a change.
+
 ### Tables
 
 **Identity and admin authentication**

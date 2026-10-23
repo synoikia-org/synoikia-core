@@ -51,9 +51,9 @@ Feature: Instance lifecycle
 
     Scenario: A disabled instance is stopped, and agents are told that it is unavailable
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
-      And agent 7 belongs to the admin and may read and write
-      And the admin disabled the instance "tasks"
-      When agent 7 asks for the open tasks of "Groceries"
+      And agent 7 of the admin has an open session on "tasks"
+      When the admin disables the instance "tasks"
+      And agent 7 asks again for the open tasks of "Groceries" in the same session
       Then the admin sees that "tasks" is stopped, and agent 7 is told that "tasks" is unavailable
 
     Scenario: An instance that the admin enables again is ready

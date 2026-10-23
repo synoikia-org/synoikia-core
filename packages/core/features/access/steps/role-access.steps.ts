@@ -98,3 +98,19 @@ Then(
 Then('agent {word} is refused, and gets no tasks', (world: SynoikiaWorld) => {
   expect(world.answer.refused).toMatch(/Invalid or expired token/);
 });
+
+When(
+  'agent {word} adds {string} to {string} in the same session',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    expect(world.agents.get(agent)!.client).toBeDefined();
+    await world.call(agent, 'add a task', { list, title });
+  },
+);
+
+Given(
+  'the admin sets the group {string} of {string} to write, and the maximum of {string} for it to write',
+  async (world: SynoikiaWorld, group: string, slug: string, role: string) => {
+    await world.setGroupLevel(slug, group, 'write');
+    await world.setRoleMaximum(role, slug, { group }, 'write');
+  },
+);
