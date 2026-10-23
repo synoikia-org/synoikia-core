@@ -92,7 +92,7 @@ function targetMatches(target: ResolvedTarget, c: z.infer<typeof TargetCondition
 // Slashes that NFKC leaves alone: ⁄ ∕ ⧵ ⧸ ⧹.
 const SEPARATOR = /[\\/\u2044\u2215\u29f5\u29f8\u29f9]/;
 const DOT_PART = /^[.\s]*\.[.\s]*$/;
-const ESCAPED = /%(25|2e|2f|5c)/gi;
+const ESCAPED = /(?:%[0-9a-f]{2})+/gi;
 
 /** ADR-0003: whether a value has a part of only dots and spaces, also once %-escapes and NFKC forms are undone. */
 export function hasDotPart(value: string): boolean {
@@ -102,12 +102,19 @@ export function hasDotPart(value: string): boolean {
     try {
       decoded = decodeURIComponent(text);
     } catch {
-      decoded = text.replace(ESCAPED, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+      // A malformed escape elsewhere: decode each well-formed run on its own.
+      decoded = text.replace(ESCAPED, (run) => {
+        try {
+          return decodeURIComponent(run);
+        } catch {
+          return run;
+        }
+      });
     }
     if (decoded === text) break;
     text = decoded;
   }
-  // Still encoded after three rounds: too deep to judge, so fail closed.
+  // Still encoded after three rounds, or not valid UTF-8: too hard to judge, so fail closed.
   if (new RegExp(ESCAPED.source, 'i').test(text)) return true;
   return text
     .normalize('NFKC')

@@ -118,6 +118,10 @@ describe('hasDotPart (ADR-0003)', () => {
     'vol/media/...',
     'vol/media/.. /x',
     'vol/media/%25252e%25252e/x',
+    'vol/media/..%20/x%zz',
+    'vol/media/%EF%BC%8E%EF%BC%8E/x%zz',
+    'vol/media/..%09/x%',
+    'vol/media/%c0%ae%c0%ae/x',
   ])('finds a dot part in %s', (value) => {
     expect(hasDotPart(value)).toBe(true);
   });
@@ -137,5 +141,7 @@ describe('hasDotPart (ADR-0003)', () => {
     const rule = [{ field: '/name', op: 'prefix', value: 'vol/media' }] as const;
     expect(matches(rule, { params: { name: 'vol/media/../private' }, targets: [] })).toBe(false);
     expect(matches(rule, { params: { name: 'vol/media/..config' }, targets: [] })).toBe(true);
+    // A malformed escape elsewhere does not stop the decoding of the dot part.
+    expect(matches(rule, { params: { name: 'vol/media/..%20/x%zz' }, targets: [] })).toBe(false);
   });
 });
