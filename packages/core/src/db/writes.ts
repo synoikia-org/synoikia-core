@@ -9,6 +9,7 @@ const WRITE = /^\s*(?:insert|replace|update|delete)\b(?:\s+or\s+\w+)?(?:\s+into|
 const ROLLBACK = /^\s*rollback\b/i;
 const RUNS = ['run', 'get', 'all', 'iterate'] as const;
 const MAX_PREPARED = 256;
+const MAX_KEPT_SQL = 4096;
 
 /** The table a statement writes, `*` for a write it cannot name (it fails closed), or nothing for a read. */
 export function writeTarget(source: string, readonly: boolean): string | undefined {
@@ -86,7 +87,8 @@ export function countWrites(sqlite: Database.Database): TableWrites {
       return kept;
     }
     const stmt = prepare(source);
-    if (!kept) {
+    // A long statement, such as an `in` list with thousands of values, is used once: keep only short ones.
+    if (!kept && source.length <= MAX_KEPT_SQL) {
       prepared.set(source, stmt);
       if (prepared.size > MAX_PREPARED) prepared.delete(prepared.keys().next().value!);
     }

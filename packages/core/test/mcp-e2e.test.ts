@@ -161,6 +161,36 @@ describe('client policy', () => {
       policy('off');
     }
   });
+
+  it('keeps at most 16 sessions of one credential on an endpoint, also when they open at once (ADR-0015)', async () => {
+    const { token } = ctx.tokens.create({ name: 'many-at-once', scope: [instanceId] }, { userId: adminId });
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+    const auth = { ...headers, authorization: `Bearer ${token}` };
+    const init = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'burst', version: '1' } },
+    });
+    const opened = await Promise.all(
+      Array.from({ length: 40 }, () => fetch(`${base}/echo`, { method: 'POST', headers: auth, body: init })),
+    );
+    const ids = opened.map((r) => r.headers.get('mcp-session-id')).filter((id): id is string => !!id);
+    const ping = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' });
+    const alive = await Promise.all(
+      ids.map(async (id) => {
+        const res = await fetch(`${base}/echo`, {
+          method: 'POST',
+          headers: { ...auth, 'mcp-session-id': id, 'mcp-protocol-version': '2025-06-18' },
+          body: ping,
+        });
+        await res.body?.cancel();
+        return res.status === 200;
+      }),
+    );
+    expect(ids.length).toBe(40);
+    expect(alive.filter(Boolean).length).toBeLessThanOrEqual(16);
+  });
 });
 
 describe('OAuth 2.1 authorization server', () => {

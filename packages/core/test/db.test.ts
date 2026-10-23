@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../src/db/index.js';
+import { tableCache } from '../src/db/writes.js';
 import { settings } from '../src/db/schema.js';
 
 const dirs: string[] = [];
@@ -69,5 +70,25 @@ describe('prepared statements', () => {
     expect(rows.next().value).toBe('a');
     expect(db.$client.prepare(sql).pluck().all()).toEqual(['a', 'b']);
     rows.return?.();
+  });
+
+  it('counts each write of a reused statement, and does not keep a long one', () => {
+    const db = openDatabase(':memory:');
+    const keys = tableCache([settings], (d) =>
+      d
+        .select()
+        .from(settings)
+        .all()
+        .map((r) => r.key),
+    );
+    const sql = 'insert into settings (key, value) values (?, ?)';
+    expect(keys(db, 'all')).toEqual([]);
+    db.$client.prepare(sql).run('a', '{}');
+    expect(keys(db, 'all')).toEqual(['a']);
+    db.$client.prepare(sql).run('b', '{}');
+    expect(keys(db, 'all')).toEqual(['a', 'b']);
+    expect(db.$client.prepare(sql)).toBe(db.$client.prepare(sql));
+    const long = `select key from settings where key in (${Array.from({ length: 2000 }, () => '?').join(', ')})`;
+    expect(db.$client.prepare(long)).not.toBe(db.$client.prepare(long));
   });
 });
