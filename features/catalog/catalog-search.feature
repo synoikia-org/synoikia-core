@@ -62,7 +62,7 @@ Feature: Catalog search
       Given the admin sets the group "lists" of "tasks" to read
       And the admin gives "show the open tasks" its own level ask
       When agent 7 asks for the groups of "tasks"
-      Then agent 7 sees the group "lists" at read with 3 reads, 2 writes, 1 locked, 0 to acknowledge and 1 own level
+      Then agent 7 sees the group "lists" at read with 3 reads, 1 write, 2 locked, 0 to acknowledge and 1 own level
 
     Scenario: An agent of a role sees only the groups it can use
       Given user 12 has the role "family", which has the instance "tasks"
