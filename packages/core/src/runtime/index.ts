@@ -64,6 +64,8 @@ async function admit(
   caller: CallerContext,
   signal?: AbortSignal,
 ): Promise<SandboxResult | (() => void)> {
+  // A request that already ended neither queues nor uses its run budget.
+  if (signal?.aborted) return BUSY;
   const who = principalKey(caller);
   if (!deps.limiter.take(`run:${rt.instanceId}:${who}`, rt.settings.executePerMinute, 60_000)) {
     return {
@@ -72,7 +74,8 @@ async function admit(
       logs: [],
     };
   }
-  const cap = rt.settings.runsAtOnce;
+  // Also capped here, in case the total is lowered below a stored limit (ADR-0003).
+  const cap = Math.min(rt.settings.runsAtOnce, SANDBOX_CONCURRENCY.total - 1);
   // A free place never waits beside a run that fits it: a release hands it over at once.
   if (fits(rt.instanceId, cap)) return take(rt.instanceId);
   return new Promise((resolve) => {
@@ -432,9 +435,9 @@ export async function searchCode(
   rt: InstanceRuntime,
   caller: CallerContext,
   code: string,
-  _signal?: AbortSignal, // search never calls the upstream; same signature as executeCode
+  signal?: AbortSignal,
 ): Promise<SandboxResult> {
-  const release = await admit(deps, rt, caller);
+  const release = await admit(deps, rt, caller, signal);
   if (typeof release !== 'function') return release;
   let result: SandboxResult;
   try {

@@ -169,3 +169,52 @@ Then('agent {word} gets the value {int} without waiting', (world: SynoikiaWorld,
   expect(world.answer).toEqual({ result: value });
   expect(took.get(world)!.endedBefore).toBe(0);
 });
+
+/** Acme reads of the list, and what the cancelled run of the agent took. */
+const cancelled = new WeakMap<SynoikiaWorld, { ms: number; readsBefore: number }>();
+
+When('agent {word} cancels a run that waits for a place', async (world: SynoikiaWorld, agent: string) => {
+  const reads = world.upstreamRequests('GET', '/lists/Groceries/tasks').length;
+  const stop = new AbortController();
+  const start = performance.now();
+  const run = world.execute(
+    agent,
+    world.lastInstance,
+    `return (await tasks.call('lists.tasks', { list: 'Groceries' })).length;`,
+    stop.signal,
+  );
+  setTimeout(() => stop.abort(), 300);
+  await run;
+  cancelled.set(world, { ms: performance.now() - start, readsBefore: reads });
+});
+
+Then('the cancelled run never reaches Acme, and agent {word} is not kept waiting', async (world: SynoikiaWorld) => {
+  const { ms, readsBefore } = cancelled.get(world)!;
+  expect(ms).toBeLessThan(1000);
+  await Promise.allSettled(started.get(world)!);
+  await new Promise((r) => setTimeout(r, 500));
+  expect(world.upstreamRequests('GET', '/lists/Groceries/tasks').length).toBe(readsBefore);
+});
+
+When(
+  'the admin tries to let {int} runs go at once on {string}',
+  async (world: SynoikiaWorld, runs: number, slug: string) => {
+    const id = await world.tasksInstance(slug);
+    const res = await world.admin.patch(`/api/instances/${id}`, { settings: { runsAtOnce: runs } });
+    refused.set(world, { status: res.status, body: (await res.json()) as Record<string, unknown> });
+  },
+);
+
+const refused = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
+
+Then(
+  'the admin is told that {string} may have at most 15, one less than the 16 runs in total, and its limit stays at 4',
+  async (world: SynoikiaWorld, slug: string) => {
+    const { status, body } = refused.get(world)!;
+    expect(status).toBe(400);
+    expect(body.message).toBe(`"${slug}" may have at most 15 runs at once, one less than the 16 runs in total`);
+    const id = await world.tasksInstance(slug);
+    const instance = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
+    expect((instance.settings as { runsAtOnce: number }).runsAtOnce).toBe(4);
+  },
+);
