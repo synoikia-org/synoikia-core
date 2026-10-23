@@ -109,15 +109,16 @@ graph TB
     SynoikiaCore.Gate@{ shape: rectangle, label: "Gate" }
     SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
     SynoikiaCore.AdminApi@{ shape: rectangle, label: "Admin API" }
-    SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
     SynoikiaCore.Notify@{ shape: rectangle, label: "Notifications" }
     SynoikiaCore.Runtime@{ shape: rectangle, label: "Runtime" }
     SynoikiaCore.Approvals@{ shape: rectangle, label: "Approvals" }
     SynoikiaCore.Auth@{ shape: rectangle, label: "Auth" }
     SynoikiaCore.Instances@{ shape: rectangle, label: "Instance manager" }
-    SynoikiaCore.PluginHost@{ shape: rectangle, label: "Plugin host" }
+    SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
     SynoikiaCore.Crypto@{ shape: rectangle, label: "Secret box" }
+    SynoikiaCore.PluginHost@{ shape: rectangle, label: "Plugin host" }
     SynoikiaCore.Audit@{ shape: rectangle, label: "Audit log" }
+    SynoikiaCore.DbAccess@{ shape: rectangle, label: "Database access" }
   end
   NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
@@ -131,27 +132,32 @@ approver with`" .-> SynoikiaCore.Auth
   SynoikiaCore.McpEndpoints -. "`starts search, execute and resume in`" .-> SynoikiaCore.Runtime
   SynoikiaCore.McpEndpoints -. "`records decisions from the approval page 
 in`" .-> SynoikiaCore.Approvals
+  SynoikiaCore.McpEndpoints -. "`looks up the instance of each endpoint 
+in`" .-> SynoikiaCore.Instances
   SynoikiaCore.AdminApi -. "`signs admins in with`" .-> SynoikiaCore.Auth
   SynoikiaCore.AdminApi -. "`configures instances in`" .-> SynoikiaCore.Instances
   SynoikiaCore.AdminApi -. "`installs plugins with`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Auth -. "`[...]`" .-> SynoikiaCore.DbAccess
+  SynoikiaCore.Runtime -. "`reads the catalog for search from`" .-> SynoikiaCore.CatalogSync
   SynoikiaCore.Gate -. "`asks for human approval in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.Gate -. "`resolves and invokes operations through`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Gate -. "`reads operations and access levels from`" .-> SynoikiaCore.CatalogSync
   SynoikiaCore.Gate -. "`records each decision in`" .-> SynoikiaCore.Audit
+  SynoikiaCore.Approvals -. "`stores pending approvals through`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Instances -. "`starts and stops instances with`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Instances -. "`[...]`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Instances -. "`encrypts connection secrets with`" .-> SynoikiaCore.Crypto
   SynoikiaCore.PluginHost -. "`warns of each refused debugger signal in`" .-> SynoikiaCore.Audit
   SynoikiaCore.CatalogSync -. "`reads catalogs and registries through`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.CatalogSync -. "`[...]`" .-> SynoikiaCore.DbAccess
+  SynoikiaCore.Audit -. "`appends through`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Auth -. "`signs users in with`" .-> IdentityProvider
-  SynoikiaCore.Auth -. "`stores users, sessions and tokens in`" .-> SynoikiaDatabase
   SynoikiaCore.Runtime -. "`runs model code in`" .-> SynoikiaSandbox
-  SynoikiaCore.Approvals -. "`stores pending approvals in`" .-> SynoikiaDatabase
-  SynoikiaCore.Instances -. "`stores instances in`" .-> SynoikiaDatabase
   SynoikiaCore.PluginHost -. "`downloads indexes and bundles from`" .-> PluginRepository
   SynoikiaCore.PluginHost -. "`sends operation calls to`" .-> SynoikiaInstance
   SynoikiaCore.PluginHost -. "`installs bundles into`" .-> SynoikiaBundles
-  SynoikiaCore.CatalogSync -. "`stores catalogs in`" .-> SynoikiaDatabase
   SynoikiaCore.Notify -. "`sends events to`" .-> NotificationReceiver
-  SynoikiaCore.Audit -. "`appends to`" .-> SynoikiaDatabase
+  SynoikiaCore.DbAccess -. "`reads and writes`" .-> SynoikiaDatabase
 ```
 
 ### Core testing components
