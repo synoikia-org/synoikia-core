@@ -53,23 +53,42 @@ Feature: Rate limits
       When agent 7 adds "honey" to "Groceries"
       Then agent 7 is told that it made too many writes, and to slow down
 
-  Rule: Only a few runs go at once
+  Rule: Only a few runs go at once, and a run waits up to 2 seconds for a place
 
-    Scenario: A fifth run while four wait on Acme is told that core is busy
-      Given Acme takes 2 seconds to answer
+    Scenario: A fifth run that waits 2 seconds is told that core is busy
+      Given Acme takes 3 seconds to answer
       And agent 7 started four reads of "Groceries" that wait for Acme
       When agent 7 runs code that returns 1
-      Then agent 7 is told that core is busy
+      Then agent 7 is told after 2 seconds that core is busy
 
-    Scenario: Runs work again after the busy runs end
+    Scenario: A fifth run waits for a place, then runs
       Given Acme takes 1 second to answer
       And agent 7 started four reads of "Groceries" that wait for Acme
-      And those four reads ended
       When agent 7 runs code that returns 1
-      Then agent 7 gets the value 1
+      Then agent 7 gets the value 1 once one of the four reads ends
 
     Scenario: A run that waits for approval gives its place back
       Given agent 7b belongs to the admin and may read and write
       And agents 7 and 7b each wait for the admin to approve two adds
       When agent 7 runs code that returns 1
       Then agent 7 gets the value 1
+
+  Rule: The admin sets how many runs go at once
+
+    Scenario: The admin lets more runs go at once on an instance
+      Given Acme takes 3 seconds to answer
+      And the admin lets 5 runs go at once on "tasks"
+      And agent 7 started four reads of "Groceries" that wait for Acme
+      When agent 7 runs code that returns 1
+      Then agent 7 gets the value 1 without waiting
+
+    @backlog
+    Scenario: The server lets 16 runs go at once for each CPU unless the admin changes it
+      Given the server has 2 CPUs
+      When the admin opens the run limits of the server
+      Then the admin sees that 32 runs may go at once in total, and that this is the default
+
+    @backlog
+    Scenario: A limit outside 1 to 256 is refused
+      When the admin tries to let 0 runs go at once on "tasks", and 257 in total on the server
+      Then the admin is told that each limit must be between 1 and 256, and both limits stay as they were
