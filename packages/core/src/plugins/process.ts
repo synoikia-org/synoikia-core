@@ -1,9 +1,13 @@
-import { fork } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { realpathSync } from 'node:fs';
+import type { Socket } from 'node:net';
 import path from 'node:path';
 import {
+  createFrameReader,
+  encodeFrame,
+  ErrorCodes,
   GuideSchema,
   OptionSchema,
   PrepareWriteResultSchema,
@@ -14,11 +18,12 @@ import {
   SyncCatalogResultSchema,
   TestConnectionResultSchema,
 } from '@synoikia/plugin-sdk';
-import type { ErrorCode, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
+import type { ErrorCode, Frame, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
 import { guardDebugger } from './debugger-guard.js';
+import { FrameBudget } from './frame-budget.js';
 
-/** One plugin child and its JSON-RPC-over-IPC channel (ADR-0011, ADR-0014); every result is validated. */
+/** One plugin child and its JSON-RPC message pipe (ADR-0011, ADR-0014, ADR-0020); every result is validated. */
 
 export class PluginRpcError extends Error {
   constructor(
@@ -71,6 +76,28 @@ const RESULT_SCHEMAS: { [M in RpcMethod]: z.ZodType } = {
   shutdown: nullish,
 };
 
+// ADR-0011: the envelope of each plugin message. RESULT_SCHEMAS then checks each result.
+const RpcAnswerSchema = z.union([
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    id: z.number(),
+    error: z.object({ code: z.enum(ErrorCodes), message: z.string(), data: z.unknown().optional() }),
+  }),
+  z.object({ jsonrpc: z.literal('2.0'), id: z.number(), result: z.unknown(), error: z.undefined().optional() }),
+]) satisfies z.ZodType<RpcResponse>;
+const RpcNotificationSchema = z.discriminatedUnion('method', [
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    method: z.literal('log'),
+    params: z.object({ level: z.enum(['debug', 'info', 'warn', 'error']), message: z.string() }),
+  }),
+  z.object({
+    jsonrpc: z.literal('2.0'),
+    method: z.literal('catalogChanged'),
+    params: z.object({ reason: z.string().optional() }).optional(),
+  }),
+]) satisfies z.ZodType<RpcNotification>;
+
 type Params<M extends RpcMethod> = Parameters<NonNullable<PluginHandlers[M]>>[0];
 type Result<M extends RpcMethod> = Awaited<ReturnType<NonNullable<PluginHandlers[M]>>>;
 
@@ -94,10 +121,15 @@ export interface PluginProcessEvents {
   exit: [code: number | null, signal: NodeJS.Signals | null];
   log: [level: string, message: string];
   catalogChanged: [reason?: string];
+  /** A message that breaks the contract and answers no call; never with its content. */
+  invalidMessage: [];
+  /** A listener of core threw while it handled a plugin message: core's fault, not the plugin's. */
+  handlerFault: [error: unknown];
 }
 
 export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   private child?: ChildProcess;
+  private channel?: Socket;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private exited = false;
@@ -121,19 +153,22 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     // /var -> /private/var tmpdir, a symlinked DATA_DIR) the child could not even load its own entry.
     const dir = realpathSync(path.resolve(this.opts.dir));
     guardDebugger();
-    this.child = fork(path.resolve(dir, this.opts.entry), [], {
+    const args = ['--permission', `--allow-fs-read=${dir}`, `--max-old-space-size=${this.opts.memoryMb ?? 256}`];
+    // ADR-0020: a plain pipe on fd 3, not a Node IPC channel, so a child can send no handle to core.
+    this.child = spawn(process.execPath, [...args, path.resolve(dir, this.opts.entry)], {
       cwd: dir,
-      execArgv: ['--permission', `--allow-fs-read=${dir}`, `--max-old-space-size=${this.opts.memoryMb ?? 256}`],
       // Scrubbed environment: no MASTER_KEY, DB paths or admin config ever reach the plugin.
       env: { NODE_ENV: process.env.NODE_ENV ?? 'production', PLUGIN_INSTANCE_ID: this.opts.instanceId },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      serialization: 'json',
+      stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
     });
-    this.child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
-    this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
-    this.child.on('message', (msg) => this.onMessage(msg));
-    this.child.on('error', (err) => this.emit('log', 'error', `plugin process error: ${err.message}`));
-    this.child.on('exit', (code, signal) => {
+    const child = this.child;
+    // Listeners first: when the spawn fails (EMFILE), Node emits 'error' and leaves stdio unset.
+    child.on('error', (err) => {
+      // A child that never started will not emit 'exit'.
+      if (child.pid === undefined) this.exited = true;
+      this.emit('log', 'error', `plugin process error: ${err.message}`);
+    });
+    child.on('exit', (code, signal) => {
       this.exited = true;
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
@@ -142,11 +177,39 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
       this.pending.clear();
       this.emit('exit', code, signal);
     });
+    const channel = child.stdio?.[3] as Socket | undefined;
+    if (!channel) return;
+    this.channel = channel;
+    child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
+    child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
+    // ADR-0020: a broken stream stops the child, and supervision starts it again.
+    const abort = (reason: string) => {
+      this.emit('log', 'error', reason);
+      channel.destroy();
+      child.kill('SIGKILL');
+    };
+    const read = createFrameReader();
+    const budget = new FrameBudget();
+    channel.on('data', (chunk: Buffer) => {
+      const frames = read(chunk);
+      if (!frames) return abort('plugin message over the size limit');
+      for (const frame of frames) {
+        if (!this.receive(frame) && !budget.spend(Date.now()))
+          return abort('too many plugin messages that are not valid');
+      }
+    });
+    channel.on('error', () => undefined);
+    // A child that closes its pipe but keeps running would hold its instance without answering.
+    channel.once('close', () => {
+      setTimeout(() => {
+        if (!this.exited) child.kill('SIGKILL');
+      }, 1000).unref();
+    });
   }
 
   async call<M extends RpcMethod>(method: M, params?: Params<M>, timeoutMs?: number): Promise<Result<M>> {
-    const child = this.child;
-    if (!child || this.exited || !child.connected) throw new PluginUnavailableError();
+    const channel = this.channel;
+    if (!this.child || this.exited || !channel?.writable) throw new PluginUnavailableError();
     const id = this.nextId++;
     const ms = timeoutMs ?? this.opts.defaultTimeoutMs ?? 30_000;
     const raw = await new Promise<unknown>((resolve, reject) => {
@@ -155,7 +218,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
         reject(new PluginTimeoutError(method, ms));
       }, ms);
       this.pending.set(id, { method, resolve, reject, timer });
-      child.send({ jsonrpc: '2.0', id, method, params }, (err) => {
+      channel.write(encodeFrame({ jsonrpc: '2.0', id, method, params }), (err) => {
         if (!err) return;
         clearTimeout(timer);
         this.pending.delete(id);
@@ -187,20 +250,41 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     this.child?.kill('SIGKILL');
   }
 
-  private onMessage(msg: unknown): void {
-    if (typeof msg !== 'object' || msg === null || (msg as { jsonrpc?: unknown }).jsonrpc !== '2.0') return;
-    if ('id' in msg && typeof msg.id === 'number') {
-      const pending = this.pending.get(msg.id);
-      if (!pending) return;
-      this.pending.delete(msg.id);
-      clearTimeout(pending.timer);
-      const res = msg as RpcResponse;
-      if ('error' in res) pending.reject(new PluginRpcError(res.error.code, res.error.message, res.error.data));
-      else pending.resolve(res.result);
-      return;
+  /** Settles or relays one message; false when it breaks the contract and answers no call. */
+  /** Handles one frame; false when the plugin broke the contract. */
+  private receive(frame: Frame): boolean {
+    // @id:plugin-isolation: a broken message never stops core.
+    let valid: boolean;
+    try {
+      valid = frame.ok && this.onMessage(frame.value);
+    } catch (err) {
+      this.emit('handlerFault', err);
+      return true;
     }
-    const note = msg as RpcNotification;
-    if (note.method === 'log') this.emit('log', note.params.level, note.params.message);
-    else if (note.method === 'catalogChanged') this.emit('catalogChanged', note.params?.reason);
+    if (!valid) this.emit('invalidMessage');
+    return valid;
+  }
+
+  private onMessage(msg: unknown): boolean {
+    const answer = RpcAnswerSchema.safeParse(msg);
+    const id = answer.success ? answer.data.id : (msg as { id?: unknown } | null)?.id;
+    const pending = typeof id === 'number' ? this.pending.get(id) : undefined;
+    if (pending && typeof id === 'number') {
+      this.pending.delete(id);
+      clearTimeout(pending.timer);
+      if (!answer.success) pending.reject(new PluginProtocolError(pending.method, 'the answer is not valid'));
+      else if (answer.data.error) {
+        const { code, message, data } = answer.data.error;
+        pending.reject(new PluginRpcError(code, message, data));
+      } else pending.resolve(answer.data.result);
+      return true;
+    }
+    // A valid answer to a call that already timed out is late, not broken.
+    if (answer.success) return true;
+    const note = RpcNotificationSchema.safeParse(msg);
+    if (!note.success) return false;
+    if (note.data.method === 'log') this.emit('log', note.data.params.level, note.data.params.message);
+    else this.emit('catalogChanged', note.data.params?.reason);
+    return true;
   }
 }

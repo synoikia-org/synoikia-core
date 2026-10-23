@@ -245,9 +245,10 @@ Feature: Plugin manifest
     Scenario Outline: A plugin works with the contract its SDK range accepts
       Given the manifest asks for the SDK range "<range>"
       When plugin author 3 compares the plugin with the contract of this SDK
-      Then the plugin <verdict> with the contract "0.2.2"
+      Then the plugin <verdict> with the contract "0.3.0"
 
       Examples:
         | range  | verdict       |
-        | ^0.2.2 | works         |
+        | ^0.3.0 | works         |
+        | ^0.2.2 | does not work |
         | ^2.0.0 | does not work |

@@ -128,7 +128,8 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
   if (boot === 'ignored') warnings.push('ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored — remove it');
 
-  const instances = new InstanceManager({ db, secrets, events, now, supervisor: opts.supervisor });
+  const log = opts.log ?? createLogger(config.LOG_LEVEL);
+  const instances = new InstanceManager({ db, secrets, events, now, log, supervisor: opts.supervisor });
   // Stored JSON from an earlier release is brought to the current schemas once, before anything reads it.
   normalizeStoredSettings(db);
   for (const slug of instances.normalizeStoredSettings().inSessionOff)
@@ -196,7 +197,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   };
   const ctx: AppContext = {
     config,
-    log: opts.log ?? createLogger(config.LOG_LEVEL),
+    log,
     db,
     secrets,
     events,

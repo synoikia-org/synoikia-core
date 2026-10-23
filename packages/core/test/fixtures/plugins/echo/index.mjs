@@ -1,6 +1,24 @@
-// Self-contained test plugin: speaks the JSON-RPC-over-IPC contract without importing the SDK,
+// Self-contained test plugin: speaks the JSON-RPC contract on its message pipe without importing the SDK,
 // because under the permission model it may only read its own directory.
 import fs from 'node:fs';
+import net from 'node:net';
+
+// The message pipe on fd 3: one JSON value on each line (ADR-0020).
+const channel = new net.Socket({ fd: 3, readable: true, writable: true });
+channel.setEncoding('utf8');
+channel.on('end', () => process.exit(0));
+const send = (message) => channel.write(`${JSON.stringify(message)}\n`);
+const onMessage = (handle) => {
+  let buffered = '';
+  channel.on('data', (text) => {
+    buffered += text;
+    for (let end = buffered.indexOf('\n'); end !== -1; end = buffered.indexOf('\n')) {
+      const line = buffered.slice(0, end);
+      buffered = buffered.slice(end + 1);
+      handle(JSON.parse(line));
+    }
+  });
+};
 
 const op = (key, classification, extra = {}) => ({
   key,
@@ -22,8 +40,8 @@ const CATALOG = [
 let config = {};
 let resolutions = 0;
 let secrets = {};
-const reply = (id, result) => process.send({ jsonrpc: '2.0', id, result: result ?? null });
-const fail = (id, code, message) => process.send({ jsonrpc: '2.0', id, error: { code, message } });
+const reply = (id, result) => send({ jsonrpc: '2.0', id, result: result ?? null });
+const fail = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
 
 const handlers = {
   init(id, params) {
@@ -116,7 +134,7 @@ const handlers = {
   },
 };
 
-process.on('message', (msg) => {
+onMessage((msg) => {
   const handler = handlers[msg.method];
   if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', msg.method);
   handler(msg.id, msg.params);

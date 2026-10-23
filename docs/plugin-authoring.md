@@ -249,7 +249,7 @@ The same package has `startFakeHttp`, a fake HTTP upstream that answers only the
 
 1. It adds the repository as signed, with `publicKey` pinned.
 2. It installs the newest version of each plugin, with the sha256, signature and archive checks.
-3. It starts each bundle as a child under the permission model and requires an answer over IPC.
+3. It starts each bundle as a child under the permission model and requires an answer on its message pipe.
 
 The release workflow runs it after signing and before upload.
 

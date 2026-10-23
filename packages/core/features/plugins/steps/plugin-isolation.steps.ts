@@ -160,3 +160,49 @@ Then('no process of Acme Tasks runs, and the audit log shows no plugin error', a
   expect(world.pluginProcesses()).toBe(0);
   expect(await world.audit({ decision: 'plugin_error' })).toEqual([]);
 });
+
+Given('the plugin of {string} answers each call with an error that has no details', (world: SynoikiaWorld) => {
+  world.pluginFlag('broken-answer');
+});
+
+Then('agent {word} is told that the plugin sent an answer that is not valid', (world: SynoikiaWorld) => {
+  expect(world.answer).toEqual({ error: 'PLUGIN_ERROR', message: 'The plugin returned an invalid response' });
+});
+
+const brokenLines = (world: SynoikiaWorld) =>
+  world.serverLog.filter((l) => l.startsWith('WARN Plugin sent a message that is not valid'));
+
+Given('the plugin of {string} sends a log message without content', async (world: SynoikiaWorld) => {
+  world.pluginFlag('broken-log', '1');
+  await eventually(() => brokenLines(world).length > 0, 'the broken message to reach core');
+});
+
+Then(
+  'agent {word} gets {string}, {string} and {string}, and the server log notes that {string} sent a message that is not valid',
+  (world: SynoikiaWorld, _agent: string, a: string, b: string, c: string, slug: string) => {
+    expect(world.answer).toEqual({ result: [a, b, c] });
+    expect(brokenLines(world)).toEqual([`WARN Plugin sent a message that is not valid slug=${slug}`]);
+  },
+);
+
+When(
+  'the plugin of {string} sends 50 log messages without content, and once more a minute later',
+  async (world: SynoikiaWorld) => {
+    world.pluginFlag('broken-log', '50');
+    await eventually(() => brokenLines(world).length > 0, 'the broken messages to reach core');
+    await new Promise((r) => setTimeout(r, 300));
+    world.passTime(61_000);
+    world.pluginFlag('broken-log', '50,1');
+    await eventually(() => brokenLines(world).length > 1, 'the broken message a minute later to reach core');
+  },
+);
+
+Then(
+  'the server log notes once that {string} sent a message that is not valid, and a minute later counts 49 dropped repeats',
+  (world: SynoikiaWorld, slug: string) => {
+    expect(brokenLines(world)).toEqual([
+      `WARN Plugin sent a message that is not valid slug=${slug}`,
+      `WARN Plugin sent a message that is not valid slug=${slug} suppressed=49`,
+    ]);
+  },
+);

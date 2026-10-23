@@ -1,7 +1,25 @@
-// The World's "Acme Tasks" plugin: speaks the JSON-RPC-over-IPC contract and calls the fake upstream over HTTP.
+// The World's "Acme Tasks" plugin: speaks the JSON-RPC contract on its message pipe and calls the fake upstream over HTTP.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// The message pipe on fd 3: one JSON value on each line (ADR-0020).
+const channel = new net.Socket({ fd: 3, readable: true, writable: true });
+channel.setEncoding('utf8');
+channel.on('end', () => process.exit(0));
+const send = (message) => channel.write(`${JSON.stringify(message)}\n`);
+const onMessage = (handle) => {
+  let buffered = '';
+  channel.on('data', (text) => {
+    buffered += text;
+    for (let end = buffered.indexOf('\n'); end !== -1; end = buffered.indexOf('\n')) {
+      const line = buffered.slice(0, end);
+      buffered = buffered.slice(end + 1);
+      handle(JSON.parse(line));
+    }
+  });
+};
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Flag files the World drops here: `down`, `catalog-broken`, `no-confirmation`, `count-is-write` (the count
@@ -9,7 +27,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // `diff-parent` (a rename as one change of the whole list) and `upstream-version` (the version Acme reports) change what the plugin answers, and a new `restart` value
 // restarts the child once. Isolation and supervision: `report`, `start-check`, `hang`/`crash`/`forget` (a method
 // name), `catalog-output` (a broken catalog), `catalog-changes` (JSON: add, change, remove), `catalog-changed` and
-// `debugger` (signal core to open its debugger before a call, and tell Acme what it found).
+// `debugger` (signal core to open its debugger before a call, and tell Acme what it found). Broken messages:
+// `broken-answer` (each answer an error without details) and `broken-log` (counts: each new one sends that many empty logs).
 const flag = (name) => existsSync(path.join(HERE, name));
 const flagValue = (name) => (flag(name) ? readFileSync(path.join(HERE, name), 'utf8') : '');
 const upstreamVersion = () => flagValue('upstream-version') || '1.0';
@@ -53,8 +72,8 @@ const CATALOG = [
 
 let config = {};
 let secrets = {};
-const reply = (id, result) => process.send({ jsonrpc: '2.0', id, result: result ?? null });
-const fail = (id, code, message) => process.send({ jsonrpc: '2.0', id, error: { code, message } });
+const reply = (id, result) => send({ jsonrpc: '2.0', id, result: result ?? null });
+const fail = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
 
 async function upstream(method, path, body, headers = {}) {
   const res = await globalThis.fetch(`${config.url}${path}`, {
@@ -312,12 +331,20 @@ globalThis.setInterval(() => {
   if (flagValue('restart') !== restartSeen) process.exit(1);
   if (flagValue('catalog-changed') === catalogChangedSeen) return;
   catalogChangedSeen = flagValue('catalog-changed');
-  process.send({ jsonrpc: '2.0', method: 'catalogChanged', params: { reason: 'Acme changed' } });
+  send({ jsonrpc: '2.0', method: 'catalogChanged', params: { reason: 'Acme changed' } });
+}, 25);
+let brokenLogSeen = '';
+globalThis.setInterval(() => {
+  if (flagValue('broken-log') === brokenLogSeen) return;
+  brokenLogSeen = flagValue('broken-log');
+  const count = Number(brokenLogSeen.split(',').at(-1));
+  for (let i = 0; i < count; i++) send({ jsonrpc: '2.0', method: 'log' });
 }, 25);
 
-process.on('message', (msg) => {
+onMessage((msg) => {
   if (flag('down') || flagValue('crash') === msg.method) process.exit(1);
   if (flagValue('hang') === msg.method) return;
+  if (flag('broken-answer') && msg.method !== 'shutdown') return send({ jsonrpc: '2.0', id: msg.id, error: null });
   const handler = flagValue('forget') === msg.method ? undefined : handlers[msg.method];
   if (!handler) return fail(msg.id, 'METHOD_NOT_FOUND', `method not found: ${msg.method}`);
   Promise.resolve(handler(msg.id, msg.params)).catch((err) =>

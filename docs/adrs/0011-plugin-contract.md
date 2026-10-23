@@ -62,11 +62,11 @@ Core calls `invoke` only after the gate lets the call through. The admin accepts
 - `readInstructionsFile` in the SDK does these checks. `synoikia-plugin check` and discovery use it. A file that fails makes the plugin `invalid`.
 - When the text of an existing plugin changes, core audits `plugin_instructions_changed` with the SHA-256 of the text before and after, not the text. The plugin stays enabled.
 
-**RPC contract.** Core starts each instance as a child process with `child_process.fork` (ADR-0014). Core and the child send JSON-RPC 2.0 messages over the IPC channel.
+**RPC contract.** Core starts each instance as a child process (ADR-0014). Core and the child send JSON-RPC 2.0 messages on a plain pipe, one JSON value on each line (ADR-0020).
 
 - Each request has a timeout of 30 s. `invoke` gets the time that remains in the sandbox budget.
 - The SDK function `runPlugin(handlers)` is the child side. The core class `PluginProcess` is the parent side.
-- Core validates all plugin output against the SDK schemas.
+- Core validates each plugin message: the envelope against its own schemas, each result against the SDK schemas.
 
 | Method                                                          | Required               | Purpose                                                                                              |
 | --------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -111,7 +111,7 @@ The child can also send the notifications `log` and `catalogChanged`.
 }
 ```
 
-**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.2.2`. A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
+**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.3.0`. Version `0.3.0` moved the messages from the Node IPC channel to the pipe. A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
 
 - Core masks `sensitiveResult` from contract `0.2.2`. A plugin that declares `sensitiveResult` must require `^0.2.2` or later.
 - `checkManifest`, `checkConformance`, `synoikia-plugin check` and `synoikia-plugin repo pack` refuse a plugin that does not.
