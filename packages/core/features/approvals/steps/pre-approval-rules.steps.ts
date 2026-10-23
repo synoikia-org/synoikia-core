@@ -119,6 +119,20 @@ When(
 );
 
 When(
+  'agent {word} adds {string} to {string} with an empty list of labels',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    await world.call(agent, 'add a task', { list, title, labels: [] });
+  },
+);
+
+When(
+  'agent {word} adds {string} to {string} with empty details',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    await world.call(agent, 'add a task', { list, title, details: {} });
+  },
+);
+
+When(
   'agent {word} adds {string} due on {string} and {string} with no due date to {string}',
   async (world: SynoikiaWorld, agent: string, first: string, due: string, second: string, list: string) => {
     await world.call(agent, 'add a task', { list, title: first, due });
