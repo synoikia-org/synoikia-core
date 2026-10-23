@@ -67,6 +67,12 @@ Feature: Rate limits
       When agent 7 runs code that returns 1
       Then agent 7 gets the value 1 once one of the four reads ends
 
+    Scenario: A cancelled run gives up its wait
+      Given Acme takes 3 seconds to answer
+      And agent 7 started four reads of "Groceries" that wait for Acme
+      When agent 7 cancels a run that waits for a place
+      Then the cancelled run never reaches Acme, and agent 7 is not kept waiting
+
     Scenario: A run that waits for approval gives its place back
       Given agent 7b belongs to the admin and may read and write
       And agents 7 and 7b each wait for the admin to approve two adds
@@ -82,6 +88,10 @@ Feature: Rate limits
       When agent 7 runs code that returns 1
       Then agent 7 gets the value 1 without waiting
 
+    Scenario: An instance cannot take every place
+      When the admin tries to let 16 runs go at once on "tasks"
+      Then the admin is told that "tasks" may have at most 15, one less than the 16 runs in total, and its limit stays at 4
+
     @backlog
     Scenario: The server lets 16 runs go at once for each CPU unless the admin changes it
       Given the server has 2 CPUs
@@ -89,6 +99,6 @@ Feature: Rate limits
       Then the admin sees that 32 runs may go at once in total, and that this is the default
 
     @backlog
-    Scenario: A limit outside 1 to 256 is refused
+    Scenario: A limit below 1, or a total above 256, is refused
       When the admin tries to let 0 runs go at once on "tasks", and 257 in total on the server
-      Then the admin is told that each limit must be between 1 and 256, and both limits stay as they were
+      Then the admin is told that an instance limit must be at least 1 and the total between 1 and 256, and both stay
