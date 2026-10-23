@@ -48,7 +48,9 @@ export interface OpenApiCatalog {
   operations: OperationDescriptor[];
   /** Operations by verb, most specific template first (literal segments beat `{params}`). */
   byVerb: Map<HttpVerb, RestOperation[]>;
-  /** Excluded operations by verb: a path that matches one is refused, never routed to a template (ADR-0012). */
+  /** Excluded operations, and those whose template the catalog cannot hold, by verb: a path that one of
+   * them matches is refused, never routed to a broader template (ADR-0012). Only `buildOpenApiCatalog` fills
+   * it: a catalog built by hand, or read back from JSON, has no exclusions. */
   excluded?: Map<HttpVerb, RestOperation[]>;
 }
 
@@ -257,9 +259,17 @@ function buildCatalog(specText: string | Record<string, unknown>, opts: OpenApiC
   const byVerb = new Map<HttpVerb, RestOperation[]>(HTTP_VERBS.map((v) => [v, []]));
   const excluded = new Map<HttpVerb, RestOperation[]>(HTTP_VERBS.map((v) => [v, []]));
   for (const [template, item] of Object.entries(spec.paths as Record<string, unknown>)) {
-    if (!isPlainObject(item) || !/^\/[A-Za-z0-9_\-./{}]*$/.test(template)) continue;
+    if (!isPlainObject(item)) continue;
     const segments = template.split('/').filter(Boolean);
-    if (segments.some((s) => s === '.' || s === '..')) continue;
+    if (!/^\/[A-Za-z0-9_\-./{}]*$/.test(template) || segments.some((s) => s === '.' || s === '..')) {
+      // Left out, but an upstream that decodes the path still routes it: it blocks the templates it overlaps.
+      for (const verb of Object.keys(item)) {
+        const method = verb.toUpperCase() as HttpVerb;
+        if (HTTP_VERBS.includes(method))
+          excluded.get(method)!.push({ key: `${method} ${template}`, method, template, segments });
+      }
+      continue;
+    }
     const pathLevel = Array.isArray(item.parameters) ? (item.parameters as unknown[]) : [];
     for (const [verb, rawOp] of Object.entries(item)) {
       const method = verb.toUpperCase() as HttpVerb;
@@ -327,35 +337,52 @@ export function matchPath(
     return undefined;
   }
   if (decoded.some((p) => p === '' || p === '.' || p === '..' || p.includes('/'))) return undefined;
-  const found = firstMatch(ops, decoded);
-  const blocked = firstMatch(catalog.excluded?.get(verb) ?? [], decoded);
-  // ADR-0012: an excluded path that matches as closely as a kept one wins, so the request is refused.
-  if (blocked && (!found || bySpecificity(blocked.op, found.op) <= 0)) return undefined;
-  return found;
+  // ADR-0012: the result must not depend on the order of the spec, nor on the case of a literal segment,
+  // since many upstreams route without case. Each doubt refuses the request.
+  const exact = ops.filter((op) => matchesSegments(op, decoded, false));
+  if (ops.some((op) => !exact.includes(op) && matchesSegments(op, decoded, true))) return undefined;
+  const found = exact.find((op) => exact.every((other) => isSubset(literalAt(other), literalAt(op))));
+  if (exact.length && !found) return undefined;
+  const blockers = (catalog.excluded?.get(verb) ?? []).filter((op) => matchesSegments(op, decoded, true));
+  if (blockers.some((b) => !found || !isStrictSubset(literalAt(b), literalAt(found)))) return undefined;
+  if (!found) return undefined;
+  const pathParams: Record<string, string> = {};
+  found.segments.forEach((seg, i) => {
+    if (isParam(seg))
+      Object.defineProperty(pathParams, seg.slice(1, -1), {
+        value: decoded[i]!,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+  });
+  return { op: found, pathParams };
 }
 
-function firstMatch(
-  ops: RestOperation[],
-  decoded: string[],
-): { op: RestOperation; pathParams: Record<string, string> } | undefined {
-  for (const op of ops) {
-    if (op.segments.length !== decoded.length) continue;
-    const pathParams: Record<string, string> = {};
-    const ok = op.segments.every((seg, i) => {
-      if (isParam(seg)) {
-        Object.defineProperty(pathParams, seg.slice(1, -1), {
-          value: decoded[i]!,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-        return true;
-      }
-      return seg === decoded[i];
-    });
-    if (ok) return { op, pathParams };
+const literalAt = (op: RestOperation) => op.segments.flatMap((seg, i) => (isParam(seg) ? [] : [i]));
+const isSubset = (a: number[], b: number[]) => a.every((i) => b.includes(i));
+const isStrictSubset = (a: number[], b: number[]) => isSubset(a, b) && b.length > a.length;
+const fold = (text: string) => text.toUpperCase().toLowerCase();
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function segmentMatches(seg: string, value: string, caseless: boolean): boolean {
+  if (isParam(seg)) return true;
+  if (!caseless) return seg === value;
+  // A segment that mixes text and a parameter (`{name}:purge`), as only a left-out template has.
+  if (seg.includes('{')) {
+    const pattern = fold(seg)
+      .split(/\{[^}]*\}/)
+      .map(escapeRegExp)
+      .join('.+');
+    return new RegExp(`^${pattern}$`, 'u').test(fold(value));
   }
-  return undefined;
+  return fold(seg) === fold(value);
+}
+
+function matchesSegments(op: RestOperation, decoded: string[], caseless: boolean): boolean {
+  return (
+    op.segments.length === decoded.length && op.segments.every((seg, i) => segmentMatches(seg, decoded[i]!, caseless))
+  );
 }
 
 /** Fills a template from path parameters (each value URL-encoded). Throws `SpecError` for a missing one. */

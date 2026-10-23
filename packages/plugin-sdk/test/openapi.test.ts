@@ -282,6 +282,64 @@ describe('excluded paths (ADR-0012)', () => {
     expect(matchPath(cat, 'DELETE', '/lists/l-1')?.op.key).toBe('DELETE /lists/{listId}');
   });
 
+  it('refuses a case variant of an excluded or a kept literal path', () => {
+    const cat = build(['DELETE /lists/everything']);
+    expect(matchPath(cat, 'DELETE', '/lists/EVERYTHING')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/lists/Everything')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/items/ARCHIVED')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/items/archived')?.op.key).toBe('DELETE /items/archived');
+  });
+
+  it('refuses a path that an excluded template with other characters matches', () => {
+    const odd = {
+      openapi: '3.0.3',
+      paths: {
+        '/users/{id}': { delete: {} },
+        '/users/@me': { delete: {} },
+        '/v1/{name}': { post: {} },
+        '/v1/{name}:purge': { post: {} },
+      },
+    };
+    const cat = buildOpenApiCatalog(odd, {
+      service: 'Acme',
+      rules: compileRules(parsePluginSettings({ exclude: ['DELETE /users/@me', 'POST /v1/{name}:purge'] })),
+    });
+    expect(matchPath(cat, 'DELETE', '/users/@me')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/users/%40me')).toBeUndefined();
+    expect(matchPath(cat, 'POST', '/v1/foo:purge')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/users/u-1')?.op.key).toBe('DELETE /users/{id}');
+    expect(matchPath(cat, 'POST', '/v1/foo')?.op.key).toBe('POST /v1/{name}');
+  });
+
+  it('decides the same way whatever the order of the spec', () => {
+    const paths: [string, Record<string, unknown>][] = [
+      ['/a/{x}/{y}', { delete: {} }],
+      ['/a', { delete: {} }],
+      ['/a/b/c', { delete: {} }],
+      ['/a/b/{z}', { delete: {} }],
+    ];
+    for (const order of [paths, [...paths].reverse()]) {
+      const cat = buildOpenApiCatalog(
+        { openapi: '3.0.3', paths: Object.fromEntries(order) },
+        {
+          service: 'Acme',
+          rules: compileRules(parsePluginSettings({ exclude: ['DELETE /a/{x}/{y}', 'DELETE /a', 'DELETE /a/b/c'] })),
+        },
+      );
+      expect(matchPath(cat, 'DELETE', '/a/b/c')).toBeUndefined();
+      expect(matchPath(cat, 'DELETE', '/a/b/d')?.op.key).toBe('DELETE /a/b/{z}');
+    }
+  });
+
+  it('refuses a path that two kept templates match with no one more specific', () => {
+    const cat = buildOpenApiCatalog(
+      { openapi: '3.0.3', paths: { '/a/{x}/c': { get: {} }, '/a/b/{y}': { get: {} } } },
+      { service: 'Acme', rules: compileRules(parsePluginSettings({})) },
+    );
+    expect(matchPath(cat, 'GET', '/a/b/c')).toBeUndefined();
+    expect(matchPath(cat, 'GET', '/a/q/c')?.op.key).toBe('GET /a/{x}/c');
+  });
+
   it('keeps a literal path when only its template is excluded', () => {
     const cat = build(['DELETE /items/{itemId}']);
     expect(matchPath(cat, 'DELETE', '/items/archived')?.op.key).toBe('DELETE /items/archived');
