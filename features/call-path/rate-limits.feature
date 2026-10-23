@@ -90,7 +90,7 @@ Feature: Rate limits
 
     Scenario: An instance cannot take every place
       When the admin tries to let 16 runs go at once on "tasks"
-      Then the admin is told that "tasks" may have at most 15, one less than the 16 runs in total, and its limit stays at 4
+      Then the admin is told that "tasks" may have at most 15 runs, one less than the total, and its limit stays at 4
 
     @backlog
     Scenario: The server lets 16 runs go at once for each CPU unless the admin changes it
