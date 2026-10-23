@@ -8,7 +8,7 @@ Feature: Plugin compliance suite
     Given Acme has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
     And Acme also has the list "Chores" with the open task "sweep"
     And the list "Groceries" has the share password "groceries-share-7"
-    And the profile of Acme Tasks names "show the open tasks", "add a task", the locks "delete a list" and "archive a list" of "Chores" and the share password
+    And the profile names "show the open tasks", "add a task", locks "delete a list" and "archive a list" of "Chores" and the share password
 
   Rule: A plugin that keeps every rule of core is fit for production
 
