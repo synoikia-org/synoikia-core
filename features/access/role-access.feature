@@ -25,7 +25,7 @@ Feature: Role access
       Then agent 9 is told that the call waits for a human to approve it
 
     Scenario: A role maximum read closes the writes of the group
-      Given the admin sets the group "tasks" of "tasks" to write
+      Given the admin sets the group "tasks" of "tasks" to write, and the maximum of "family" for it to write
       And agent 9 added "jam" to "Groceries"
       When the admin sets the maximum of "family" for the group "tasks" to read
       And agent 9 adds "butter" to "Groceries" in the same session
