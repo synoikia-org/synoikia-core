@@ -5,6 +5,9 @@ import type { SynoikiaWorld } from '../../support/world.js';
 
 /** Runs a step started and a later step waits for. */
 const started = new WeakMap<SynoikiaWorld, Promise<unknown>[]>();
+/** How many of those runs had ended, and how long the last run of the agent took. */
+const ended = new WeakMap<SynoikiaWorld, { count: number }>();
+const took = new WeakMap<SynoikiaWorld, { ms: number; endedBefore: number }>();
 
 const add = async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
   await world.call(agent, 'add a task', { list, title });
@@ -89,8 +92,10 @@ Given(
     const before = reads().length;
     const runs = Array.from({ length: 4 }, () => client.callTool({ name: 'execute', arguments: { code } }));
     // A scenario may end before these runs do; the World then closes the session under them.
-    for (const run of runs) run.catch(() => undefined);
+    const count = { count: 0 };
+    for (const run of runs) run.then(() => count.count++).catch(() => undefined);
     started.set(world, runs);
+    ended.set(world, count);
     await eventually(() => reads().length >= before + 4, 'four reads at Acme');
   },
 );
@@ -112,7 +117,9 @@ Given(
 );
 
 When('agent {word} runs code that returns {int}', async (world: SynoikiaWorld, agent: string, value: number) => {
+  const start = performance.now();
   await world.execute(agent, world.lastInstance, `return ${value};`);
+  took.set(world, { ms: performance.now() - start, endedBefore: ended.get(world)?.count ?? 0 });
 });
 
 Then('agent {word} is told that it made too many runs, and to slow down', (world: SynoikiaWorld) => {
@@ -139,3 +146,75 @@ Then('the list {string} holds the open task {string}', (world: SynoikiaWorld, li
       .map((t) => t.title),
   ).toContain(title);
 });
+
+Given('the admin lets {int} runs go at once on {string}', async (world: SynoikiaWorld, runs: number, slug: string) => {
+  await world.instanceSettings(slug, { runsAtOnce: runs });
+});
+
+Then(
+  'agent {word} gets the value {int} once one of the four reads ends',
+  (world: SynoikiaWorld, _agent: string, value: number) => {
+    expect(world.answer).toEqual({ result: value });
+    expect(took.get(world)!.endedBefore).toBeGreaterThanOrEqual(1);
+  },
+);
+
+Then('agent {word} is told after 2 seconds that core is busy', (world: SynoikiaWorld) => {
+  expect(world.answer).toMatchObject({ error: 'BUSY' });
+  expect(took.get(world)!.ms).toBeGreaterThanOrEqual(1900);
+  expect(took.get(world)!.ms).toBeLessThan(2900);
+});
+
+Then('agent {word} gets the value {int} without waiting', (world: SynoikiaWorld, _agent: string, value: number) => {
+  expect(world.answer).toEqual({ result: value });
+  expect(took.get(world)!.endedBefore).toBe(0);
+});
+
+/** Acme reads of the list, and what the cancelled run of the agent took. */
+const cancelled = new WeakMap<SynoikiaWorld, { ms: number; readsBefore: number }>();
+
+When('agent {word} cancels a run that waits for a place', async (world: SynoikiaWorld, agent: string) => {
+  const reads = world.upstreamRequests('GET', '/lists/Groceries/tasks').length;
+  const stop = new AbortController();
+  const start = performance.now();
+  const run = world.execute(
+    agent,
+    world.lastInstance,
+    `return (await tasks.call('lists.tasks', { list: 'Groceries' })).length;`,
+    stop.signal,
+  );
+  setTimeout(() => stop.abort(), 300);
+  await run;
+  cancelled.set(world, { ms: performance.now() - start, readsBefore: reads });
+});
+
+Then('the cancelled run never reaches Acme, and agent {word} is not kept waiting', async (world: SynoikiaWorld) => {
+  const { ms, readsBefore } = cancelled.get(world)!;
+  expect(ms).toBeLessThan(1000);
+  await Promise.allSettled(started.get(world)!);
+  await new Promise((r) => setTimeout(r, 500));
+  expect(world.upstreamRequests('GET', '/lists/Groceries/tasks').length).toBe(readsBefore);
+});
+
+When(
+  'the admin tries to let {int} runs go at once on {string}',
+  async (world: SynoikiaWorld, runs: number, slug: string) => {
+    const id = await world.tasksInstance(slug);
+    const res = await world.admin.patch(`/api/instances/${id}`, { settings: { runsAtOnce: runs } });
+    refused.set(world, { status: res.status, body: (await res.json()) as Record<string, unknown> });
+  },
+);
+
+const refused = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
+
+Then(
+  'the admin is told that {string} may have at most 15 runs, one less than the total, and its limit stays at 4',
+  async (world: SynoikiaWorld, slug: string) => {
+    const { status, body } = refused.get(world)!;
+    expect(status).toBe(400);
+    expect(body.message).toBe(`"${slug}" may have at most 15 runs at once, one less than the 16 runs in total`);
+    const id = await world.tasksInstance(slug);
+    const instance = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
+    expect((instance.settings as { runsAtOnce: number }).runsAtOnce).toBe(4);
+  },
+);
