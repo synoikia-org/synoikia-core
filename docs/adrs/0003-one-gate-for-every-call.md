@@ -63,11 +63,11 @@ These rules apply to the pipeline:
 
 **Rate limits.** These limits apply for each principal and instance. They are separate from the limits of pre-approval rules.
 
-| Limit                    | Default                          | Notes                                                                                      |
-| ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------ |
-| `execute` and `search`   | 30 each minute                   | Core refuses a run with `RATE_LIMITED` before it creates an isolate.                       |
-| Upstream writes          | 10 each minute                   | Checked before an approval, counted only when the write runs. A denied call costs nothing. |
-| Sandbox at the same time | 4 for each instance, 16 in total | Over the limit, core refuses the run with `BUSY`. A parked execution gives back its place. |
+| Limit                    | Default                          | Notes                                                                                                                                                                                                                                      |
+| ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `execute` and `search`   | 30 each minute                   | Core refuses a run with `RATE_LIMITED` before it creates an isolate.                                                                                                                                                                       |
+| Upstream writes          | 10 each minute                   | Checked before an approval, counted only when the write runs. A denied call costs nothing.                                                                                                                                                 |
+| Sandbox at the same time | 4 for each instance, 16 in total | Over the limit, a run waits up to 2 s for a place, first come first served, then gets `BUSY`. The wait does not count against the sandbox time limit. The admin sets the limit for each instance. A parked execution gives back its place. |
 
 **Attestation.** Some operations need the model to read a best-practice guide first (`attestationRequired`).
 

@@ -14,7 +14,7 @@ model {
     }
     runtime = component 'Runtime' {
       technology 'runtime/'
-      description 'Runs search and execute, limits concurrent runs, and parks an execution that waits on an approval.'
+      description 'Runs search and execute, queues a run briefly when too many run at once, and parks an execution that waits on an approval.'
     }
     gate = component 'Gate' {
       technology 'gate/'
