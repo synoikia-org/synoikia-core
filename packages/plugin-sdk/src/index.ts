@@ -4,6 +4,7 @@ export * from './instructions.js';
 export * from './operations.js';
 export * from './errors.js';
 export * from './rpc.js';
+export * from './frames.js';
 export * from './run-plugin.js';
 export * from './conformance.js';
 export * from './url.js';

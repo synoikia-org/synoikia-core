@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLogger, formatLine } from '../../src/log.js';
+import { createLogger, formatLine, LogThrottle } from '../../src/log.js';
 import type { LogLevel } from '../../src/log.js';
 
 describe('logger', () => {
@@ -31,5 +31,16 @@ describe('logger', () => {
 
   it('clips long values', () => {
     expect(formatLine('info', 'm', { v: 'x'.repeat(500) }).length).toBeLessThan(320);
+  });
+});
+
+describe('LogThrottle', () => {
+  it('drops repeats of one key within the window, then counts them', () => {
+    const throttle = new LogThrottle();
+    expect(throttle.admit('k', 0)).toBe(0);
+    expect(throttle.admit('k', 1000)).toBeNull();
+    expect(throttle.admit('k', 2000)).toBeNull();
+    expect(throttle.admit('k', 61_000)).toBe(2);
+    expect(throttle.admit('other', 61_000)).toBe(0);
   });
 });

@@ -134,7 +134,7 @@ An example `manifest.json` for a plugin `acme`. The SDK validates it with a zod 
   "id": "acme", // unique, [a-z0-9-]
   "name": "Acme Hub",
   "version": "1.0.0",
-  "sdk": "^0.2.2", // plugin contract range (ADR-0011)
+  "sdk": "^0.3.0", // plugin contract range (ADR-0011)
   "description": "Search/execute over the Acme Hub API.",
   "entry": "dist/index.js",
   "instructions": "instructions.md", // optional agent instructions (Markdown)
@@ -472,4 +472,4 @@ Feature files: `@id:housekeeping`.
 
 ## Server log
 
-Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`. A refused MCP request logs its reason, but never a credential value. Request lines hold the path only, because query strings hold OAuth state. The feature files `@id:server-log` and `@id:listeners` specify the log and the health checks.
+Core writes one `LEVEL message key=value` line for each event to stdout or stderr, filtered by `LOG_LEVEL`. A refused MCP request logs its reason, but never a credential value. Request lines hold the path only, because query strings hold OAuth state. A plugin message that breaks the contract logs a warning with the instance slug, never the message. Each instance logs one such line a minute at most, with `suppressed=` for the dropped repeats. A plugin message over 64 MiB stops the plugin, and supervision starts it again (ADR-0020). A fault of core while it handles a plugin message logs an error. The feature files `@id:server-log` and `@id:listeners` specify the log and the health checks.

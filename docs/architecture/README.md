@@ -81,6 +81,8 @@ settings`" .-> Synoikia.AdminPortal
   Synoikia.Core -. "`reads and writes`" .-> Synoikia.Database
   Synoikia.Core -. "`installs bundles into`" .-> Synoikia.Bundles
   Synoikia.Sandbox -. "`sends binding calls to`" .-> Synoikia.Core
+  Synoikia.Instance -. "`answers calls and sends log and catalog 
+notices to`" .-> Synoikia.Core
   Synoikia.AdminPortal -. "`reads and changes configuration`" .-> Synoikia.Core
   Synoikia.CoreTesting -. "`boots in process, with the gate, 
 approvals, redaction and audit log`" .-> Synoikia.Core
@@ -105,6 +107,7 @@ title: "Core components"
 ---
 graph TB
   SynoikiaSandbox@{ shape: rectangle, label: "Sandbox" }
+  SynoikiaInstance@{ shape: rectangle, label: "Instance" }
   subgraph SynoikiaCore["`Core`"]
     SynoikiaCore.Gate@{ shape: rectangle, label: "Gate" }
     SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
@@ -123,10 +126,11 @@ graph TB
   NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
   PluginRepository@{ shape: rectangle, label: "Plugin repository" }
-  SynoikiaInstance@{ shape: rectangle, label: "Instance" }
   SynoikiaBundles@{ shape: disk, label: "Plugin bundles" }
   SynoikiaDatabase@{ shape: disk, label: "Database" }
   SynoikiaSandbox -. "`sends binding calls to`" .-> SynoikiaCore.Gate
+  SynoikiaInstance -. "`answers calls and sends log and catalog 
+notices to`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.McpEndpoints -. "`authenticates the client and the 
 approver with`" .-> SynoikiaCore.Auth
   SynoikiaCore.McpEndpoints -. "`starts search, execute and resume in`" .-> SynoikiaCore.Runtime
@@ -147,6 +151,8 @@ in`" .-> SynoikiaCore.Instances
   SynoikiaCore.Instances -. "`starts and stops instances with`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Instances -. "`[...]`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Instances -. "`encrypts connection secrets with`" .-> SynoikiaCore.Crypto
+  SynoikiaCore.PluginHost -. "`reports each plugin message that breaks 
+the contract to`" .-> SynoikiaCore.Instances
   SynoikiaCore.PluginHost -. "`warns of each refused debugger signal in`" .-> SynoikiaCore.Audit
   SynoikiaCore.CatalogSync -. "`reads catalogs and registries through`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.CatalogSync -. "`[...]`" .-> SynoikiaCore.DbAccess

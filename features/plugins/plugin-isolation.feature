@@ -49,7 +49,6 @@ Feature: Plugin isolation
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that the plugin failed with "method not found: invoke"
 
-    @backlog
     Scenario: A broken answer from the plugin fails the call, and core keeps running
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
       And agent 7 belongs to the admin and may read and write
@@ -57,13 +56,23 @@ Feature: Plugin isolation
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that the plugin sent an answer that is not valid
 
-    @backlog
     Scenario: A broken message that answers no call is ignored, and core keeps running
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
       And agent 7 belongs to the admin and may read and write
       And the plugin of "tasks" sends a log message without content
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 gets "milk", "bread" and "eggs", and the server log notes that "tasks" sent a message that is not valid
+
+    Scenario: Broken messages from one plugin are noted once a minute, and the repeats are counted
+      Given Acme Tasks runs as the instance "tasks"
+      When the plugin of "tasks" sends 50 log messages without content, and once more a minute later
+      Then the server log notes once that "tasks" sent a message that is not valid, and a minute later counts 49 dropped repeats
+
+    @backlog
+    Scenario: A plugin that sends a message over 64 MiB is restarted
+      Given Acme Tasks runs as the instance "tasks"
+      When the plugin of "tasks" sends a message of 65 MiB
+      Then "tasks" is started again, and the audit log shows a plugin error for "tasks"
 
     Scenario: A plugin that never answers a call times out
       Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"

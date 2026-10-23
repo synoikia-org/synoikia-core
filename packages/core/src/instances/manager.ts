@@ -19,6 +19,8 @@ import { isValidSlug } from '../endpoints/slug.js';
 import { BadGatewayError, ConflictError, NotFoundError, SecretsUnreadableError, ValidationError } from '../errors.js';
 import type { CoreEvents } from '../events.js';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../gate/redact.js';
+import { LogThrottle } from '../log.js';
+import type { Logger } from '../log.js';
 import type { InstanceRuntime } from '../gate/pipeline.js';
 import { PluginProcess, PluginTimeoutError, PluginUnavailableError } from '../plugins/process.js';
 import { getSettings } from '../settings.js';
@@ -66,6 +68,7 @@ export interface ManagerOptions {
   secrets: SecretBox;
   events: CoreEvents;
   now?: () => Date;
+  log: Logger;
   /** Test hooks: faster restarts and shorter RPC/init timeouts. */
   supervisor?: { backoff?: { initialMs: number; maxMs: number }; initTimeoutMs?: number; rpcTimeoutMs?: number };
   /** How often a live session may trigger the cheap upstream version check. */
@@ -122,6 +125,7 @@ const instanceBySlug = tableCache([pluginInstances, plugins], (db, slug: string)
 
 export class InstanceManager {
   private readonly live = new Map<string, Live>();
+  private readonly invalidMessages = new LogThrottle();
   private readonly db: Db;
   private readonly now: () => Date;
 
@@ -688,6 +692,17 @@ export class InstanceManager {
     this.opts.events.emit('instance.status', { instanceId, slug: row.slug, status, error });
   }
 
+  /** A listener of core threw on a plugin message (@id:plugin-isolation); never throws, because nothing above catches. */
+  private handlerFault(instanceId: string, err: unknown) {
+    const suppressed = this.invalidMessages.admit(`fault|${instanceId}`, this.now().getTime());
+    if (suppressed === null) return;
+    this.opts.log.error('Core failed to handle a plugin message', {
+      instanceId,
+      error: err instanceof Error ? err.name : typeof err,
+      suppressed: suppressed || undefined,
+    });
+  }
+
   private async start(instanceId: string) {
     if (this.live.has(instanceId)) return;
     const row = this.row(instanceId);
@@ -724,6 +739,20 @@ export class InstanceManager {
         }
       },
       onCatalogChanged: () => this.scheduleSync(instanceId),
+      // @id:plugin-isolation: one line a minute for each instance, so a plugin cannot fill the server log.
+      onInvalidMessage: () => {
+        try {
+          const suppressed = this.invalidMessages.admit(instanceId, this.now().getTime());
+          if (suppressed === null) return;
+          this.opts.log.warn('Plugin sent a message that is not valid', {
+            slug: this.db.select().from(pluginInstances).where(eq(pluginInstances.id, instanceId)).get()?.slug,
+            suppressed: suppressed || undefined,
+          });
+        } catch (err) {
+          this.handlerFault(instanceId, err);
+        }
+      },
+      onHandlerFault: (err) => this.handlerFault(instanceId, err),
     });
     const live: Live = { supervisor, lastVersionCheck: 0 };
     this.live.set(instanceId, live);

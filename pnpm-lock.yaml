@@ -7,7 +7,7 @@ settings:
 overrides:
   '@tanstack/match-sorter-utils': 9.1.2
   '@esbuild-kit/core-utils>esbuild': ^0.25.12
-  express-rate-limit>ip-address: ^10.7.4
+  ip-address: ^10.7.4
   likec4>vite: ^8.3.5
   source-map-js: ^1.2.2
   uuid: ^11.1.1
