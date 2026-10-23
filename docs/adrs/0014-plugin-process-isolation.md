@@ -46,7 +46,7 @@ Core starts each enabled instance with `child_process.fork(entry)` and these lim
 
 A container egress policy restricts network access (README › Deployment › Network egress). Issues #108 and #111 track network control in core.
 
-**Known limit: a child can stop core.** The child runs as the same user as core, so it can send `SIGTERM` or `SIGKILL` to core. Core then stops until a restart policy starts it again, as in `docker-compose.example.yml`. A separate user for each child would stop this.
+**Known limit: a child can stop core.** The child runs as the same user as core, so it can send `SIGTERM` or `SIGKILL` to core. Core then stops until a restart policy starts it again, as in `docker-compose.example.yml`. A separate user for each child would stop this. A child that breaks its message channel does not stop core (ADR-0020).
 
 ### Consequences
 
