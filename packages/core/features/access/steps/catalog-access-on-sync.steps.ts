@@ -235,13 +235,14 @@ Then(
 );
 
 Then(
-  'the admin sees the {int} writes that are not locked as acknowledged, and {string} as off',
-  async (world: SynoikiaWorld, count: number, locked: string) => {
+  'the admin sees the {int} writes that are not locked as acknowledged, and {string} and {string} as off',
+  async (world: SynoikiaWorld, count: number, first: string, second: string) => {
     const ops = (await world.operations(world.lastInstance)) as Operation[];
     const writes = ops.filter((o) => o.classification === 'write' && o.classificationSource !== 'locked');
     expect(writes).toHaveLength(count);
     for (const w of writes) expect(w).toMatchObject({ writeAcknowledged: true, mode: 'auto' });
-    expect(ops.find((o) => o.key === opKey(locked))).toMatchObject({ reachable: false });
+    for (const name of [first, second])
+      expect(ops.find((o) => o.key === opKey(name))).toMatchObject({ reachable: false });
   },
 );
 

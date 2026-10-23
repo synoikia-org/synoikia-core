@@ -103,7 +103,8 @@ export function applyCatalogSync(
 
     for (const d of result.operations) {
       const prev = existing.get(d.key);
-      const locked = d.locked;
+      // ADR-0004: a typed confirmation belongs to locked operations, so it makes the operation locked.
+      const locked = d.locked || (d.typedConfirmation ?? false);
       const classification = locked ? 'write' : d.classification;
       const classificationSource = locked ? 'locked' : 'inferred';
       const fields = {
@@ -117,8 +118,7 @@ export function applyCatalogSync(
         inferredClassification: d.classification,
         inferredReason: d.classificationReason,
         locked,
-        // A locked operation always needs the typed confirmation, whatever the plugin says.
-        typedConfirmation: locked || (d.typedConfirmation ?? false),
+        typedConfirmation: locked,
         needsReview: d.needsReview,
         matchProfile: d.matchProfile ?? null,
         paramsSchema: d.paramsSchema ?? null,

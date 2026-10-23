@@ -315,3 +315,7 @@ Then(
     expect(world.answer).toEqual(disabled(/is not available on this endpoint/));
   },
 );
+
+Then('Acme has not archived {string}', (world: SynoikiaWorld, list: string) => {
+  expect(world.upstreamRequests('POST', `/lists/${list}/archive`)).toEqual([]);
+});
