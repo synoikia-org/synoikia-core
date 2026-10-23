@@ -168,7 +168,8 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
       if (child.pid === undefined) this.exited = true;
       this.emit('log', 'error', `plugin process error: ${err.message}`);
     });
-    child.on('exit', (code, signal) => {
+    // Issue #120: 'close' comes after the exit and after fd 3 has drained, so an answer sent just before the exit counts.
+    child.on('close', (code, signal) => {
       this.exited = true;
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
@@ -239,7 +240,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   async stop(graceMs = 2000): Promise<void> {
     const child = this.child;
     if (!child || this.exited) return;
-    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    const exited = new Promise<void>((resolve) => child.once('close', () => resolve()));
     this.call('shutdown', undefined, graceMs).catch(() => undefined);
     const killTimer = setTimeout(() => child.kill('SIGKILL'), graceMs);
     await exited;
