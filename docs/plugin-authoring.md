@@ -113,7 +113,7 @@ operations:
 | `classification`  | Overrides the plugin's heuristic (`read` or `write`), with `reason` and `needsReview`. Never unlocks.                                                                              |
 | `split`           | Adds a locked twin `<key>#<suffix>`; the plugin decides per call when the twin applies (`splitWhen`).                                                                              |
 | `confirm`         | Literal source(s), first that yields wins: `instance`, `targets`, `{ param: /pointer }`, `{ lookup: … }`, `{ custom: name }`. A lookup falls back to the `$param` it looked up by. |
-| `sensitiveParams` | JSON pointers core redacts from params wherever they are shown or stored (all matching rules add up).                                                                              |
+| `sensitiveParams` | JSON pointers core redacts from params wherever they are shown or stored, in any case (all matching rules add up).                                                                 |
 | `sensitiveResult` | Secrets in the result that core can't recognize by key name: `whole`, or `{ keys, deep }`. Core masks them (below). Needs `sdk` `^0.2.2` or later in the manifest.                 |
 | `matchProfile`    | The manifest match profile pre-approval rules use for this operation.                                                                                                              |
 | `summaryNote`     | Appended to the approval summary.                                                                                                                                                  |
@@ -125,8 +125,8 @@ A field set by several matching rules takes the **first** rule's value, except `
 
 ### Precedence, which fails closed
 
-1. `exclude` (unless `include`d): the operation doesn't exist.
-2. `locked`, or being a split twin: write, typed confirmation.
+1. `exclude` (unless `include`d): the operation doesn't exist, and a request to its path is refused even when a path template has the same form.
+2. `locked`, or being a split twin: write, typed confirmation. A descriptor with `typedConfirmation` is locked too.
 3. A rule's `classification`.
 4. The plugin's own heuristic (an OpenAPI GET reads, other verbs write, and a GET whose description or path names an action, such as `/cache/flush`, is a write flagged for review).
 5. Nothing settled it: write.

@@ -189,7 +189,7 @@ type ManifestJson = {
 };
 
 Given(
-  'the profile of Acme Tasks names {string}, {string}, the locks {string} and {string} of {string} and the share password',
+  'the profile names {string}, {string}, locks {string} and {string} of {string} and the share password',
   (world: SynoikiaWorld, read: string, write: string, locked: string, alsoLocked: string, list: string) => {
     authorOf(world).profile = {
       reads: [call(read, { list: 'Groceries' })],

@@ -17,7 +17,7 @@ Each term has one meaning. Documents, ADRs, feature files and the model use thes
 | Catalog             | The list of operations of one instance, synced from the plugin.                                                   |
 | Group               | A set of operations that share an access level, for example one API tag.                                          |
 | Access level        | `none`, `read`, `ask` or `write`. It controls if an operation runs, asks, or is off.                              |
-| Locked operation    | An operation that always needs a human approval with a typed confirmation.                                        |
+| Locked operation    | An operation that always needs a human approval with a typed confirmation. A typed confirmation also locks it.    |
 | Split twin          | A second, locked key for an operation, used when its risk depends on its parameters.                              |
 | Principal           | The authenticated identity that calls an endpoint. Each principal belongs to one user.                            |
 | Role                | What a user can reach: the built-in Admin role, or a role that an admin makes.                                    |
