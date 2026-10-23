@@ -9,6 +9,8 @@ interface Supervision {
   stopMs?: number;
   seen?: { slug: string; status: string }[];
   answers?: Record<string, unknown>[];
+  statuses?: string[];
+  refused?: { status: number; body: Record<string, unknown> };
 }
 const state = new WeakMap<SynoikiaWorld, Supervision>();
 const of = (world: SynoikiaWorld) => {
@@ -310,5 +312,82 @@ Then(
     expect(await pluginErrors(world)).toHaveLength(1);
     expect(await instance(world, world.lastInstance)).toMatchObject({ status: 'error' });
     await eventually(async () => (await pluginErrors(world)).length === 2, 'the next start after a pause');
+  },
+);
+
+// ── the idle guard and the idle time (ADR-0022) ──
+
+Given('Acme Tasks runs as {string}, which may stop when idle', async (world: SynoikiaWorld, slug: string) => {
+  await world.editManifest((m) => (m.lifecycle = 'on-demand'));
+  if (!world.lists.has('Groceries')) world.lists.set('Groceries', []);
+  await world.tasksInstance(slug);
+  if (!world.agents.has('7')) await world.credential('7', 'admin', 'write');
+  const statuses: string[] = [];
+  world.ctx!.events.on('instance.status', ({ status }) => statuses.push(status));
+  of(world).statuses = statuses;
+});
+
+Given(
+  'Acme Tasks runs as {string} with a plugin that does not say it may stop when idle',
+  async (world: SynoikiaWorld, slug: string) => {
+    await world.tasksInstance(slug);
+  },
+);
+
+Given('{int} minutes go by without another call to {string}', async (world: SynoikiaWorld, minutes: number) => {
+  world.passTime(minutes * 60_000);
+  await new Promise((r) => setTimeout(r, 300));
+});
+
+When('the admin approves the add', async (world: SynoikiaWorld) => {
+  await world.approveAndResume('7', 'admin');
+});
+
+When(
+  'the admin tries to let {string} stop after {int} minutes',
+  async (world: SynoikiaWorld, slug: string, minutes: number) => {
+    const res = await world.admin.patch(`/api/instances/${world.instances.get(slug)!}`, {
+      settings: { idleStopMs: minutes * 60_000 },
+    });
+    of(world).refused = { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  },
+);
+
+Then(
+  '{string} is on {string}, and the admin saw {string} as ready the whole time',
+  async (world: SynoikiaWorld, title: string, list: string, slug: string) => {
+    expect(world.lists.get(list)!.map((t) => t.title)).toContain(title);
+    expect(of(world).statuses).not.toContain('idle');
+    expect(await instance(world, slug)).toMatchObject({ status: 'ready' });
+  },
+);
+
+Then(
+  'agent {word} gets the guide {string}, and the admin sees {string} as ready',
+  async (world: SynoikiaWorld, _agent: string, content: string, slug: string) => {
+    expect(world.answer.result).toMatchObject({ content });
+    expect(await instance(world, slug)).toMatchObject({ status: 'ready' });
+  },
+);
+
+Then(
+  'the admin is told that this plugin must stay running, and {string} stays always on',
+  async (world: SynoikiaWorld, slug: string) => {
+    expect(of(world).refused).toMatchObject({
+      status: 400,
+      body: { message: 'Acme Tasks (World fixture) must stay running, so it has no idle time' },
+    });
+    expect((await instance(world, slug)).settings).toMatchObject({ idleStopMs: null });
+  },
+);
+
+Then(
+  'the admin is told that an instance stops after 5 minutes at the least, and {string} still stops after 10 minutes',
+  async (world: SynoikiaWorld, slug: string) => {
+    expect(of(world).refused).toMatchObject({
+      status: 400,
+      body: { details: ['idleStopMs: an instance stops after 5 minutes at the least'] },
+    });
+    expect((await instance(world, slug)).settings).toMatchObject({ idleStopMs: 10 * 60_000 });
   },
 );

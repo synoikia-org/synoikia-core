@@ -134,9 +134,19 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   if (boot === 'ignored') warnings.push('ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored — remove it');
 
   const log = opts.log ?? createLogger(config.LOG_LEVEL);
+  const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
   const cpus = opts.cpus ?? availableParallelism();
   const runTotal = () => sandboxTotal(db, cpus);
-  const instances = new InstanceManager({ db, secrets, events, now, log, supervisor: opts.supervisor, runTotal });
+  const instances = new InstanceManager({
+    db,
+    secrets,
+    events,
+    now,
+    log,
+    supervisor: opts.supervisor,
+    runTotal,
+    parkedIn: (id) => executions.parkedIn(id),
+  });
   // Stored JSON from an earlier release is brought to the current schemas once, before anything reads it.
   normalizeStoredSettings(db);
   for (const slug of instances.normalizeStoredSettings().inSessionOff)
@@ -150,7 +160,6 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   const links = new ApprovalLinkService(db, now);
   const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
-  const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
   events.on('instance.status', ({ instanceId, status }) => {
     if (status !== 'stopped') return;

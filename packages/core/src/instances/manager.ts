@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseManifest, SDK_VERSION } from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
-import { asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { PublicRole } from '../auth/roles.js';
 import { applyRegistrySync } from '../catalog/registry.js';
@@ -33,7 +33,7 @@ import {
   summarizeSecrets,
   validateConnection,
 } from './connection.js';
-import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
+import { cleanInstanceSettings, idleStopMs, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
 import { RUNS_PER_CPU, runsOf } from '../runtime/index.js';
 
@@ -80,6 +80,8 @@ export interface ManagerOptions {
   };
   /** The total of sandbox runs at once (ADR-0003); without it, 16. */
   runTotal?: () => number;
+  /** Whether a parked execution of the instance has not ended yet (ADR-0022). */
+  parkedIn?: (instanceId: string) => boolean;
   /** How often a live session may trigger the cheap upstream version check. */
   versionCheckIntervalMs?: number;
 }
@@ -144,6 +146,13 @@ function checkRunsAtOnce(slug: string, settings: InstanceSettings, total: number
       `"${slug}" may have at most ${total - 1} runs at once, one less than the ${total} runs in total`,
     );
   return settings;
+}
+
+/** ADR-0022: an idle time only for a plugin that may stop. */
+function checkIdleStop(given: unknown, manifest: Manifest) {
+  const asked = (given as { idleStopMs?: unknown } | null | undefined)?.idleStopMs;
+  if (asked !== undefined && asked !== null && manifest.lifecycle !== 'on-demand')
+    throw new ValidationError('invalid_settings', `${manifest.name} must stay running, so it has no idle time`);
 }
 
 export class InstanceManager {
@@ -309,7 +318,7 @@ export class InstanceManager {
       sourceRef: instance.sourceRef,
       lastSyncedAt: instance.lastSyncedAt,
       lastSyncStatus: instance.lastSyncStatus,
-      settings: readInstanceSettings(instance.settings, `/${instance.slug} settings`),
+      settings: this.effectiveSettings(instance, manifest),
       plugin: {
         id: plugin.id,
         pluginId: plugin.pluginId,
@@ -318,6 +327,7 @@ export class InstanceManager {
         status: plugin.status,
         labels: manifest?.labels,
         attestation: manifest?.capabilities.attestation ?? false,
+        lifecycle: manifest?.lifecycle ?? 'always',
       },
     };
   }
@@ -325,6 +335,12 @@ export class InstanceManager {
   /** Whether the instance's endpoint should serve: instance and plugin enabled, plugin healthy. */
   isServing(instance: InstanceRow, plugin: PluginRow): boolean {
     return instance.enabled && plugin.enabled && plugin.status === 'ok';
+  }
+
+  /** The settings as the instance runs them: the idle time follows the plugin (ADR-0022). */
+  private effectiveSettings(instance: InstanceRow, manifest: Manifest | undefined): InstanceSettings {
+    const settings = this.settingsOf(instance);
+    return { ...settings, idleStopMs: idleStopMs(settings, manifest?.lifecycle) };
   }
 
   settingsOf(instance: InstanceRow): InstanceSettings {
@@ -388,6 +404,7 @@ export class InstanceManager {
         if (!live) throw new PluginUnavailableError();
         return live.supervisor.client;
       },
+      start: () => this.ensureFresh(instanceId, { start: true }),
       catalogVersion: () => {
         const version = this.live.get(instanceId)?.version;
         const synced = instanceRow(this.db, instanceId)?.catalogPluginVersion;
@@ -451,6 +468,7 @@ export class InstanceManager {
       throw new ValidationError('invalid_auth_method', 'Unknown client auth method');
     }
     const settings = checkRunsAtOnce(slug, parseInstanceSettings(input.settings), this.runTotal());
+    checkIdleStop(input.settings, manifest);
     const { config, secrets } = validateConnection(manifest, input.connection);
 
     const id = randomUUID();
@@ -518,6 +536,7 @@ export class InstanceManager {
       const stored = cleanInstanceSettings(before.settings, `/${before.slug} settings`).cleaned as object;
       const merged = { ...stored, ...(patch.settings as object) };
       set.settings = checkRunsAtOnce(before.slug, parseInstanceSettings(merged), this.runTotal());
+      checkIdleStop(patch.settings, this.plugin(before.pluginId).parsed);
     }
     if (Object.keys(set).length === 0) return this.get(id);
 
@@ -795,13 +814,19 @@ export class InstanceManager {
     for (const [id, live] of this.live) {
       if (live.supervisor.status !== 'ready') continue;
       const row = instanceRow(this.db, id);
-      const idleStopMs = row && this.settingsOf(row).idleStopMs;
-      if (!idleStopMs || pluginRow(this.db, row.pluginId)?.parsed?.lifecycle !== 'on-demand') continue;
+      const after = row && idleStopMs(this.settingsOf(row), pluginRow(this.db, row.pluginId)?.parsed?.lifecycle);
+      if (!after) continue;
       const unused = () =>
         !live.syncing &&
         !live.catalogChangedTimer &&
         runsOf(id) === 0 &&
-        this.now().getTime() - live.lastCall >= idleStopMs;
+        this.now().getTime() - live.lastCall >= after &&
+        !this.opts.parkedIn?.(id) &&
+        !this.db
+          .select({ id: pendingApprovals.id })
+          .from(pendingApprovals)
+          .where(and(eq(pendingApprovals.instanceId, id), eq(pendingApprovals.status, 'pending')))
+          .get();
       if (unused()) void live.supervisor.idle(unused);
     }
   }

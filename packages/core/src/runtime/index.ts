@@ -369,6 +369,7 @@ function guideBindings(deps: GateDeps, rt: InstanceRuntime, caller: CallerContex
       if (!op.attestationRequired) return { key: op.key, required: false };
       let guide;
       try {
+        await rt.start?.();
         guide = await rt.plugin().call('getGuide', { key: op.key });
       } catch {
         throw new BindingError('PLUGIN_ERROR', `Could not load the guide for ${op.key}`);

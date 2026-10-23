@@ -81,6 +81,7 @@ export function registerMeRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!ctx.limiter.allows(`options:${me(c).id}`, 60, 60_000))
       return c.json({ error: 'rate_limited', message: 'Too many requests; slow down' }, 429);
     const rt = ctx.instances.runtime(id);
+    await rt.start?.();
     const options = await rt.plugin().call('optionsFor', { source, query: c.req.query('q')?.slice(0, 200) });
     // Only what the picker shows, redacted: `meta` and secrets in labels never reach a non-admin.
     return c.json(rt.redact(options.map(({ value, label }) => ({ value, label }))));
