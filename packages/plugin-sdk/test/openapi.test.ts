@@ -6,6 +6,7 @@ import {
   compileRules,
   ErrorCodes,
   HttpJsonClient,
+  matchPath,
   parsePluginSettings,
   restBinding,
   restLookup,
@@ -259,5 +260,31 @@ describe('static catalogs', () => {
       await b.invoke({ key: 'items.delete', params: { path: { id: '4' } }, context: { callId: 'c', deadlineMs: 10 } }),
     ).toEqual({ done: true });
     expect(requests).toEqual([['DELETE', '/items/4', { query: undefined, body: undefined, timeoutMs: 1000 }]]);
+  });
+});
+
+describe('excluded paths (ADR-0012)', () => {
+  const spec = {
+    openapi: '3.0.3',
+    paths: {
+      '/lists/{listId}': { delete: {} },
+      '/lists/everything': { delete: {} },
+      '/items/{itemId}': { delete: {} },
+      '/items/archived': { delete: {} },
+    },
+  };
+  const build = (exclude: string[]) =>
+    buildOpenApiCatalog(spec, { service: 'Acme', rules: compileRules(parsePluginSettings({ exclude })) });
+
+  it('refuses an excluded literal path, but routes other values to the template', () => {
+    const cat = build(['DELETE /lists/everything']);
+    expect(matchPath(cat, 'DELETE', '/lists/everything')).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/lists/l-1')?.op.key).toBe('DELETE /lists/{listId}');
+  });
+
+  it('keeps a literal path when only its template is excluded', () => {
+    const cat = build(['DELETE /items/{itemId}']);
+    expect(matchPath(cat, 'DELETE', '/items/archived')?.op.key).toBe('DELETE /items/archived');
+    expect(matchPath(cat, 'DELETE', '/items/i-1')).toBeUndefined();
   });
 });

@@ -48,6 +48,8 @@ export interface OpenApiCatalog {
   operations: OperationDescriptor[];
   /** Operations by verb, most specific template first (literal segments beat `{params}`). */
   byVerb: Map<HttpVerb, RestOperation[]>;
+  /** Excluded operations by verb: a path that matches one is refused, never routed to a template (ADR-0012). */
+  excluded?: Map<HttpVerb, RestOperation[]>;
 }
 
 export interface OpenApiCatalogOptions {
@@ -253,6 +255,7 @@ function buildCatalog(specText: string | Record<string, unknown>, opts: OpenApiC
   const shapes = new Map<string, string>();
   const operations: OperationDescriptor[] = [];
   const byVerb = new Map<HttpVerb, RestOperation[]>(HTTP_VERBS.map((v) => [v, []]));
+  const excluded = new Map<HttpVerb, RestOperation[]>(HTTP_VERBS.map((v) => [v, []]));
   for (const [template, item] of Object.entries(spec.paths as Record<string, unknown>)) {
     if (!isPlainObject(item) || !/^\/[A-Za-z0-9_\-./{}]*$/.test(template)) continue;
     const segments = template.split('/').filter(Boolean);
@@ -263,7 +266,10 @@ function buildCatalog(specText: string | Record<string, unknown>, opts: OpenApiC
       if (!HTTP_VERBS.includes(method) || !isPlainObject(rawOp)) continue;
       const op = rawOp as OpenApiOperation;
       const key = `${method} ${template}`;
-      if (opts.rules.excluded(key)) continue;
+      if (opts.rules.excluded(key)) {
+        excluded.get(method)!.push({ key, method, template, segments });
+        continue;
+      }
       const shape = `${method} /${segments.map((s) => (isParam(s) ? '{}' : s)).join('/')}`;
       const twin = shapes.get(shape);
       if (twin) throw new SpecError(`The ${opts.service} API spec has two operations for ${shape}: ${twin} and ${key}`);
@@ -294,8 +300,8 @@ function buildCatalog(specText: string | Record<string, unknown>, opts: OpenApiC
     throw new SpecError(
       `The ${opts.service} API spec has only ${operations.length} operations; refusing a partial catalog`,
     );
-  for (const list of byVerb.values()) list.sort(bySpecificity);
-  return { operations: operations.sort((a, b) => a.key.localeCompare(b.key)), byVerb };
+  for (const list of [...byVerb.values(), ...excluded.values()]) list.sort(bySpecificity);
+  return { operations: operations.sort((a, b) => a.key.localeCompare(b.key)), byVerb, excluded };
 }
 
 /** Matches a concrete path against the catalog: the operation and its path params, or undefined. */
@@ -305,7 +311,8 @@ export function matchPath(
   rawPath: string,
   stripPrefix?: string,
 ): { op: RestOperation; pathParams: Record<string, string> } | undefined {
-  const ops = catalog.byVerb.get(method.toUpperCase() as HttpVerb);
+  const verb = method.toUpperCase() as HttpVerb;
+  const ops = catalog.byVerb.get(verb);
   if (!ops) return undefined;
   let path = rawPath.split('?')[0]!;
   if (stripPrefix && (path === stripPrefix || path.startsWith(`${stripPrefix}/`)))
@@ -320,6 +327,17 @@ export function matchPath(
     return undefined;
   }
   if (decoded.some((p) => p === '' || p === '.' || p === '..' || p.includes('/'))) return undefined;
+  const found = firstMatch(ops, decoded);
+  const blocked = firstMatch(catalog.excluded?.get(verb) ?? [], decoded);
+  // ADR-0012: an excluded path that matches as closely as a kept one wins, so the request is refused.
+  if (blocked && (!found || bySpecificity(blocked.op, found.op) <= 0)) return undefined;
+  return found;
+}
+
+function firstMatch(
+  ops: RestOperation[],
+  decoded: string[],
+): { op: RestOperation; pathParams: Record<string, string> } | undefined {
   for (const op of ops) {
     if (op.segments.length !== decoded.length) continue;
     const pathParams: Record<string, string> = {};
