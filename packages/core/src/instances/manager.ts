@@ -402,6 +402,8 @@ export class InstanceManager {
       plugin: () => {
         const live = this.live.get(instanceId);
         if (!live) throw new PluginUnavailableError();
+        // ADR-0022: each call through the gate, such as a run resumed after its approval, counts as use.
+        live.lastCall = this.now().getTime();
         return live.supervisor.client;
       },
       start: () => this.ensureFresh(instanceId, { start: true }),

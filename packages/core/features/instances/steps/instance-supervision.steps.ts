@@ -357,6 +357,8 @@ Then(
   '{string} is on {string}, and the admin saw {string} as ready the whole time',
   async (world: SynoikiaWorld, title: string, list: string, slug: string) => {
     expect(world.lists.get(list)!.map((t) => t.title)).toContain(title);
+    // Give the idle sweep (every 50 ms in the World) a few turns after the call.
+    await new Promise((r) => setTimeout(r, 300));
     expect(of(world).statuses).not.toContain('idle');
     expect(await instance(world, slug)).toMatchObject({ status: 'ready' });
   },
