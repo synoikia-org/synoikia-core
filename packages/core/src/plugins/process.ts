@@ -161,10 +161,26 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
       stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
     });
     const child = this.child;
-    const channel = child.stdio[3] as Socket;
+    // Listeners first: when the spawn fails (EMFILE), Node emits 'error' and leaves stdio unset.
+    child.on('error', (err) => {
+      // A child that never started will not emit 'exit'.
+      if (child.pid === undefined) this.exited = true;
+      this.emit('log', 'error', `plugin process error: ${err.message}`);
+    });
+    child.on('exit', (code, signal) => {
+      this.exited = true;
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(new PluginUnavailableError(`Plugin exited (${signal ?? code}) during ${p.method}`));
+      }
+      this.pending.clear();
+      this.emit('exit', code, signal);
+    });
+    const channel = child.stdio?.[3] as Socket | undefined;
+    if (!channel) return;
     this.channel = channel;
-    this.child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
-    this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
+    child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
+    child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
     const read = createFrameReader();
     channel.on('data', (chunk: Buffer) => {
       const frames = read(chunk);
@@ -179,16 +195,6 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     });
     // The child closing or breaking its pipe shows up as its exit.
     channel.on('error', () => undefined);
-    this.child.on('error', (err) => this.emit('log', 'error', `plugin process error: ${err.message}`));
-    this.child.on('exit', (code, signal) => {
-      this.exited = true;
-      for (const p of this.pending.values()) {
-        clearTimeout(p.timer);
-        p.reject(new PluginUnavailableError(`Plugin exited (${signal ?? code}) during ${p.method}`));
-      }
-      this.pending.clear();
-      this.emit('exit', code, signal);
-    });
   }
 
   async call<M extends RpcMethod>(method: M, params?: Params<M>, timeoutMs?: number): Promise<Result<M>> {
