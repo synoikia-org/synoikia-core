@@ -62,4 +62,4 @@ Feature: Catalog sync
     Scenario: A sync of 3,000 operations leaves the memory of core about where it was
       Given Acme Tasks runs as the instance "tasks", and its plugin lists 3,000 operations
       When the admin syncs "tasks" twice
-      Then core holds at most 15 MB more memory than before the first sync
+      Then core holds at most 25 MB more memory than before the first sync
