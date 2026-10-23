@@ -88,6 +88,8 @@ interface Live {
   lastVersionCheck: number;
   /** When a call last needed this instance, on core's clock (ADR-0022). */
   lastCall: number;
+  /** The cold start of an idle instance that every caller waits for. */
+  waking?: Promise<void>;
   catalogChangedTimer?: NodeJS.Timeout;
   /** The running child's bundle version, read from its manifest.json just before each fork; the catalog
    * must have been synced from it (`ensureFresh`). */
@@ -790,9 +792,19 @@ export class InstanceManager {
       const row = instanceRow(this.db, id);
       const idleStopMs = row && this.settingsOf(row).idleStopMs;
       if (!idleStopMs || pluginRow(this.db, row.pluginId)?.parsed?.lifecycle !== 'on-demand') continue;
-      const unused = () => !live.syncing && runsOf(id) === 0 && this.now().getTime() - live.lastCall >= idleStopMs;
+      const unused = () =>
+        !live.syncing &&
+        !live.catalogChangedTimer &&
+        runsOf(id) === 0 &&
+        this.now().getTime() - live.lastCall >= idleStopMs;
       if (unused()) void live.supervisor.idle(unused);
     }
+  }
+
+  /** One cold start for every caller; the upstream version is checked again after it (ADR-0022). */
+  private wake(live: Live): Promise<void> {
+    live.lastVersionCheck = 0;
+    return (live.waking ??= live.supervisor.wake().finally(() => (live.waking = undefined)));
   }
 
   private async stop(instanceId: string) {
@@ -809,7 +821,10 @@ export class InstanceManager {
     const live = this.live.get(instanceId);
     if (!live) return;
     clearTimeout(live.catalogChangedTimer);
-    live.catalogChangedTimer = setTimeout(() => void this.syncNow(instanceId).catch(() => undefined), delayMs);
+    live.catalogChangedTimer = setTimeout(() => {
+      live.catalogChangedTimer = undefined;
+      void this.syncNow(instanceId).catch(() => undefined);
+    }, delayMs);
   }
 
   /** Full catalog (+ registry) sync. Concurrent callers share one run (per-instance mutex). */
@@ -820,6 +835,7 @@ export class InstanceManager {
     const run = (async () => {
       const row = this.row(instanceId);
       try {
+        if (live.supervisor.status === 'idle') await this.wake(live);
         const client = live.supervisor.client;
         const manifest = this.plugin(row.pluginId).parsed;
         // The child that answers is the one whose version counts, not the plugin row's.
@@ -876,12 +892,13 @@ export class InstanceManager {
     const row = this.row(instanceId);
     const live = this.live.get(instanceId);
     // ADR-0022: an idle instance serves its stored catalog; only a call that needs the plugin starts it.
-    if (live?.supervisor.status === 'idle') {
+    if (live?.supervisor.status === 'idle' && !live.waking) {
       if (!opts.start) return;
-      live.lastVersionCheck = 0;
-      await live.supervisor.wake();
+      void this.wake(live);
     }
-    if (!live || live.supervisor.status !== 'ready') throw new PluginUnavailableError('The endpoint is not ready');
+    await live?.waking;
+    if (!live || this.live.get(instanceId) !== live || live.supervisor.status !== 'ready')
+      throw new PluginUnavailableError('The endpoint is not ready');
     live.lastCall = this.now().getTime();
     if (!row.lastSyncedAt || !live.version || row.catalogPluginVersion !== live.version) {
       await this.syncNow(instanceId);

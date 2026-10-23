@@ -27,6 +27,7 @@ export class PluginSupervisor {
   private restartTimer?: NodeJS.Timeout;
   private attempt = 0;
   private generation = 0;
+  private idleGeneration = -1;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: SupervisorOptions) {}
@@ -70,7 +71,7 @@ export class PluginSupervisor {
     return this.serial(async () => {
       if (this._status !== 'ready' || this.stopping || !unused()) return;
       this.stopping = true;
-      this.generation++;
+      this.idleGeneration = ++this.generation;
       const proc = this.proc;
       this.proc = undefined;
       // Idle before the child exits, so a call that comes now waits for a new start instead of this child.
@@ -82,7 +83,8 @@ export class PluginSupervisor {
   /** Starts an idle child; callers that come during the start wait for the same one. */
   async wake(): Promise<void> {
     return this.serial(async () => {
-      if (this._status !== 'idle') return;
+      // A stop or restart since the idle stop wins: the secrets go to no child that will not serve.
+      if (this._status !== 'idle' || this.generation !== this.idleGeneration) return;
       this.stopping = false;
       this.attempt = 0;
       await this.spawn();
