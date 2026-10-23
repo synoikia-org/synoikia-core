@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { availableParallelism } from 'node:os';
 import { SessionGrantService } from './approvals/grants.js';
 import { ApprovalLinkService } from './approvals/links.js';
 import { ApprovalService } from './approvals/service.js';
@@ -32,7 +33,7 @@ import { discoverPlugins, syncPluginRegistry } from './plugins/discovery.js';
 import { PluginRepoService } from './plugins/repos.js';
 import type { FetchBytes } from './plugins/repos.js';
 import { ExecutionRegistry } from './runtime/executions.js';
-import { sandboxesRunning } from './runtime/index.js';
+import { sandboxesRunning, sandboxTotal } from './runtime/index.js';
 import { normalizeStoredSettings } from './settings.js';
 
 /** Wires every core service once (ADR-0015): one database, approval service and event bus for
@@ -70,6 +71,8 @@ export interface AppContext {
   /** Tests only: see {@link AppOptions.externalKeys}. */
   externalKeys?: ExternalKeys;
   gateDeps(): GateDeps;
+  /** The total of sandbox runs at once (ADR-0003). */
+  runTotal(): number;
   /** Re-scan plugin directories and update the registry (startup, after installs). */
   discoverPlugins(): ReturnType<typeof syncPluginRegistry>;
   start(): Promise<void>;
@@ -103,6 +106,8 @@ export interface AppOptions {
   formFallbackMs?: number;
   /** How long `resume` waits for a change before it answers (tests). */
   resumeWaitMs?: number;
+  /** The CPUs the default total of runs at once counts (tests); unset counts the machine's. */
+  cpus?: number;
   /** Tests only: a cheaper password hash. Never set from the environment or the config. */
   passwordHashCost?: PasswordHashCost;
   /** Tests only: the key set of an external provider's domain, in place of the one it publishes; undefined fetches it. */
@@ -129,7 +134,19 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   if (boot === 'ignored') warnings.push('ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored — remove it');
 
   const log = opts.log ?? createLogger(config.LOG_LEVEL);
-  const instances = new InstanceManager({ db, secrets, events, now, log, supervisor: opts.supervisor });
+  const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
+  const cpus = opts.cpus ?? availableParallelism();
+  const runTotal = () => sandboxTotal(db, cpus);
+  const instances = new InstanceManager({
+    db,
+    secrets,
+    events,
+    now,
+    log,
+    supervisor: opts.supervisor,
+    runTotal,
+    parkedIn: (id) => executions.parkedIn(id),
+  });
   // Stored JSON from an earlier release is brought to the current schemas once, before anything reads it.
   normalizeStoredSettings(db);
   for (const slug of instances.normalizeStoredSettings().inSessionOff)
@@ -143,7 +160,6 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   const links = new ApprovalLinkService(db, now);
   const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
-  const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
   events.on('instance.status', ({ instanceId, status }) => {
     if (status !== 'stopped') return;
@@ -221,7 +237,8 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     warnings,
     now,
     externalKeys: opts.externalKeys,
-    gateDeps: () => ({ db, approvals, limiter, attestationKey: keys.attestation, now, grants, executions }),
+    gateDeps: () => ({ db, approvals, limiter, attestationKey: keys.attestation, now, grants, executions, runTotal }),
+    runTotal,
     discoverPlugins: discover,
     async start() {
       // ADR-0014: at most one audit row a minute, so a child that keeps signalling cannot fill the audit log.

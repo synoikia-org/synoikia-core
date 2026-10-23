@@ -24,7 +24,14 @@ afterEach(async () => {
 });
 
 function setup(
-  opts: { versionCheckIntervalMs?: number; pluginsDir?: string; now?: () => Date; idleSweepMs?: number } = {},
+  opts: {
+    versionCheckIntervalMs?: number;
+    pluginsDir?: string;
+    now?: () => Date;
+    idleSweepMs?: number;
+    parkedIn?: (instanceId: string) => boolean;
+    runTotal?: () => number;
+  } = {},
 ) {
   const db = openDatabase(':memory:');
   syncPluginRegistry(db, discoverPlugins(opts.pluginsDir ?? PLUGINS));
@@ -48,6 +55,8 @@ function setup(
     },
     versionCheckIntervalMs: opts.versionCheckIntervalMs ?? 0,
     now: opts.now,
+    parkedIn: opts.parkedIn,
+    runTotal: opts.runTotal,
   });
   cleanup.push(() => manager.stopAll());
   return { db, manager, events, seen, secrets };
@@ -182,9 +191,9 @@ describe('InstanceManager', () => {
 
 describe('idle stop (ADR-0022)', () => {
   /** An `on-demand` echo instance that went idle on the injected clock. */
-  async function idleInstance() {
+  async function idleInstance(parkedIn?: (instanceId: string) => boolean) {
     let clock = new Date('2026-01-01T00:00:00Z');
-    const t = setup({ now: () => clock, idleSweepMs: 10 });
+    const t = setup({ now: () => clock, idleSweepMs: 10, parkedIn });
     const plugin = t.db.select().from(plugins).get()!;
     t.db
       .update(plugins)
@@ -199,6 +208,7 @@ describe('idle stop (ADR-0022)', () => {
     await t.manager.ensureFresh(inst.id);
     await t.manager.startAll();
     clock = new Date(clock.getTime() + 6 * 60_000);
+    if (parkedIn) return { ...t, id: inst.id, statuses: () => [], from: 0 };
     await vi.waitFor(() => expect(t.manager.status(inst.id)).toBe('idle'));
     const statuses = () =>
       t.seen.filter((e) => e.name === 'instance.status').map((e) => (e.payload as { status: string }).status);
@@ -230,5 +240,27 @@ describe('idle stop (ADR-0022)', () => {
     await t.manager.syncNow(t.id);
     expect(t.manager.status(t.id)).toBe('ready');
     expect(t.seen.filter((e) => e.name === 'sync.failed')).toEqual([]);
+  });
+
+  it('keeps an instance with a parked execution running', async () => {
+    const t = await idleInstance(() => true);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(t.manager.status(t.id)).toBe('ready');
+  });
+});
+
+describe('the total of runs at once (ADR-0003)', () => {
+  it('checks an instance limit against the total only when the admin changes the limit', async () => {
+    let total = 16;
+    const t = setup({ runTotal: () => total });
+    const inst = await t.manager.create({
+      pluginId: 'echo',
+      slug: 'echo',
+      connection: { token: 'super-secret-token-1234' },
+      settings: { runsAtOnce: 10 },
+    });
+    total = 8;
+    await expect(t.manager.update(inst.id, { settings: { executePerMinute: 20 } })).resolves.toBeDefined();
+    await expect(t.manager.update(inst.id, { settings: { runsAtOnce: 9 } })).rejects.toBeInstanceOf(ValidationError);
   });
 });

@@ -208,13 +208,76 @@ When(
 const refused = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
 
 Then(
-  'the admin is told that {string} may have at most 15 runs, one less than the total, and its limit stays at 4',
-  async (world: SynoikiaWorld, slug: string) => {
+  'the admin is told that {string} may have at most {int} runs, one less than the total, and its limit stays at 4',
+  async (world: SynoikiaWorld, slug: string, most: number) => {
     const { status, body } = refused.get(world)!;
     expect(status).toBe(400);
-    expect(body.message).toBe(`"${slug}" may have at most 15 runs at once, one less than the 16 runs in total`);
+    expect(body.message).toBe(
+      `"${slug}" may have at most ${most} runs at once, one less than the ${most + 1} runs in total`,
+    );
     const id = await world.tasksInstance(slug);
     const instance = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
     expect((instance.settings as { runsAtOnce: number }).runsAtOnce).toBe(4);
+  },
+);
+
+// ── the total of runs at once on the server (ADR-0003) ──
+
+Given('the server lets {int} runs go at once in total', async (world: SynoikiaWorld, runs: number) => {
+  await world.expectOk(world.admin.put('/api/settings/runtime', { runsAtOnce: runs }), 'set the total');
+});
+
+Given('the admin lets {int} runs go at once in total on the server', async (world: SynoikiaWorld, runs: number) => {
+  await world.expectOk(world.admin.put('/api/settings/runtime', { runsAtOnce: runs }), 'set the total');
+});
+
+Given('the server has {int} CPUs', async (world: SynoikiaWorld, cpus: number) => {
+  world.cpus = cpus;
+  await world.restartCore();
+});
+
+const opened = new WeakMap<SynoikiaWorld, Record<string, unknown>>();
+
+When('the admin opens the run limits of the server', async (world: SynoikiaWorld) => {
+  opened.set(world, await world.expectOk(world.admin.get('/api/settings'), 'read settings'));
+});
+
+Then(
+  'the admin sees that {int} runs may go at once in total, and that this is the default',
+  (world: SynoikiaWorld, total: number) => {
+    expect(opened.get(world)!.runtime).toEqual({ runsAtOnce: null, total });
+  },
+);
+
+const refusals = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }[]>();
+
+When(
+  'the admin tries to let {int} runs go at once on {string}, and {int} in total on the server',
+  async (world: SynoikiaWorld, runs: number, slug: string, total: number) => {
+    const id = await world.tasksInstance(slug);
+    const answers = [
+      await world.admin.patch(`/api/instances/${id}`, { settings: { runsAtOnce: runs } }),
+      await world.admin.put('/api/settings/runtime', { runsAtOnce: total }),
+    ];
+    refusals.set(
+      world,
+      await Promise.all(
+        answers.map(async (res) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> })),
+      ),
+    );
+  },
+);
+
+Then(
+  'the admin is told that an instance limit must be at least 1 and the total between 2 and 256, and both stay',
+  async (world: SynoikiaWorld) => {
+    const [instance, total] = refusals.get(world)!;
+    expect(instance).toMatchObject({ status: 400, body: { details: ['runsAtOnce: must be at least 1'] } });
+    expect(total).toMatchObject({ status: 400, body: { details: ['runsAtOnce: must be between 2 and 256'] } });
+    const id = await world.tasksInstance(world.lastInstance);
+    const settings = await world.expectOk(world.admin.get(`/api/instances/${id}`), 'read instance');
+    expect((settings.settings as { runsAtOnce: number }).runsAtOnce).toBe(4);
+    const server = await world.expectOk(world.admin.get('/api/settings'), 'read settings');
+    expect((server.runtime as { runsAtOnce: unknown }).runsAtOnce).toBeNull();
   },
 );

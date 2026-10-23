@@ -113,12 +113,12 @@ graph TB
     SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
     SynoikiaCore.AdminApi@{ shape: rectangle, label: "Admin API" }
     SynoikiaCore.Notify@{ shape: rectangle, label: "Notifications" }
-    SynoikiaCore.Runtime@{ shape: rectangle, label: "Runtime" }
-    SynoikiaCore.Approvals@{ shape: rectangle, label: "Approvals" }
     SynoikiaCore.Auth@{ shape: rectangle, label: "Auth" }
     SynoikiaCore.Instances@{ shape: rectangle, label: "Instance manager" }
-    SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
+    SynoikiaCore.Runtime@{ shape: rectangle, label: "Runtime" }
+    SynoikiaCore.Approvals@{ shape: rectangle, label: "Approvals" }
     SynoikiaCore.Crypto@{ shape: rectangle, label: "Secret box" }
+    SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
     SynoikiaCore.PluginHost@{ shape: rectangle, label: "Plugin host" }
     SynoikiaCore.Audit@{ shape: rectangle, label: "Audit log" }
     SynoikiaCore.DbAccess@{ shape: rectangle, label: "Database access" }
@@ -139,15 +139,22 @@ in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.McpEndpoints -. "`looks up the instance of each endpoint 
 in`" .-> SynoikiaCore.Instances
   SynoikiaCore.AdminApi -. "`signs admins in with`" .-> SynoikiaCore.Auth
+  SynoikiaCore.AdminApi -. "`sets the total of runs at once in`" .-> SynoikiaCore.Runtime
   SynoikiaCore.AdminApi -. "`configures instances in`" .-> SynoikiaCore.Instances
-  SynoikiaCore.AdminApi -. "`installs plugins with`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.AdminApi -. "`[...]`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Auth -. "`[...]`" .-> SynoikiaCore.DbAccess
+  SynoikiaCore.Runtime -. "`starts an idle instance for a guide read 
+through`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Runtime -. "`reads the catalog for search from`" .-> SynoikiaCore.CatalogSync
+  SynoikiaCore.Instances -. "`asks for the runs and parked executions 
+of an instance in`" .-> SynoikiaCore.Runtime
   SynoikiaCore.Gate -. "`asks for human approval in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.Gate -. "`[...]`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Gate -. "`reads operations and access levels from`" .-> SynoikiaCore.CatalogSync
   SynoikiaCore.Gate -. "`records each decision in`" .-> SynoikiaCore.Audit
   SynoikiaCore.Approvals -. "`stores pending approvals through`" .-> SynoikiaCore.DbAccess
+  SynoikiaCore.Instances -. "`asks for the open approvals of an 
+instance in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.Instances -. "`starts and stops instances with`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Instances -. "`[...]`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Instances -. "`encrypts connection secrets with`" .-> SynoikiaCore.Crypto

@@ -82,6 +82,8 @@ export interface InstanceSettings {
   extraRedactKeys: string[];
   syncMaxAgeMs: number;
   memoryMb: number;
+  /** How long the plugin may stay idle before it stops; null keeps it running (ADR-0022). */
+  idleStopMs: number | null;
 }
 
 export interface Instance {
@@ -108,6 +110,8 @@ export interface Instance {
     labels?: { operation: string; operations: string };
     /** The plugin offers best-practice guides (attestation keys). */
     attestation?: boolean;
+    /** `on-demand`: the plugin may stop while nobody calls the instance. */
+    lifecycle?: 'always' | 'on-demand';
   };
   endpointUrl?: string;
   /** On the overview: the methods the endpoint accepts now (an empty list refuses every call). */

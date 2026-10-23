@@ -168,6 +168,7 @@ export function registerInstanceRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     const rt = ctx.instances.runtime(c.req.param('id'));
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(c.req.param('source')))
       throw new ValidationError('invalid_source', 'Invalid options source');
+    await rt.start?.();
     return c.json(await rt.plugin().call('optionsFor', { source: c.req.param('source'), query: c.req.query('q') }));
   });
 

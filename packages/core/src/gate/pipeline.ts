@@ -35,6 +35,8 @@ export interface GateDeps {
   grants?: SessionGrantService;
   /** Parked executions (ADR-0006); without it, nothing parks. */
   executions?: ExecutionRegistry;
+  /** The total of sandbox runs at once (ADR-0003); without it, 16. */
+  runTotal?: () => number;
 }
 
 /** How an execution parks (ADR-0006): the gate audits the hand-over and reports each decision. */
@@ -52,6 +54,8 @@ export interface InstanceRuntime {
   redact: Redactor;
   /** The live plugin process; throws PluginUnavailableError while it is down. */
   plugin: () => PluginProcess;
+  /** Starts the plugin of an idle instance, outside a gated call (ADR-0022). */
+  start?: () => Promise<void>;
   /** The catalog's plugin version while it matches the running child's, else undefined; checked when a
    * call is gated and again before `invoke`, since descriptors belong to one bundle. */
   catalogVersion: () => string | undefined;
