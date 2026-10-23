@@ -28,10 +28,12 @@ Chosen option: "Counters of writes for each table", because no service has to re
 - Core writes to the database only through the database layer (`db/`). The layer counts each insert, update and delete for the table that it changes. A write in raw SQL also goes through the layer and names its tables.
 - A cache keeps the counters of the tables that it read. At each read it compares them with the current counters. If one moved, it reads the tables again.
 - A value that depends on the time is cached without the decision. For example, a cached credential keeps its expiry, and core compares the expiry with the clock at each call.
-- Each component caches the data that it owns: Auth the credentials, the instance manager the instances and their settings, and catalog sync the catalogs with their access levels.
-- Hot queries that stay on the call path use prepared Drizzle queries.
+- Each component caches the data that it owns: Auth the credentials, the instance manager the instances and their settings, and catalog sync the catalogs with their access levels. The server settings are cached in the same way, and core freezes them because callers share them.
+- Hot queries that stay on the call path, such as the audit insert, use prepared Drizzle queries.
+- A statement that may write but names no table that the layer knows counts as a write to every table, so the counters fail closed.
+- The cached runtime of an instance keeps its redactor, which holds the decrypted secret values of the instance until the instance is written. ADR-0016 already accepts secrets in the memory of core.
 
-Core is one process, and it holds a lock on its data folder. No other writer can change the database while core runs.
+Core is one process, and it holds a lock on its data folder. A change from another process, such as the `sqlite3` shell or `rotate-master-key --force`, applies only after core restarts.
 
 ### Consequences
 
