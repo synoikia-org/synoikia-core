@@ -39,6 +39,18 @@ Feature: Pre-approval rules
       Then agent 7 is told that the call waits for a human to approve it
       And the admin sees that the rule missed a call because of a parameter it does not name
 
+    Scenario: An empty list of labels the rule does not name sends the add to a human
+      Given the admin pre-approves adding any task to "Groceries"
+      When agent 7 adds "butter" to "Groceries" with an empty list of labels
+      Then agent 7 is told that the call waits for a human to approve it
+      And the admin sees that the rule missed a call because of a parameter it does not name
+
+    Scenario: Empty details the rule does not name send the add to a human
+      Given the admin pre-approves adding any task to "Groceries"
+      When agent 7 adds "butter" to "Groceries" with empty details
+      Then agent 7 is told that the call waits for a human to approve it
+      And the admin sees that the rule missed a call because of a parameter it does not name
+
     Scenario: A rule that accepts any due date covers adds with and without one
       Given the admin pre-approves adding any task to "Groceries" with any due date
       When agent 7 adds "butter" due on "2026-10-20" and "jam" with no due date to "Groceries"
