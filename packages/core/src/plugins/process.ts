@@ -164,7 +164,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     const child = this.child;
     // Listeners first: when the spawn fails (EMFILE), Node emits 'error' and leaves stdio unset.
     child.on('error', (err) => {
-      // A child that never started will not emit 'exit'.
+      // A child that never started emits no 'exit'; it counts as exited at once.
       if (child.pid === undefined) this.exited = true;
       this.emit('log', 'error', `plugin process error: ${err.message}`);
     });
