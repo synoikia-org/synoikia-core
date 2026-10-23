@@ -78,7 +78,7 @@ These rules apply to the pipeline:
 
 **Pre-approval rules.** A rule approves matching calls without a human. Its `match` is a list of conditions, and all of them must be true.
 
-- `{ field: "/json/pointer", op: "eq" | "in" | "prefix" | "range" | "bool", value }` applies to the normalized parameters. A missing field gives no match. `prefix` matches at a path segment boundary.
+- `{ field: "/json/pointer", op: "eq" | "in" | "prefix" | "range" | "bool", value }` applies to the normalized parameters. A missing field gives no match. `prefix` matches at a path segment boundary. A value with a dot part never matches a `prefix`, so the call goes to a human. A dot part has only dots and spaces, between `/`, `\` or a Unicode slash. Core checks it also after it decodes `%`-escapes and NFKC forms. A rule cannot hold a `prefix` with a dot part, and catalog sync turns off a stored one.
 - `{ field: "$targets", ids?, scopes? }` is true only if each resolved target meets all given selectors. Zero targets gives no match. A rule uses only the scope keys that the operation's `$targets` field offers.
 - **Strict matching.** A condition must cover each parameter of the call, and a condition on a path covers everything below it. A `$targets` condition also covers the subtrees in its field's `covers`.
 - A parameter that the rule does not mention must be absent. An empty object or list is a parameter too. `{ field, op: "any" }` accepts it. If the conditions were true but the call had extra parameters, core records `strict_miss_at` on the rule.
