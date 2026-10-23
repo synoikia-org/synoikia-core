@@ -37,7 +37,7 @@ Core replaces values with `"[REDACTED]"` in results, parameters, summaries and d
 - A rule shorter than five characters (`pass`, `pwd`) matches only as the last word of a key (`smtp_pass`). So `bypass` stays visible.
 - For a key that only contains a rule, booleans and numbers stay visible (`password_set: true`, `max_tokens: 4096`).
 
-**Secret parameters without a key name.** A descriptor declares these as `sensitiveParams`: JSON pointers into the parameters (`/1`, `/0/password`). Core replaces them wherever it shows or stores parameters. `invoke` gets the real values.
+**Secret parameters without a key name.** A descriptor declares these as `sensitiveParams`: JSON pointers into the parameters (`/1`, `/0/password`). Core replaces them wherever it shows or stores parameters. Core matches each segment of a pointer without case, because many upstreams read keys without case. `invoke` gets the real values.
 
 **Secret results without a key name.** A descriptor declares these as `sensitiveResult`:
 
@@ -48,7 +48,7 @@ Core stores the declaration with the operation. It applies it to the raw `invoke
 
 One case stays in the plugin: a result that holds the results of other operations, for example the records of a job queue. The plugin masks each record with the rule of its own operation (`rules.maskEmbeddedResult`).
 
-**Diffs.** A `prepareWrite` diff names each changed field in a path (`/smtp/password`). Key redaction does not see this. So core hides `before` and `after` of an entry if its path has a sensitive segment, or is at or below a `sensitiveParams` path.
+**Diffs.** A `prepareWrite` diff names each changed field in a path (`/smtp/password`). Key redaction does not see this. So core hides `before` and `after` of an entry if its path has a sensitive segment, or is at or below a `sensitiveParams` path. This also matches without case.
 
 **Secret values in text.** Text has no keys. So each instance redactor also removes the actual secret values of the instance from each string. It also removes their URL-encoded and JSON-encoded forms, if they have 6 or more characters.
 

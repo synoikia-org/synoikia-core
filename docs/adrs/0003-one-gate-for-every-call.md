@@ -32,8 +32,8 @@ binding(args)
   ├─ 1. access level (ADR-0004) under the principal's ceiling       | OPERATION_DISABLED {reason}
   │      mode: run (read) · approve (ask) · auto (write at level write)
   ├─ 2. attestation (if required)                                   | ATTESTATION_REQUIRED
-  ├─ 3. resolveTargets (plugin, if targets)                         | TARGET_RESOLUTION_FAILED
-  ├─ 4. prepareWrite (plugin, configTransform and kind config)      | CONFIG_CONFLICT
+  ├─ 3. prepareWrite (plugin, configTransform and kind config)      | CONFIG_CONFLICT
+  ├─ 4. resolveTargets (plugin, if targets), on the prepared params | TARGET_RESOLUTION_FAILED
   ├─ 5. mode run (read) → invoke
   │     writes: write rate limit checked                            | RATE_LIMITED
   ├─ 6. mode auto → invoke (auto-approved:level)
@@ -59,7 +59,7 @@ These rules apply to the pipeline:
 - **Checks after an approval.** After a human approves, core checks the access level, the operation, the targets and the catalog version again. The approval applies only to what the approver saw.
 - **Timeouts.** The deadline of an `invoke` is 500 ms before the end of the sandbox time limit. With less than 600 ms left, core sends nothing upstream and refuses the call with `TIMEOUT`.
 - **Unknown results.** Core cannot cancel an `invoke` that timed out, and the upstream can still complete the write. Core audits the call as `error:UPSTREAM_TIMEOUT`, which means "result unknown". Each `invoke` has a unique `context.callId` that a plugin can send as an idempotency key.
-- **`prepareWrite`** runs for write operations of kind `config` on plugins with `configTransform`.
+- **`prepareWrite`** runs for write operations of kind `config` on plugins with `configTransform`. It runs before `resolveTargets`. So the rules, the approver and the target checks all see the params that `invoke` gets.
 
 **Rate limits.** These limits apply for each principal and instance. They are separate from the limits of pre-approval rules.
 

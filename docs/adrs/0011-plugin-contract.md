@@ -100,7 +100,7 @@ The child can also send the notifications `log` and `catalogChanged`.
   classification: 'read' | 'write';
   classificationReason: string;   // for example 'verb:GET'
   locked?: boolean;
-  typedConfirmation?: boolean;    // always true for a locked operation
+  typedConfirmation?: boolean;    // makes the operation locked; always true for a locked one
   attestationRequired?: boolean;
   needsReview?: boolean;
   matchProfile?: string;
