@@ -39,3 +39,35 @@ describe('openDatabase', () => {
     second.$client.close();
   });
 });
+
+// ADR-0021: the database layer reuses a prepared statement for the same SQL.
+describe('prepared statements', () => {
+  it('reuses one statement for the same SQL, in the mode a fresh one has', () => {
+    const db = openDatabase(':memory:');
+    db.insert(settings)
+      .values({ key: 'k', value: { a: 1 } })
+      .run();
+    const sql = 'select key from settings';
+    const first = db.$client.prepare(sql);
+    expect(first.raw().get()).toEqual(['k']);
+    const again = db.$client.prepare(sql);
+    expect(again).toBe(first);
+    expect(again.get()).toEqual({ key: 'k' });
+    expect(db.select().from(settings).get()).toEqual({ key: 'k', value: { a: 1 } });
+  });
+
+  it('prepares a new statement while the kept one is still iterating', () => {
+    const db = openDatabase(':memory:');
+    db.insert(settings)
+      .values([
+        { key: 'a', value: {} },
+        { key: 'b', value: {} },
+      ])
+      .run();
+    const sql = 'select key from settings order by key';
+    const rows = db.$client.prepare(sql).pluck().iterate();
+    expect(rows.next().value).toBe('a');
+    expect(db.$client.prepare(sql).pluck().all()).toEqual(['a', 'b']);
+    rows.return?.();
+  });
+});
