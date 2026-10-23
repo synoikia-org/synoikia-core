@@ -5,9 +5,11 @@ Method note: 15 web searches/fetches on 2026-10-23. Many findings come from vend
 ## 1. Market structure and segments
 
 ### Takeaway
+
 The market has split into five segments: API-gateway incumbents that bolt MCP onto existing gateways, security vendors (much of it now acquired by large security platforms), integration/tool platforms (Composio, Arcade, Zapier, Pipedream), registries, and open-source gateways. Gartner says MCP support is now a mandatory gateway feature, not a differentiator. Almost every vendor targets the enterprise. The self-hosted homelab segment has open-source tools but no funded player.
 
 ### Cited Findings
+
 - Gartner (2025 Innovation Insight on MCP gateways) defines MCP gateways as the enterprise layer for registration, discovery, authentication and observability across MCP servers. It names three deployment patterns: aggregator, proxy and composite. Reported second-hand by a vendor — [Operant AI](https://www.operant.ai/art-kubed/operant-ai-featured-in-gartners-2025-market-guide-for-api-protection-and-innovation-report-mcp-gateways)
 - Gartner projects that 75% of API gateway vendors will have MCP features by end of 2026, up from near zero in 2024. Reported by a vendor, Zuplo — [Zuplo](https://zuplo.com/blog/gartner-75-percent-api-gateways-mcp)
 - Kong cites Gartner listing MCP gateway support as mandatory, not a differentiator. Kong also cites Gartner's "context mesh" framing — [Kong Gartner report page](https://konghq.com/resources/reports/gartner-complimentary-report); [Kong context mesh blog](https://konghq.com/blog/enterprise/gartners-context-mesh)
@@ -20,19 +22,23 @@ The market has split into five segments: API-gateway incumbents that bolt MCP on
 - MCP security vendor roundup (2026) lists pure-play MCP security companies. It says disclosed funding across pure-play MCP security startups is about $40M across four companies. This figure was published before Runlayer's reported $30M Series A, so it is probably stale — [AppSentinels](https://appsentinels.ai/blog/top-10-mcp-security-companies-in-2026/)
 
 ### Inferences
+
 - The incumbents (Kong, Cloudflare, Azure APIM, AWS, Apigee, F5) sell MCP as a feature of an existing gateway or SASE contract. Their buyer is the platform or security team in an enterprise, not a homelab owner.
 - Docker is the closest local-first competitor. It has a catalog, a gateway, dynamic tools and a code mode sandbox, and it runs on the developer's machine. It does not yet offer human approvals or a per-service security model.
 
 ### Gaps
+
 - No primary-source detail for Kong, Apigee, Azure APIM, AWS (Bedrock AgentCore Gateway), Traefik Hub, Solo agentgateway or F5/NGINX MCP features in this pass. The search budget did not allow it.
 - IBM ContextForge and MetaMCP status in Oct 2026 (activity, licence changes) not verified.
 
 ## 2. Funding, acquisitions and analyst views
 
 ### Takeaway
+
 2025 was the year that large security platforms bought AI and agent security startups: Snyk–Invariant, Cato–Aim, SentinelOne–Prompt, CrowdStrike–Pangea and Palo Alto–Protect AI. In 2026 the MCP-specific layer consolidated: Boomi–Lunar.dev, Arcade–Smithery and, per one source, Palo Alto–Portkey. Arcade ($60M Series A) and Runlayer ($30M Series A) raised large rounds. Analysts call the AI gateway market small but fast-growing. Gartner sizes it at about $1B by 2028 and warns about MCP security incidents.
 
 ### Cited Findings
+
 - Snyk acquired Invariant Labs (Zurich, founded 2024; Guardrails and an MCP server scanner) in June 2025. Terms were not disclosed. The work moved into Snyk Labs and the AI Trust Platform — [Startupticker](https://www.startupticker.ch/en/news/snyk-acquires-invariant-labs-to-accelerate-agentic-ai-security-innovation); [Techzine](https://www.techzine.eu/news/security/132501/snyk-acquires-invariant-labs-for-ai-security/); [BankInfoSecurity](https://www.bankinfosecurity.com/embargo-0624-9am-et-agentic-ai-security-gets-fuel-snyks-invariant-labs-buy-a-28789)
 - CrowdStrike announced the Pangea acquisition at Fal.Con 2025, to build AI Detection and Response (AIDR) into Falcon. The value is reported as about $260M, or $222.7M per an SEC-based tracker (conflict) — [CrowdStrike IR](https://ir.crowdstrike.com/news-releases/news-release-details/crowdstrike-acquire-pangea-secure-every-layer-enterprise-ai); [SDxCentral](https://www.sdxcentral.com/news/crowdstrike-acquires-pangea-for-shadow-ai-panacea/); [guptadeepak.com M&A tracker](https://guptadeepak.com/agent-security/deals/)
 - SentinelOne acquired Prompt Security. The tracker says it closed on 2025-09-05 for $160.2M (SEC). Other outlets report about $250M (conflict) — [guptadeepak.com M&A tracker](https://guptadeepak.com/agent-security/deals/); [Infosecurity Magazine](https://www.infosecurity-magazine.com/news-features/cybersecurity-ma-crowdstrike/)
@@ -48,10 +54,12 @@ The market has split into five segments: API-gateway incumbents that bolt MCP on
 - CrowdStrike also acquired SGNL (identity) in January 2026 for $637.1M. This is adjacent: agent identity — [guptadeepak.com M&A tracker](https://guptadeepak.com/agent-security/deals/)
 
 ### Inferences
+
 - The exit path in this space is acquisition by a security, iPaaS or API platform. The buyers want enterprise distribution. An MIT, free, homelab project is not on that path, and it does not compete for the same budget.
 - The registry layer is consolidating into runtime vendors (Smithery into Arcade). Independent public registries are becoming fewer.
 
 ### Gaps
+
 - Natoma funding status not found in this pass.
 - Klavis AI: only "YC X25 seed" found, no amount.
 - No Forrester MCP-specific report found in this pass.
@@ -60,9 +68,11 @@ The market has split into five segments: API-gateway incumbents that bolt MCP on
 ## 3. MCP adoption, spec versions and governance
 
 ### Takeaway
+
 MCP is the de facto standard for agent tools. Anthropic gave it to the Linux Foundation's Agentic AI Foundation (AAIF) on 9 December 2025. The 2026-07-28 spec is the biggest revision so far: a stateless core, header-based routing for gateways, cacheable lists, an extensions framework (Tasks, MCP Apps, Enterprise Managed Authorization), and auth hardening. The two Tier 1 SDKs each have over 1 billion downloads.
 
 ### Cited Findings
+
 - 2026-07-28 spec: the `initialize` handshake and `Mcp-Session-Id` are retired. Each request carries its protocol version, client identity and capabilities. There is an optional `server/discover` call — [MCP blog 2026-07-28](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
 - Multi Round-Trip Requests (MRTR) replace server-initiated sampling and elicitation over held-open streams. The server returns `input_required` and the client retries with `inputResponses` — [MCP blog](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
 - Streamable HTTP requests must carry `Mcp-Method` and `Mcp-Name` headers, so that gateways can route and meter without parsing JSON. `tools/list` and similar responses carry `ttlMs` and `cacheScope` — [MCP blog](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
@@ -77,10 +87,12 @@ MCP is the de facto standard for agent tools. Anthropic gave it to the Linux Fou
 - Home Assistant ships an official `mcp_server` integration (merged into Core on 2 Jan 2025) that exposes the Assist API, limited to exposed entities — [Home Assistant docs](https://home-assistant.io/integrations/mcp_server/); [HA PR #134122](https://github.com/home-assistant/core/pull/134122)
 
 ### Inferences
+
 - The 2026-07-28 changes (header routing, cacheable lists, stateless requests, MRTR replacing held-open streams, CIMD) make gateways cheaper to build. They also mean every gateway, Synoikia included, must migrate. Synoikia's `resume(executionId)` approval pattern fits the MRTR and Tasks model.
 - Approval flows can use MRTR `input_required` or URL-mode elicitation. Clients may surface these natively, which can reduce the need for out-of-band approval links. Check how clients implement this.
 
 ### Gaps
+
 - Official MCP Registry (registry.modelcontextprotocol.io) GA status and size, and GitHub MCP Registry details: no results this pass.
 - Native Gemini app (consumer) MCP support: no official Google source found.
 - No total public MCP server count from a reliable source.
@@ -88,9 +100,11 @@ MCP is the de facto standard for agent tools. Anthropic gave it to the Linux Fou
 ## 4. Code Mode / context-efficiency trend
 
 ### Takeaway
+
 "Search plus execute code in a sandbox" went from a Cloudflare experiment (Sep 2025) to a mainstream pattern. Anthropic published it (Nov 2025), Docker shipped it (experimental), Cloudflare made it the default on its portals, and several gateways (Bifrost, utcp-mcp-gateway) adopted it. Reported token savings are large at scale (58–99.9%) and smaller at small scale (an independent test: 78.5% fewer input tokens, but 7% more latency). Synoikia's 3-tool design is on trend but no longer unique.
 
 ### Cited Findings
+
 - Cloudflare's Cloudflare-API MCP server exposes only `search()` and `execute()`. The model writes JavaScript. The whole Cloudflare API costs about 1,000 tokens, a reported 99.9% cut in input tokens — [Cloudflare blog: Code Mode MCP](https://blog.cloudflare.com/code-mode-mcp/); [cloudflare/mcp GitHub](https://github.com/cloudflare/mcp)
 - The original Cloudflare "Code Mode" post (Sep 2025) proposed converting MCP tools into a TypeScript API that the LLM codes against, run in V8 isolates **[prior knowledge, not re-verified]** — [Cloudflare blog: Code Mode](https://blog.cloudflare.com/code-mode/)
 - Anthropic, "Code execution with MCP" (Nov 2025): present tools as code files, load them on demand. Example: 150,000 tokens down to 2,000 (98.7%) **[prior knowledge, not re-verified]** — [Anthropic engineering](https://www.anthropic.com/engineering/code-execution-with-mcp)
@@ -104,19 +118,23 @@ MCP is the de facto standard for agent tools. Anthropic gave it to the Linux Fou
 - One author says MCP adopted progressive discovery in January 2026, which removed Skills' context advantage. Others say the gap narrowed but did not close — [Milvus blog](https://milvus.io/blog/is-mcp-dead-cli-and-skills-for-ai-agents.md); [Maxim Skills vs MCP](https://www.getmaxim.ai/blog/the-skills-vs-mcp-debate-understanding-two-layers-of-the-same-stack/)
 
 ### Inferences
+
 - Code Mode is becoming table stakes for gateways. Synoikia's differentiation must come from what wraps the sandbox (per-operation access levels, approvals that pause and resume, redaction, audit, signed plugins), not from the 3-tool shape.
 - The savings data favours large catalogs. A homelab with 5–15 services gets smaller absolute gains. Synoikia's pitch should stress safety and one endpoint per service as much as tokens.
 
 ### Gaps
+
 - An OpenAI equivalent of Code Mode or tool search (for example in the Responses API or Agents SDK) was not verified this pass.
 - No independent accuracy or quality benchmark comparing Code Mode with direct tool calls across models.
 
 ## 5. Competing protocols and approaches
 
 ### Takeaway
+
 MCP is the dominant tool protocol, but in 2026 it faced a "CLI + Skills instead of MCP" backlash (HN "MCP is dead", Feb 2026; Perplexity's CTO, Mar 2026). The consensus that is emerging is a layered one: Skills for procedural knowledge, CLIs for local developer tools, MCP for authenticated remote services with permissions. A2A covers agent-to-agent traffic. MCP Apps / the OpenAI Apps SDK cover UI.
 
 ### Cited Findings
+
 - The debate started around Feb 2026 with a "MCP is dead" HN post. Perplexity's CTO said in March 2026 that Perplexity was moving off MCP toward APIs and CLIs. Garry Tan criticised MCP context cost and auth. All from secondary blogs — [Milvus](https://milvus.io/blog/is-mcp-dead-cli-and-skills-for-ai-agents.md); [heyuan110](https://www.heyuan110.com/posts/ai/2026-07-04-cli-skills-vs-mcp/); [manveerc substack](https://manveerc.substack.com/p/mcp-vs-cli-ai-agents)
 - Claim: a standard GitHub MCP server takes about 55,000 tokens before the agent does any work (unverified blog figure) — [Medium](https://medium.com/@krishnan.srm/mcp-vs-cli-vs-skills-lets-get-a-better-understanding-87a2d52ff42b)
 - Arize ran an eval comparing MCP and CLI+Skills for agents — [Arize](https://arize.com/blog/mcp-vs-cli-skills-for-agents-what-our-eval-found-and-which-you-should-use/)
@@ -127,19 +145,23 @@ MCP is the dominant tool protocol, but in 2026 it faced a "CLI + Skills instead 
 - UTCP (Universal Tool Calling Protocol) is used as a direct-call alternative or complement. utcp-mcp-gateway bridges it to MCP — [GitHub utcp-mcp-gateway](https://github.com/Xuleileon/utcp-mcp-gateway)
 
 ### Inferences
+
 - The CLI argument is weakest where Synoikia lives: remote, credentialed services that must not let an agent run arbitrary shell commands. It is a good opening for "the safe alternative to giving an agent `curl` and your API keys".
 - Synoikia's `plugin-notes` (per-plugin usage guidance in server instructions) are close to a Skill. Bundling or exporting Skills per plugin is a possible hedge.
 
 ### Gaps
+
 - UTCP adoption level not measured.
 - No primary OpenAI statement on Apps SDK and MCP Apps unification was fetched.
 
 ## 6. Market gaps for a self-hosted, security-first homelab gateway, and threats
 
 ### Takeaway
+
 Funded vendors target enterprises (SSO, SASE, compliance). The homelab and small-team segment has many single-service community MCP servers and generic open-source aggregators, but no product combines per-service plugins, per-operation access levels, human approvals that pause and resume, redaction, audit and signed plugins in one free self-hosted box. The main threats are Docker (local gateway, catalog, code mode already shipped), Home Assistant extending its native MCP server, and Cloudflare portals if they become free for small Zero Trust tiers.
 
 ### Cited Findings
+
 - Home Assistant's native MCP server exposes only entities the user has exposed. It relies on the client for remote transport, or on a local gateway if the client lacks remote support. It is limited to the Assist API — [Home Assistant docs](https://home-assistant.io/integrations/mcp_server/)
 - One news article says Home Assistant 2026.10 (7 Oct 2026) "integrates MCP directly" and exposes 2,000+ integrations to AI agents. Single secondary source, unverified, and needs a check against HA release notes — [forkast.news](https://forkast.news/?p=131390)
 - Many community Home Assistant MCP servers exist (allenporter, oleander, AHA, tevonsb), with automation management and several transports — [allenporter](https://glama.ai/mcp/servers/@allenporter/mcp-server-home-assistant/blob/0a82f5d157d77a73cfbef0f7d3b8c8dd46d31fbd/README.md); [oleander](https://cdn.jsdelivr.net/gh/oleander/home-assistant-mcp-server@main/README.md); [AHA](https://glama.ai/mcp/servers/@slhad/aha-mcp/blob/a212cbac289d1e7c54311a6486ef04c13f52f127/README.md)
@@ -149,6 +171,7 @@ Funded vendors target enterprises (SSO, SASE, compliance). The homelab and small
 - Security posture is the main buying criterion in vendor roundups (auth, audit, guardrails) — [Speakeasy](https://www.speakeasy.com/blog/best-mcp-gateways-for-enterprise-2026); [AppSentinels](https://appsentinels.ai/blog/top-10-mcp-security-companies-in-2026/)
 
 ### Inferences
+
 - Gaps that Synoikia could own:
   - Self-hosted with no cloud dependency, unlike Cloudflare, Composio or Arcade, which are SaaS-first. This suits homelabs on private networks.
   - Out-of-band human approval for dangerous operations (unlock, garage, delete), with `resume`. Most gateways do authn/authz and guardrails but not per-call human approval.
@@ -163,6 +186,7 @@ Funded vendors target enterprises (SSO, SASE, compliance). The homelab and small
   - Client-native features (Anthropic tool search, native elicitation and approval UIs in clients) shrink the gateway's value-add on context efficiency.
 
 ### Gaps
+
 - No data on homelab or small-team MCP adoption size (for example self-hosted community surveys).
-- No information on whether Unraid, TrueNAS, Proxmox or the *arr projects ship native MCP servers. Not searched.
+- No information on whether Unraid, TrueNAS, Proxmox or the \*arr projects ship native MCP servers. Not searched.
 - Cloudflare portal pricing for free Zero Trust accounts not confirmed.
