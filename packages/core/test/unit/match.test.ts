@@ -33,6 +33,16 @@ describe('matches', () => {
     );
   });
 
+  it('counts an empty object or list as a parameter the rule must name (ADR-0003)', () => {
+    const rule = [{ field: '/name', op: 'prefix', value: 'vol/media' }] as const;
+    expect(matches(rule, call({ name: 'vol/media/tv', filters: {} }))).toBe(false);
+    expect(matches(rule, call({ name: 'vol/media/tv', tags: [] }))).toBe(false);
+    expect(matches([...rule, { field: '/filters', op: 'any' }], call({ name: 'vol/media/tv', filters: {} }))).toBe(
+      true,
+    );
+    expect(matches([], call({}))).toBe(true);
+  });
+
   it('covers positional (array) params by index, and whole arrays by their own path', () => {
     const rule = [{ field: '/0/name', op: 'prefix', value: 'vol/media' }] as const;
     expect(matches(rule, call([{ name: 'vol/media/tv' }]))).toBe(true);

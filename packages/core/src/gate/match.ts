@@ -104,7 +104,8 @@ export function coversAllParams(
     if (value === undefined || value === null) return path === '';
     if (typeof value !== 'object') return false;
     const entries = Array.isArray(value) ? value.map((v, i) => [String(i), v] as const) : Object.entries(value);
-    if (entries.length === 0) return true;
+    // ADR-0003: an empty object or list is a parameter too; only the call's own empty root is covered.
+    if (entries.length === 0) return path === '';
     if (!pointers.some((p) => p.startsWith(`${path}/`))) return false;
     return entries.every(([k, v]) => covered(v, `${path}/${escapePointer(k)}`));
   };
