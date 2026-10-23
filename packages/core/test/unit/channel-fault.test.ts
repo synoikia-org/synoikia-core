@@ -59,4 +59,14 @@ describe('isPluginChannelFault', () => {
     expect(isPluginChannelFault(new TypeError('x is undefined'))).toBe(false);
     expect(isPluginChannelFault('not an error')).toBe(false);
   });
+
+  it('does not match frame text inside the message', () => {
+    expect(
+      isPluginChannelFault(
+        new SyntaxError('x\n    at parseChannelMessages (node:internal/child_process/serialization:1'),
+      ),
+    ).toBe(false);
+    const forged = new Error('x\n    at ChildProcess.<anonymous> (node:internal/child_process:1');
+    expect(isPluginChannelFault(Object.assign(forged, { code: 'ERR_INTERNAL_ASSERTION' }))).toBe(false);
+  });
 });
