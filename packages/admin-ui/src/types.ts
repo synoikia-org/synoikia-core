@@ -91,7 +91,7 @@ export interface Instance {
   enabled: boolean;
   /** The endpoint's own subset of methods; null accepts every globally enabled one. */
   authMethods: AuthMethod[] | null;
-  status: 'starting' | 'ready' | 'error' | 'stopped';
+  status: 'starting' | 'ready' | 'error' | 'stopped' | 'idle';
   statusError: string | null;
   upstreamVersion: string | null;
   /** Where the last catalog came from, as the plugin reports it (e.g. a version or git ref). */

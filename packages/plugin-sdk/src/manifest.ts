@@ -137,6 +137,8 @@ export const ManifestSchema = z
         operations: z.string().default('Operations'),
       })
       .prefault({}),
+    /** `on-demand`: core may stop the child of an idle instance until its next call (ADR-0022). */
+    lifecycle: z.enum(['always', 'on-demand']).default('always'),
     capabilities: z
       .object({
         registry: z.boolean().default(false),

@@ -1,6 +1,6 @@
 @id:instance-supervision
 Feature: Instance supervision
-  Core keeps the plugin of each enabled instance running.
+  Core keeps the plugin of each enabled instance running, unless the plugin may stop when idle and nobody calls it.
   When the plugin crashes or cannot start, core starts it again after a pause that grows with each failure.
   Core starts, stops and restarts a plugin one step at a time, and keeps secrets out of every error it shows.
 
@@ -69,3 +69,41 @@ Feature: Instance supervision
       And Acme answers every request with an error that quotes the API token
       When the admin syncs "tasks", which fails
       Then the instance, the audit log and the notifications show [REDACTED] in place of the API token
+
+  Rule: An instance that nobody calls stops until its next call
+
+    Scenario: An instance that nobody calls goes idle
+      Given Acme Tasks runs as "tasks", which may stop when idle, and the admin lets it stop after 10 minutes
+      And 10 minutes go by without a call to "tasks"
+      When the admin opens the instances
+      Then the admin sees "tasks" as idle, and no notification was sent
+
+    Scenario: A call to an idle instance starts it, then runs
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And "tasks" went idle
+      When agent 7 asks for the open tasks of "Groceries"
+      Then agent 7 gets "milk", "bread" and "eggs", and the admin sees "tasks" as ready
+
+    @backlog
+    Scenario: An instance with a waiting approval does not go idle
+      Given agent 7 waits for the admin to approve the add of "butter" to "Groceries"
+      And 10 minutes go by without another call to "tasks"
+      When the admin approves the add
+      Then "butter" is on "Groceries", and the admin saw "tasks" as ready the whole time
+
+    Scenario: A call that cannot start an idle instance fails, and is not retried at once
+      Given "tasks" went idle
+      And Acme Tasks is down
+      When agent 7 asks for the open tasks of "Groceries", and asks again at once
+      Then agent 7 is told both times that "tasks" is unavailable, and the admin sees one failed start, with the next one after a pause
+
+    @backlog
+    Scenario: A plugin that keeps a live connection never goes idle
+      Given Acme Tasks runs as "tasks" with a plugin that does not say it may stop when idle
+      When the admin tries to let "tasks" stop after 10 minutes
+      Then the admin is told that this plugin must stay running, and "tasks" stays always on
+
+    @backlog
+    Scenario: An idle time below 5 minutes is refused
+      When the admin tries to let "tasks" stop after 4 minutes
+      Then the admin is told that an instance stops after 5 minutes at the least, and "tasks" still stops after 10 minutes

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApprovalLinkService } from '../src/approvals/links.js';
 import { ApprovalService } from '../src/approvals/service.js';
 import { setGroupLevel } from '../src/catalog/groups.js';
@@ -23,7 +23,9 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-function setup(opts: { versionCheckIntervalMs?: number; pluginsDir?: string; now?: () => Date } = {}) {
+function setup(
+  opts: { versionCheckIntervalMs?: number; pluginsDir?: string; now?: () => Date; idleSweepMs?: number } = {},
+) {
   const db = openDatabase(':memory:');
   syncPluginRegistry(db, discoverPlugins(opts.pluginsDir ?? PLUGINS));
   db.update(plugins).set({ enabled: true }).run();
@@ -38,7 +40,12 @@ function setup(opts: { versionCheckIntervalMs?: number; pluginsDir?: string; now
     secrets,
     events,
     log: createLogger('error', () => undefined),
-    supervisor: { backoff: { initialMs: 20, maxMs: 100 }, initTimeoutMs: 2000, rpcTimeoutMs: 5000 },
+    supervisor: {
+      backoff: { initialMs: 20, maxMs: 100 },
+      initTimeoutMs: 2000,
+      rpcTimeoutMs: 5000,
+      idleSweepMs: opts.idleSweepMs,
+    },
     versionCheckIntervalMs: opts.versionCheckIntervalMs ?? 0,
     now: opts.now,
   });
@@ -170,5 +177,58 @@ describe('InstanceManager', () => {
       detail: { guideVersion: 'v1' },
     });
     await expect(searchCode(deps, rt, caller, `return typeof registry`)).resolves.toMatchObject({ value: 'undefined' });
+  });
+});
+
+describe('idle stop (ADR-0022)', () => {
+  /** An `on-demand` echo instance that went idle on the injected clock. */
+  async function idleInstance() {
+    let clock = new Date('2026-01-01T00:00:00Z');
+    const t = setup({ now: () => clock, idleSweepMs: 10 });
+    const plugin = t.db.select().from(plugins).get()!;
+    t.db
+      .update(plugins)
+      .set({ manifest: { ...(plugin.manifest as object), lifecycle: 'on-demand' } })
+      .run();
+    const inst = await t.manager.create({
+      pluginId: 'echo',
+      slug: 'echo',
+      connection: { token: 'super-secret-token-1234' },
+      settings: { idleStopMs: 5 * 60_000 },
+    });
+    await t.manager.ensureFresh(inst.id);
+    await t.manager.startAll();
+    clock = new Date(clock.getTime() + 6 * 60_000);
+    await vi.waitFor(() => expect(t.manager.status(inst.id)).toBe('idle'));
+    const statuses = () =>
+      t.seen.filter((e) => e.name === 'instance.status').map((e) => (e.payload as { status: string }).status);
+    return { ...t, id: inst.id, statuses, from: statuses().length };
+  }
+
+  it('lets every call that comes during a cold start wait for it', async () => {
+    const t = await idleInstance();
+    let second: Promise<void> | undefined;
+    t.events.on('instance.status', ({ status }) => {
+      if (status === 'starting') second ??= t.manager.ensureFresh(t.id, { start: true });
+    });
+    await t.manager.ensureFresh(t.id, { start: true });
+    await second;
+    expect(t.manager.status(t.id)).toBe('ready');
+    expect(t.statuses().slice(t.from)).toEqual(['starting', 'ready']);
+  });
+
+  it('starts no child when the admin stops the instance while a call wakes it', async () => {
+    const t = await idleInstance();
+    const call = t.manager.ensureFresh(t.id, { start: true });
+    await t.manager.update(t.id, { enabled: false });
+    await expect(call).rejects.toThrow();
+    expect(t.statuses().slice(t.from)).toEqual(['stopped']);
+  });
+
+  it('starts an idle instance for a sync', async () => {
+    const t = await idleInstance();
+    await t.manager.syncNow(t.id);
+    expect(t.manager.status(t.id)).toBe('ready');
+    expect(t.seen.filter((e) => e.name === 'sync.failed')).toEqual([]);
   });
 });

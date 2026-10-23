@@ -7,6 +7,8 @@ interface Supervision {
   inbox?: { title: string; message: string; event: string }[];
   adding?: Promise<Response>;
   stopMs?: number;
+  seen?: { slug: string; status: string }[];
+  answers?: Record<string, unknown>[];
 }
 const state = new WeakMap<SynoikiaWorld, Supervision>();
 const of = (world: SynoikiaWorld) => {
@@ -39,6 +41,12 @@ async function addFailing(world: SynoikiaWorld, slug: string) {
   world.instances.set(slug, created.id as string);
   world.lastInstance = slug;
   await eventually(async () => (await pluginErrors(world)).length > 0, 'a failed start');
+}
+
+/** ADR-0022: the plugin says it may stop when idle, and the admin sets the idle time of the instance. */
+async function mayIdle(world: SynoikiaWorld, slug: string, minutes: number) {
+  await world.editManifest((m) => (m.lifecycle = 'on-demand'));
+  await world.instanceSettings(slug, { idleStopMs: minutes * 60_000 });
 }
 
 const moveTo = (world: SynoikiaWorld, slug: string, url: string) =>
@@ -223,5 +231,84 @@ Then(
       expect(part).toContain('[REDACTED]');
       expect(part).not.toContain(API_TOKEN);
     }
+  },
+);
+
+// ── idle stop (ADR-0022) ──
+
+Given(
+  'Acme Tasks runs as {string}, which may stop when idle, and the admin lets it stop after {int} minutes',
+  async (world: SynoikiaWorld, slug: string, minutes: number) => {
+    await mayIdle(world, slug, minutes);
+    of(world).inbox = await world.notificationInbox([
+      'instance.error',
+      'instance.recovered',
+      'plugin.crashed',
+      'sync.failed',
+      'sync.pending_review',
+    ]);
+  },
+);
+
+Given('{int} minutes go by without a call to {string}', async (world: SynoikiaWorld, minutes: number) => {
+  world.passTime(minutes * 60_000);
+  // Core looks for idle instances every 50 ms in the World.
+  await new Promise((r) => setTimeout(r, 300));
+});
+
+Given('{string} went idle', async (world: SynoikiaWorld, slug: string) => {
+  await world.tasksInstance(slug);
+  if (!world.agents.has('7')) await world.credential('7', 'admin', 'write');
+  await mayIdle(world, slug, 10);
+  world.passTime(10 * 60_000);
+  await eventually(async () => (await instance(world, slug)).status === 'idle', 'the instance to go idle');
+});
+
+Given('Acme Tasks is down', (world: SynoikiaWorld) => {
+  world.pluginFlag('down');
+});
+
+When('the admin opens the instances', async (world: SynoikiaWorld) => {
+  of(world).seen = (await world.expectOk(world.admin.get('/api/instances'), 'list instances')) as unknown as {
+    slug: string;
+    status: string;
+  }[];
+});
+
+When(
+  'agent {word} asks for the open tasks of {string}, and asks again at once',
+  async (world: SynoikiaWorld, agent: string, list: string) => {
+    const code = `return (await tasks.call('lists.tasks', { list: ${JSON.stringify(list)} })).map((t) => t.title);`;
+    const answers = [];
+    for (let i = 0; i < 2; i++) {
+      await world.execute(agent, world.lastInstance, code);
+      answers.push(world.answer);
+    }
+    of(world).answers = answers;
+  },
+);
+
+Then('the admin sees {string} as idle, and no notification was sent', async (world: SynoikiaWorld, slug: string) => {
+  expect(of(world).seen?.find((i) => i.slug === slug)).toMatchObject({ status: 'idle' });
+  expect(world.pluginProcesses()).toBe(0);
+  await new Promise((r) => setTimeout(r, 300));
+  expect(of(world).inbox).toEqual([]);
+});
+
+Then(
+  'agent {word} gets {string}, {string} and {string}, and the admin sees {string} as ready',
+  async (world: SynoikiaWorld, _agent: string, a: string, b: string, c: string, slug: string) => {
+    expect(world.answer).toEqual({ result: [a, b, c] });
+    expect(await instance(world, slug)).toMatchObject({ status: 'ready' });
+  },
+);
+
+Then(
+  'agent {word} is told both times that {string} is unavailable, and the admin sees one failed start, with the next one after a pause',
+  async (world: SynoikiaWorld) => {
+    for (const answer of of(world).answers!) expect(answer).toMatchObject({ error: 'PLUGIN_UNAVAILABLE' });
+    expect(await pluginErrors(world)).toHaveLength(1);
+    expect(await instance(world, world.lastInstance)).toMatchObject({ status: 'error' });
+    await eventually(async () => (await pluginErrors(world)).length === 2, 'the next start after a pause');
   },
 );
