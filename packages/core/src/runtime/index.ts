@@ -20,10 +20,13 @@ import type { Binding, SandboxResult } from '../sandbox/index.js';
 /** The engines behind the `search` and `execute` tools (ADR-0003). */
 
 /** Sandbox caps (ADR-0003): runs per minute per principal and instance, and concurrent isolates per
- * instance and in total; over a cap the run is refused before an isolate exists. */
-export const SANDBOX_CONCURRENCY = { perInstance: 4, total: 16 };
+ * instance (an instance setting) and in total. Over a cap a run waits for a place, first come first served. */
+export const SANDBOX_CONCURRENCY = { total: 16 };
+/** How long a run waits for a place before core answers `BUSY`; the wait is not sandbox time. */
+export const ADMISSION_WAIT_MS = 2_000;
 const running = new Map<string, number>();
 let runningTotal = 0;
+const waiting: { instanceId: string; cap: number; admit: () => void }[] = [];
 
 /** Parked scripts still running, across all registries (they gave back their concurrency slot). */
 let parkedRunning = 0;
@@ -31,7 +34,36 @@ let parkedRunning = 0;
 /** Scripts running now, across all instances (shutdown waits for cancelled ones to return). */
 export const sandboxesRunning = () => runningTotal + parkedRunning;
 
-function admit(deps: GateDeps, rt: InstanceRuntime, caller: CallerContext): SandboxResult | (() => void) {
+const BUSY: SandboxResult = {
+  ok: false,
+  error: { code: 'BUSY', message: 'Too many scripts are running; try again shortly' },
+  logs: [],
+};
+
+const fits = (instanceId: string, cap: number) =>
+  (running.get(instanceId) ?? 0) < cap && runningTotal < SANDBOX_CONCURRENCY.total;
+
+/** Takes a place; the returned release hands it to the oldest waiting run that fits. */
+function take(instanceId: string): () => void {
+  running.set(instanceId, (running.get(instanceId) ?? 0) + 1);
+  runningTotal++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    running.set(instanceId, (running.get(instanceId) ?? 1) - 1);
+    runningTotal--;
+    const next = waiting.findIndex((w) => fits(w.instanceId, w.cap));
+    if (next >= 0) waiting.splice(next, 1)[0]!.admit();
+  };
+}
+
+async function admit(
+  deps: GateDeps,
+  rt: InstanceRuntime,
+  caller: CallerContext,
+  signal?: AbortSignal,
+): Promise<SandboxResult | (() => void)> {
   const who = principalKey(caller);
   if (!deps.limiter.take(`run:${rt.instanceId}:${who}`, rt.settings.executePerMinute, 60_000)) {
     return {
@@ -40,16 +72,32 @@ function admit(deps: GateDeps, rt: InstanceRuntime, caller: CallerContext): Sand
       logs: [],
     };
   }
-  const here = running.get(rt.instanceId) ?? 0;
-  if (here >= SANDBOX_CONCURRENCY.perInstance || runningTotal >= SANDBOX_CONCURRENCY.total) {
-    return { ok: false, error: { code: 'BUSY', message: 'Too many scripts are running; try again shortly' }, logs: [] };
-  }
-  running.set(rt.instanceId, here + 1);
-  runningTotal++;
-  return () => {
-    running.set(rt.instanceId, (running.get(rt.instanceId) ?? 1) - 1);
-    runningTotal--;
-  };
+  const cap = rt.settings.runsAtOnce;
+  // A free place never waits beside a run that fits it: a release hands it over at once.
+  if (fits(rt.instanceId, cap)) return take(rt.instanceId);
+  return new Promise((resolve) => {
+    const leave = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', giveUp);
+      const at = waiting.indexOf(entry);
+      if (at >= 0) waiting.splice(at, 1);
+    };
+    const giveUp = () => {
+      leave();
+      resolve(BUSY);
+    };
+    const entry = {
+      instanceId: rt.instanceId,
+      cap,
+      admit: () => {
+        leave();
+        resolve(take(rt.instanceId));
+      },
+    };
+    const timer = setTimeout(giveUp, ADMISSION_WAIT_MS);
+    signal?.addEventListener('abort', giveUp);
+    waiting.push(entry);
+  });
 }
 
 export async function executeCode(
@@ -59,7 +107,7 @@ export async function executeCode(
   code: string,
   signal?: AbortSignal,
 ): Promise<ExecuteResult> {
-  const release = admit(deps, rt, caller);
+  const release = await admit(deps, rt, caller, signal);
   if (typeof release !== 'function') return release;
   // Ends with the sandbox (return, error or timeout) or earlier, when the request or session goes away;
   // once parked, only the registry ends it (ADR-0006).
@@ -399,7 +447,7 @@ export async function searchCode(
   code: string,
   _signal?: AbortSignal, // search never calls the upstream; same signature as executeCode
 ): Promise<SandboxResult> {
-  const release = admit(deps, rt, caller);
+  const release = await admit(deps, rt, caller);
   if (typeof release !== 'function') return release;
   let result: SandboxResult;
   try {
