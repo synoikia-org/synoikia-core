@@ -171,6 +171,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
       if (!frames) {
         // A line over the cap cannot be resynced: stop the child, and supervision starts it again.
         this.emit('log', 'error', 'plugin message over the size limit');
+        channel.destroy();
         child.kill('SIGKILL');
         return;
       }
