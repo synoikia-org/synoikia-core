@@ -359,7 +359,8 @@ describe('instances and access', () => {
     const t = await withInstance();
     expect(await (await t.b.post(`/api/instances/${t.id}/sync`)).json()).toMatchObject({ added: 6 });
     expect(await (await t.b.get(`/api/instances/${t.id}/groups`)).json()).toMatchObject([
-      { key: 'echo', level: 'ask', counts: { read: 1, write: 3, locked: 2, pendingReview: 0 } },
+      // echo.confirm asks for a typed confirmation, so sync locks it (ADR-0004).
+      { key: 'echo', level: 'ask', counts: { read: 1, write: 2, locked: 3, pendingReview: 0 } },
     ]);
     // At Read, the group's writes are simply off: there is no "write at level Read".
     expect((await t.b.patch(`/api/instances/${t.id}/groups/echo`, { level: 'read' })).status).toBe(200);
@@ -368,7 +369,6 @@ describe('instances and access', () => {
       level: string;
     }[];
     expect(ops.map((o) => [o.key, o.level])).toEqual([
-      ['echo.confirm', 'none'],
       ['echo.guided', 'none'],
       ['echo.set', 'none'],
     ]);

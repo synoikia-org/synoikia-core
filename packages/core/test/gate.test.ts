@@ -162,9 +162,10 @@ describe('execute → gate → plugin', () => {
       legacy.approvals.cancelAll();
       await run;
 
-      // Not locked, but a typed confirmation: the page, never the form.
+      // A typed confirmation, so locked (ADR-0004): the page, never the form.
       const t = await setup({ formElicitationApprovals: 'ask' });
       t.setLevel('ask');
+      updateOperation(t.db, t.instanceId, t.opId('echo.confirm'), { level: 'ask' });
       const client = both();
       const typed = t.exec(`await echo.call('echo.confirm', { name: 'vol/c' });`, client.prompts);
       await waitFor(() => client.opened.length === 1);
@@ -178,6 +179,7 @@ describe('execute → gate → plugin', () => {
         const t = await setup(settings);
         t.setLevel('ask');
         updateOperation(t.db, t.instanceId, t.opId('echo.delete'), { level: 'ask' });
+        updateOperation(t.db, t.instanceId, t.opId('echo.confirm'), { level: 'ask' });
         const deps = { ...t.deps, executions: new ExecutionRegistry() };
         const caller = { ...t.caller(), parkable: true };
         const parked = (await executeCode(
