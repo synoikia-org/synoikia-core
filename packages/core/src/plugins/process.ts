@@ -17,6 +17,7 @@ import {
 } from '@synoikia/plugin-sdk';
 import type { ErrorCode, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
+import { refuseChannelHandles } from './channel-fault.js';
 import { guardDebugger } from './debugger-guard.js';
 
 /** One plugin child and its JSON-RPC-over-IPC channel (ADR-0011, ADR-0014); every result is validated. */
@@ -156,6 +157,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       serialization: 'json',
     });
+    refuseChannelHandles(this.child, () => this.emit('invalidMessage'));
     this.child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
     this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
     this.child.on('message', (msg) => {
