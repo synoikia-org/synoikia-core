@@ -1,9 +1,12 @@
-import { fork } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { realpathSync } from 'node:fs';
+import type { Socket } from 'node:net';
 import path from 'node:path';
 import {
+  createFrameReader,
+  encodeFrame,
   ErrorCodes,
   GuideSchema,
   OptionSchema,
@@ -15,12 +18,11 @@ import {
   SyncCatalogResultSchema,
   TestConnectionResultSchema,
 } from '@synoikia/plugin-sdk';
-import type { ErrorCode, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
+import type { ErrorCode, Frame, PluginHandlers, RpcMethod, RpcNotification, RpcResponse } from '@synoikia/plugin-sdk';
 import { z } from 'zod';
-import { refuseChannelHandles } from './channel-fault.js';
 import { guardDebugger } from './debugger-guard.js';
 
-/** One plugin child and its JSON-RPC-over-IPC channel (ADR-0011, ADR-0014); every result is validated. */
+/** One plugin child and its JSON-RPC message pipe (ADR-0011, ADR-0014, ADR-0020); every result is validated. */
 
 export class PluginRpcError extends Error {
   constructor(
@@ -126,6 +128,7 @@ export interface PluginProcessEvents {
 
 export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   private child?: ChildProcess;
+  private channel?: Socket;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private exited = false;
@@ -149,28 +152,32 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     // /var -> /private/var tmpdir, a symlinked DATA_DIR) the child could not even load its own entry.
     const dir = realpathSync(path.resolve(this.opts.dir));
     guardDebugger();
-    this.child = fork(path.resolve(dir, this.opts.entry), [], {
+    const args = ['--permission', `--allow-fs-read=${dir}`, `--max-old-space-size=${this.opts.memoryMb ?? 256}`];
+    // ADR-0020: a plain pipe on fd 3, not a Node IPC channel, so a child can send no handle to core.
+    this.child = spawn(process.execPath, [...args, path.resolve(dir, this.opts.entry)], {
       cwd: dir,
-      execArgv: ['--permission', `--allow-fs-read=${dir}`, `--max-old-space-size=${this.opts.memoryMb ?? 256}`],
       // Scrubbed environment: no MASTER_KEY, DB paths or admin config ever reach the plugin.
       env: { NODE_ENV: process.env.NODE_ENV ?? 'production', PLUGIN_INSTANCE_ID: this.opts.instanceId },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      serialization: 'json',
+      stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
     });
-    refuseChannelHandles(this.child, () => this.emit('invalidMessage'));
+    const child = this.child;
+    const channel = child.stdio[3] as Socket;
+    this.channel = channel;
     this.child.stdout?.on('data', (d: Buffer) => this.emit('log', 'info', d.toString().trimEnd()));
     this.child.stderr?.on('data', (d: Buffer) => this.emit('log', 'error', d.toString().trimEnd()));
-    this.child.on('message', (msg) => {
-      // @id:plugin-isolation: a broken message never stops core.
-      let valid: boolean;
-      try {
-        valid = this.onMessage(msg);
-      } catch (err) {
-        this.emit('handlerFault', err);
+    const read = createFrameReader();
+    channel.on('data', (chunk: Buffer) => {
+      const frames = read(chunk);
+      if (!frames) {
+        // A line over the cap cannot be resynced: stop the child, and supervision starts it again.
+        this.emit('log', 'error', 'plugin message over the size limit');
+        child.kill('SIGKILL');
         return;
       }
-      if (!valid) this.emit('invalidMessage');
+      for (const frame of frames) this.receive(frame);
     });
+    // The child closing or breaking its pipe shows up as its exit.
+    channel.on('error', () => undefined);
     this.child.on('error', (err) => this.emit('log', 'error', `plugin process error: ${err.message}`));
     this.child.on('exit', (code, signal) => {
       this.exited = true;
@@ -184,8 +191,8 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   }
 
   async call<M extends RpcMethod>(method: M, params?: Params<M>, timeoutMs?: number): Promise<Result<M>> {
-    const child = this.child;
-    if (!child || this.exited || !child.connected) throw new PluginUnavailableError();
+    const channel = this.channel;
+    if (!this.child || this.exited || !channel?.writable) throw new PluginUnavailableError();
     const id = this.nextId++;
     const ms = timeoutMs ?? this.opts.defaultTimeoutMs ?? 30_000;
     const raw = await new Promise<unknown>((resolve, reject) => {
@@ -194,7 +201,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
         reject(new PluginTimeoutError(method, ms));
       }, ms);
       this.pending.set(id, { method, resolve, reject, timer });
-      child.send({ jsonrpc: '2.0', id, method, params }, (err) => {
+      channel.write(encodeFrame({ jsonrpc: '2.0', id, method, params }), (err) => {
         if (!err) return;
         clearTimeout(timer);
         this.pending.delete(id);
@@ -227,6 +234,18 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
   }
 
   /** Settles or relays one message; false when it breaks the contract and answers no call. */
+  private receive(frame: Frame): void {
+    // @id:plugin-isolation: a broken message never stops core.
+    let valid: boolean;
+    try {
+      valid = frame.ok && this.onMessage(frame.value);
+    } catch (err) {
+      this.emit('handlerFault', err);
+      return;
+    }
+    if (!valid) this.emit('invalidMessage');
+  }
+
   private onMessage(msg: unknown): boolean {
     const answer = RpcAnswerSchema.safeParse(msg);
     const id = answer.success ? answer.data.id : (msg as { id?: unknown } | null)?.id;

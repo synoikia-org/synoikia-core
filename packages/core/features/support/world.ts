@@ -850,7 +850,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
       const signature = b.signature === undefined ? repo.key?.sign(b.archive) : b.signature;
       return {
         version: b.version,
-        sdk: '^0.2.0',
+        sdk: '^0.3.0',
         url: file,
         sha256: b.sha256 ?? sha256(b.archive),
         ...(signature ? { signature } : {}),

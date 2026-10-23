@@ -1,5 +1,8 @@
+import { fstatSync } from 'node:fs';
+import { Socket } from 'node:net';
 import semver from 'semver';
 import { ErrorCodes, PluginError } from './errors.js';
+import { CHANNEL_FD, createFrameReader, encodeFrame } from './frames.js';
 import { RPC_METHODS, isRpcRequest } from './rpc.js';
 import type { PluginHandlers, RpcNotification, RpcRequest, RpcResponse } from './rpc.js';
 import { SENSITIVE_RESULT_SINCE } from './version.js';
@@ -72,23 +75,45 @@ export function createDispatcher(handlers: PluginHandlers): (req: RpcRequest) =>
   };
 }
 
-/** Sends a notification (log line, catalogChanged) to core. No-op when not running under core. */
-export function notify(notification: Omit<RpcNotification, 'jsonrpc'>): void {
-  process.send?.({ jsonrpc: '2.0', ...notification });
+let channel: Socket | undefined;
+
+/** The message pipe core opens on fd 3 (ADR-0020); throws when the process was not started by core. */
+function openChannel(): Socket {
+  let pipe = false;
+  try {
+    const stat = fstatSync(CHANNEL_FD);
+    pipe = stat.isSocket() || stat.isFIFO();
+  } catch {
+    // fd 3 is not open.
+  }
+  if (!pipe) throw new Error('runPlugin() must be started by the Synoikia core (no message pipe on fd 3)');
+  return new Socket({ fd: CHANNEL_FD, readable: true, writable: true });
 }
 
-/** Plugin child entry point: wires IPC JSON-RPC requests to `handlers` and exits after `shutdown`. */
+/** Sends a notification (log line, catalogChanged) to core. No-op when not running under core. */
+export function notify(notification: Omit<RpcNotification, 'jsonrpc'>): void {
+  channel?.write(encodeFrame({ jsonrpc: '2.0', ...notification }));
+}
+
+/** Plugin child entry point: wires JSON-RPC requests on the message pipe to `handlers` and exits after `shutdown`. */
 export function runPlugin(handlers: PluginHandlers): void {
-  if (typeof process.send !== 'function') {
-    throw new Error('runPlugin() must be started by the Synoikia core (no IPC channel)');
-  }
+  const pipe = (channel = openChannel());
+  const read = createFrameReader();
   const dispatch = createDispatcher(handlers);
-  process.on('message', (msg: unknown) => {
-    if (!isRpcRequest(msg)) return;
-    void dispatch(msg).then((res) => {
-      process.send?.(res);
-      if (msg.method === 'shutdown') process.exit(0);
-    });
+  pipe.on('data', (chunk: Buffer) => {
+    const frames = read(chunk);
+    if (!frames) process.exit(1);
+    for (const frame of frames) {
+      if (!frame.ok || !isRpcRequest(frame.value)) continue;
+      const req = frame.value;
+      void dispatch(req).then((res) =>
+        pipe.write(encodeFrame(res), () => {
+          if (req.method === 'shutdown') process.exit(0);
+        }),
+      );
+    }
   });
-  process.on('disconnect', () => process.exit(0));
+  // Core closed the pipe: it stopped, or it stopped this instance.
+  pipe.on('end', () => process.exit(0));
+  pipe.on('error', () => process.exit(0));
 }
