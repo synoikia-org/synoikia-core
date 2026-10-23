@@ -96,7 +96,7 @@ Feature: Catalog access on sync
 
     Scenario: Setting every group to write acknowledges each write that is not locked
       When the admin sets every group of "tasks" to write
-      Then the admin sees the 5 writes that are not locked as acknowledged, and "delete a list" as off
+      Then the admin sees the 4 writes that are not locked as acknowledged, and "delete a list" and "archive a list" as off
 
     Scenario: A merge takes the lower level, and a sync keeps the merge
       Given the group "lists" of "tasks" is at level read
