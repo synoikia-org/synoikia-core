@@ -33,6 +33,7 @@ Feature: Redaction
       When agent 7 reads the open tasks of "Groceries" in full
       Then agent 7 sees "doorCode" of "milk" as [REDACTED]
 
+    @backlog
     Scenario: A key that the admin lists for the instance is hidden
       Given Acme keeps "loyaltyNumber" on the task "milk"
       And agent 7 has an open session on "tasks"

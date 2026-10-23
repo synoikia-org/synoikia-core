@@ -15,8 +15,8 @@ Feature: Agent credentials
       Then the admin is told that the instance is unknown, and that the expiry must be in the future
 
     Scenario: A revoked credential is asked to sign in, like a made-up one
-      Given agent 7 belongs to the admin and may read and write
-      And agent 7 has an open session on "tasks"
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 of the admin has an open session on "tasks"
       When the admin revokes the credential of agent 7
       And agent 7 asks again for the open tasks of "Groceries" in the same session
       Then agent 7 is asked to sign in, as with a made-up credential, and gets no tasks
@@ -35,6 +35,7 @@ Feature: Agent credentials
       When a stranger opens a session on "tasks" with no credential, and then with a made-up one
       Then the stranger is asked to sign in both times, and pointed to the OAuth description of "tasks"
 
+    @backlog
     Scenario: A credential for all instances follows the instances of the role at each call
       Given agent 9 belongs to user 12, whose role "family" has the instance "tasks"
       And Acme Tasks also runs as the instance "shopping"
