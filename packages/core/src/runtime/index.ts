@@ -26,6 +26,9 @@ export const SANDBOX_CONCURRENCY = { total: 16 };
 export const ADMISSION_WAIT_MS = 2_000;
 const running = new Map<string, number>();
 let runningTotal = 0;
+/** Runs of the instance that hold or wait for a place. */
+export const runsOf = (instanceId: string) =>
+  (running.get(instanceId) ?? 0) + waiting.filter((w) => w.instanceId === instanceId).length;
 const waiting: { instanceId: string; cap: number; admit: () => void }[] = [];
 
 /** Parked scripts still running, across all registries (they gave back their concurrency slot). */

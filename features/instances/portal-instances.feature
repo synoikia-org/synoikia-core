@@ -176,6 +176,11 @@ Feature: Instances in the portal
       Then the option was off at first, and the portal warned that a client "could then approve those calls itself"
       And /groceries approves Ask operations in the agent session
 
+    @backlog
+    Scenario: Always on or more than an hour warns about memory
+      When the admin picks always on for /groceries in the settings, saves, and then picks 2 hours and saves
+      Then the portal warned both times that the server may use more memory, and /groceries stops after 2 hours
+
     Scenario: Deleting needs the typed path, and Enter in the question saves no settings
       When the admin types "groceries" in the delete question of /groceries and confirms with Enter
       Then /groceries still exists, with its settings unchanged

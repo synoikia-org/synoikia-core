@@ -130,7 +130,7 @@ export const pluginInstances = sqliteTable('plugin_instances', {
   /** Client auth methods the endpoint accepts; NULL = every globally enabled method (ADR-0009). */
   authMethods: json('auth_methods').$type<AuthMethod[]>(),
   settings: json('settings').notNull().default({}),
-  status: text('status', { enum: ['stopped', 'starting', 'ready', 'error'] })
+  status: text('status', { enum: ['stopped', 'starting', 'ready', 'error', 'idle'] })
     .notNull()
     .default('stopped'),
   statusError: text('status_error'),

@@ -351,7 +351,7 @@ export class McpEndpoints {
 
     const run = async (fn: typeof executeCode, code: string, sessionId: string | undefined, request: AbortSignal) => {
       try {
-        await this.ctx.instances.ensureFresh(instanceId);
+        await this.ctx.instances.ensureFresh(instanceId, { start: fn === executeCode });
       } catch (err) {
         return toolText({
           ok: false,

@@ -6,7 +6,7 @@ import type { SpawnOptions } from './process.js';
 /** Keeps one instance's child alive (ADR-0014): spawn → init → ready, restarting with backoff after
  * a crash; while it is down callers get `PluginUnavailableError`, never a fail-open gate. */
 
-export type InstanceStatus = 'stopped' | 'starting' | 'ready' | 'error';
+export type InstanceStatus = 'stopped' | 'starting' | 'ready' | 'error' | 'idle';
 
 export interface SupervisorOptions extends SpawnOptions {
   /** Called on every start with this instance's config and freshly decrypted secrets. */
@@ -27,6 +27,7 @@ export class PluginSupervisor {
   private restartTimer?: NodeJS.Timeout;
   private attempt = 0;
   private generation = 0;
+  private idleGeneration = -1;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: SupervisorOptions) {}
@@ -61,6 +62,31 @@ export class PluginSupervisor {
       await this.shutdown();
       this.attempt = 0;
       this.stopping = false;
+      await this.spawn();
+    });
+  }
+
+  /** ADR-0022: stops a ready child while `unused` holds; `wake` starts it again. Ends nothing else. */
+  async idle(unused: () => boolean): Promise<void> {
+    return this.serial(async () => {
+      if (this._status !== 'ready' || this.stopping || !unused()) return;
+      this.stopping = true;
+      this.idleGeneration = ++this.generation;
+      const proc = this.proc;
+      this.proc = undefined;
+      // Idle before the child exits, so a call that comes now waits for a new start instead of this child.
+      this.setStatus('idle');
+      await proc?.stop();
+    });
+  }
+
+  /** Starts an idle child; callers that come during the start wait for the same one. */
+  async wake(): Promise<void> {
+    return this.serial(async () => {
+      // A stop or restart since the idle stop wins: the secrets go to no child that will not serve.
+      if (this._status !== 'idle' || this.generation !== this.idleGeneration) return;
+      this.stopping = false;
+      this.attempt = 0;
       await this.spawn();
     });
   }
