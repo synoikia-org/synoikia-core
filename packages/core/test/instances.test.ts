@@ -30,6 +30,7 @@ function setup(
     now?: () => Date;
     idleSweepMs?: number;
     parkedIn?: (instanceId: string) => boolean;
+    runTotal?: () => number;
   } = {},
 ) {
   const db = openDatabase(':memory:');
@@ -55,6 +56,7 @@ function setup(
     versionCheckIntervalMs: opts.versionCheckIntervalMs ?? 0,
     now: opts.now,
     parkedIn: opts.parkedIn,
+    runTotal: opts.runTotal,
   });
   cleanup.push(() => manager.stopAll());
   return { db, manager, events, seen, secrets };
@@ -244,5 +246,21 @@ describe('idle stop (ADR-0022)', () => {
     const t = await idleInstance(() => true);
     await new Promise((r) => setTimeout(r, 100));
     expect(t.manager.status(t.id)).toBe('ready');
+  });
+});
+
+describe('the total of runs at once (ADR-0003)', () => {
+  it('checks an instance limit against the total only when the admin changes the limit', async () => {
+    let total = 16;
+    const t = setup({ runTotal: () => total });
+    const inst = await t.manager.create({
+      pluginId: 'echo',
+      slug: 'echo',
+      connection: { token: 'super-secret-token-1234' },
+      settings: { runsAtOnce: 10 },
+    });
+    total = 8;
+    await expect(t.manager.update(inst.id, { settings: { executePerMinute: 20 } })).resolves.toBeDefined();
+    await expect(t.manager.update(inst.id, { settings: { runsAtOnce: 9 } })).rejects.toBeInstanceOf(ValidationError);
   });
 });

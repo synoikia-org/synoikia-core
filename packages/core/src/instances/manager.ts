@@ -535,7 +535,10 @@ export class InstanceManager {
       // rejects doesn't block saving an unrelated change.
       const stored = cleanInstanceSettings(before.settings, `/${before.slug} settings`).cleaned as object;
       const merged = { ...stored, ...(patch.settings as object) };
-      set.settings = checkRunsAtOnce(before.slug, parseInstanceSettings(merged), this.runTotal());
+      const parsed = parseInstanceSettings(merged);
+      // A lowered total caps a stored limit at run time; only a new limit is checked against it.
+      const asked = (patch.settings as { runsAtOnce?: unknown } | null)?.runsAtOnce;
+      set.settings = asked === undefined ? parsed : checkRunsAtOnce(before.slug, parsed, this.runTotal());
       checkIdleStop(patch.settings, this.plugin(before.pluginId).parsed);
     }
     if (Object.keys(set).length === 0) return this.get(id);
