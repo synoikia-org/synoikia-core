@@ -26,7 +26,7 @@ Feature: Role access
 
     Scenario: A role maximum read closes the writes of the group
       Given the admin sets the group "tasks" of "tasks" to write
-      And agent 9 has an open session on "tasks"
+      And agent 9 added "jam" to "Groceries"
       When the admin sets the maximum of "family" for the group "tasks" to read
       And agent 9 adds "butter" to "Groceries" in the same session
       Then agent 9 is told that the admin turned the operation off
