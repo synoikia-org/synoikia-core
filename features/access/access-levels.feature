@@ -69,8 +69,9 @@ Feature: Access levels
 
     Scenario: An own level none closes a write in a group at level write
       Given the admin sets the group "tasks" of "tasks" to write
-      And the admin gives "complete a task" its own level none
-      When agent 7 completes "milk" in "Groceries"
+      And agent 7 has an open session on "tasks"
+      When the admin gives "complete a task" its own level none
+      And agent 7 completes "milk" in "Groceries" in the same session
       Then agent 7 is told that the admin turned the operation off
 
     Scenario: An own level read opens a read in a group at level none

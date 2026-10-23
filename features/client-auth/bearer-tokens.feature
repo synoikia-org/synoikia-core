@@ -16,9 +16,10 @@ Feature: Agent credentials
 
     Scenario: A revoked credential is asked to sign in, like a made-up one
       Given agent 7 belongs to the admin and may read and write
-      And the admin revokes the credential of agent 7
-      When agent 7 opens a session on "tasks" with its credential
-      Then agent 7 is asked to sign in, as with a made-up credential
+      And agent 7 has an open session on "tasks"
+      When the admin revokes the credential of agent 7
+      And agent 7 asks again for the open tasks of "Groceries" in the same session
+      Then agent 7 is asked to sign in, as with a made-up credential, and gets no tasks
 
   Rule: A credential works only on its instances
 
@@ -35,11 +36,11 @@ Feature: Agent credentials
       Then the stranger is asked to sign in both times, and pointed to the OAuth description of "tasks"
 
     Scenario: A credential for all instances follows the instances of the role at each call
-      Given user 12 has the role "family", which has the instance "tasks"
-      And agent 9 belongs to user 12 and may read and write
+      Given agent 9 belongs to user 12, whose role "family" has the instance "tasks"
       And Acme Tasks also runs as the instance "shopping"
+      And agent 9 has an open session on "tasks"
       When the admin moves the role "family" from "tasks" to "shopping"
-      Then agent 9 gets a session on "shopping", and is refused on "tasks"
+      Then agent 9 is refused at its next call on "tasks", and gets a session on "shopping"
 
   Rule: A credential expires, and its use is recorded
 
