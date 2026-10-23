@@ -1,7 +1,7 @@
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import type { SynoikiaWorld } from '../../support/world.js';
-import { bearerOf, clientAuth, expectRefusal, keepAnswer, knock } from './client-auth.js';
+import { bearerOf, clientAuth, expectRefusal, keepAnswer, knock, ping } from './client-auth.js';
 
 const MADE_UP = { authorization: 'Bearer syn_madeUpCredentialThatCoreNeverIssued0000' };
 
@@ -53,6 +53,17 @@ Then('agent {word} is asked to sign in, as with a made-up credential', async (wo
   expect(got.status).toBe(401);
   expect({ www: got.www, body: got.body }).toEqual({ www: madeUp.www, body: madeUp.body });
 });
+
+Then(
+  'agent {word} is asked to sign in, as with a made-up credential, and gets no tasks',
+  async (world: SynoikiaWorld, agent: string) => {
+    expect(world.answer.result).toBeUndefined();
+    const got = await ping(world, world.lastInstance, bearerOf(world, agent), world.sessionId(agent)!);
+    const madeUp = await knock(world, world.lastInstance, MADE_UP);
+    expect(got.status).toBe(401);
+    expect({ www: got.www, body: got.body }).toEqual({ www: madeUp.www, body: madeUp.body });
+  },
+);
 
 Given(
   'user {int} has the role {string}, which has the instances {string} and {string}',

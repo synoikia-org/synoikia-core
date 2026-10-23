@@ -6,6 +6,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema.js';
+import { countWrites } from './writes.js';
 
 export type Db = BetterSQLite3Database<typeof schema> & { $client: Database.Database };
 /** A transaction handle; services accept either so callers can compose them in one transaction. */
@@ -30,5 +31,6 @@ export function openDatabase(location: { dataDir: string } | ':memory:'): Db {
   sqlite.pragma('busy_timeout = 5000');
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  countWrites(sqlite);
   return db;
 }

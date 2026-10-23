@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
-import { accessInput, listGroups } from '../catalog/groups.js';
+import { accessInput, catalogOf, listGroups } from '../catalog/groups.js';
 import { loadCaps } from '../catalog/role-levels.js';
 import { findRegistryEntries } from '../catalog/registry.js';
 import type { Db } from '../db/index.js';
@@ -231,20 +231,7 @@ function catalogBindings(
   granted: () => boolean,
 ): Record<string, Binding> {
   const load = () => {
-    const groups = new Map(
-      db
-        .select()
-        .from(operationGroups)
-        .where(eq(operationGroups.instanceId, instanceId))
-        .all()
-        .map((g) => [g.id, g]),
-    );
-    const ops = db
-      .select()
-      .from(operations)
-      .where(and(eq(operations.instanceId, instanceId), eq(operations.stale, false)))
-      .orderBy(asc(operations.key))
-      .all();
+    const { groups, live: ops } = catalogOf(db, instanceId)!;
     return { groups, ops, caps: loadCaps(db, instanceId, principal) };
   };
   const accessOf = (
