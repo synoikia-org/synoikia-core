@@ -79,6 +79,18 @@ const SETTINGS_SCHEMAS = {
         .prefault({}),
     })
     .prefault({}),
+  /** The total of sandbox runs at once (ADR-0003); null is 16 for each CPU. */
+  runtime: z
+    .object({
+      runsAtOnce: z
+        .number()
+        .int()
+        .min(2, 'must be between 2 and 256')
+        .max(256, 'must be between 2 and 256')
+        .nullable()
+        .default(null),
+    })
+    .prefault({}),
   audit: z
     .object({
       /** Null = keep forever (@id:housekeeping). */

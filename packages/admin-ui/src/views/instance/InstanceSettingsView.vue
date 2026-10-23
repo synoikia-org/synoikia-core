@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { errorText } from '../../api';
 import AuthMethodsPicker from '../../components/AuthMethodsPicker.vue';
 import ChipsInput from '../../components/ChipsInput.vue';
+import IdleStopField from '../../components/IdleStopField.vue';
 import InSessionApprovalsField from '../../components/InSessionApprovalsField.vue';
 import ModalDialog from '../../components/ModalDialog.vue';
 import {
@@ -43,7 +44,9 @@ const form = ref({
   extraRedactKeys: [...s.extraRedactKeys],
   syncMaxAgeMin: s.syncMaxAgeMs / 60_000,
   memoryMb: s.memoryMb,
+  idleStopMs: s.idleStopMs,
 });
+const mayIdle = computed(() => props.instance.plugin.lifecycle === 'on-demand');
 const message = ref<{ kind: 'ok' | 'error'; text: string }>();
 const uid = useId();
 
@@ -78,6 +81,7 @@ async function save() {
         extraRedactKeys: f.extraRedactKeys,
         syncMaxAgeMs: Math.round(f.syncMaxAgeMin * 60_000),
         memoryMb: f.memoryMb,
+        ...(mayIdle.value ? { idleStopMs: f.idleStopMs } : {}),
       },
     });
     if (updated.slug !== props.instance.slug) await router.replace(`/endpoints/${updated.slug}/settings`);
@@ -226,6 +230,7 @@ async function remove() {
           <input id="s-pmem" v-model.number="form.memoryMb" type="number" min="64" max="4096" />
         </div>
       </div>
+      <IdleStopField v-if="mayIdle" v-model="form.idleStopMs" />
       <div class="field">
         <label for="s-redact">Extra keys to redact</label>
         <ChipsInput

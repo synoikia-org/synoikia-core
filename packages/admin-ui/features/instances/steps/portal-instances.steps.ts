@@ -626,6 +626,37 @@ When(
   },
 );
 
+Given('the plugin of {instance} may stop when idle', async (world: PortalWorld, slug: string) => {
+  await world.editTasksManifest((m) => (m.lifecycle = 'on-demand'));
+  await world.tasksInstance(slug);
+});
+
+/** Picks an idle time, keeps the memory warning the portal shows, and saves. */
+async function pickIdleTime(world: PortalWorld, label: string, note: string) {
+  await world.page.getByLabel('Stop the plugin when idle').selectOption({ label });
+  world.noted[note] = (await world.page.getByRole('note').filter({ hasText: 'memory' }).textContent()) ?? '';
+  await world.page.getByRole('button', { name: 'Save settings' }).click();
+  await seen(world.page.getByRole('status').filter({ hasText: 'Saved.' }));
+}
+
+When(
+  'the admin picks always on for {instance} in the settings, saves, and then picks 2 hours and saves',
+  async (world: PortalWorld, slug: string) => {
+    await settingsPage(world, slug);
+    await pickIdleTime(world, 'Always on', 'alwaysOn');
+    await pickIdleTime(world, 'After 2 hours', 'twoHours');
+  },
+);
+
+Then(
+  'the portal warned both times that the server may use more memory, and {instance} stops after 2 hours',
+  async (world: PortalWorld, slug: string) => {
+    expect(world.noted.alwaysOn).toContain('The server may use more memory');
+    expect(world.noted.twoHours).toContain('The server may use more memory');
+    expect((await world.instance(slug))?.settings).toMatchObject({ idleStopMs: 2 * 60 * 60_000 });
+  },
+);
+
 When(
   'the admin types {string} in the delete question of {instance} and confirms with Enter',
   async (world: PortalWorld, typed: string, slug: string) => {

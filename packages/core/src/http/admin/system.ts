@@ -237,6 +237,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       security: getSettings(ctx.db, 'security'),
       mcp: getSettings(ctx.db, 'mcp'),
       audit: getSettings(ctx.db, 'audit'),
+      runtime: { ...getSettings(ctx.db, 'runtime'), total: ctx.runTotal() },
       oidc: ctx.oidc.getSettings(),
       forceLocalLogin: ctx.config.ADMIN_FORCE_LOCAL_LOGIN,
       publicMcpUrl: ctx.config.PUBLIC_MCP_URL ?? null,

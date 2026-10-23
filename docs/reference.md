@@ -138,6 +138,7 @@ An example `manifest.json` for a plugin `acme`. The SDK validates it with a zod 
   "description": "Search/execute over the Acme Hub API.",
   "entry": "dist/index.js",
   "instructions": "instructions.md", // optional agent instructions (Markdown)
+  "lifecycle": "on-demand", // optional: core may stop the child of an idle instance (ADR-0022); default "always"
   "binding": {
     "namespace": "acme", // sandbox global: acme.*
     "functions": ["call"], // acme.call(...)
@@ -371,6 +372,7 @@ POST   /api/profile/totp/recovery-codes {code}   (new recovery codes, ADR-0008)
 GET/POST /api/users              PATCH /api/users/:id         POST /api/users/:id/reset-totp
 GET    /api/settings             PUT  /api/settings/:section   PUT /api/settings/oidc
 GET    /api/settings/mcp/clients-seen (client names seen at initialize, @id:client-policy)
+PUT    /api/settings/runtime {runsAtOnce} (total of sandbox runs at once, 2 to 256; null is 16 for each CPU, ADR-0003)
 GET    /api/plugins              PATCH /api/plugins/:id {enabled}   DELETE /api/plugins/:id
 POST   /api/plugins/install {repoId, pluginId, version}    POST /api/plugins/rescan
 POST   /api/plugins/uploads (raw tarball, ADR-0013)   POST /api/plugins/uploads/:uploadId/install
