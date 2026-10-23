@@ -296,6 +296,29 @@ When(
   },
 );
 
+Given(
+  'agent {word} has {int} sessions open on {string}',
+  async (world: SynoikiaWorld, agent: string, n: number, slug: string) => {
+    await world.tasksInstance(slug);
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const got = await knock(world, slug, bearerOf(world, agent));
+      expect(got.status, got.text).toBe(200);
+      ids.push(got.sessionId!);
+    }
+    clientAuth(world).seen.sessions = ids;
+  },
+);
+
+Then(
+  'all {int} sessions of agent {word} on {string} still work',
+  async (world: SynoikiaWorld, n: number, agent: string, slug: string) => {
+    const ids = clientAuth(world).seen.sessions as string[];
+    expect(ids).toHaveLength(n);
+    for (const id of ids) expect(await ping(world, slug, bearerOf(world, agent), id)).toMatchObject({ status: 200 });
+  },
+);
+
 Then(
   'the first session of agent {word} no longer exists, and the second one still works',
   async (world: SynoikiaWorld, agent: string) => {
