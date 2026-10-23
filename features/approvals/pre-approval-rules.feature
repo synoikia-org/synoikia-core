@@ -70,19 +70,32 @@ Feature: Pre-approval rules
 
   Rule: Each match field compares in its own way
     A list prefix matches the list itself and the lists below it.
+    A list name with a "." or ".." part never matches a prefix, and a prefix cannot have one.
     Tags match when each tag is in the rule. A priority must be a number in the range. A star must be a real yes or no.
 
     Scenario Outline: A list prefix matches the list and the lists below it
-      Given Acme also has the lists "Groceries/Weekly" and "Groceries-Old"
+      Given Acme also has the lists "Groceries/Weekly", "Groceries/..list" and "Groceries-Old"
       And the admin pre-approves adding any task to "Groceries"
       When agent 7 adds "butter" to <list>
       Then agent 7 <answer>
 
       Examples:
-        | list               | answer                                                |
-        | "Groceries"        | gets the new task "butter" without a question         |
-        | "Groceries/Weekly" | gets the new task "butter" without a question         |
-        | "Groceries-Old"    | is told that the call waits for a human to approve it |
+        | list                      | answer                                                |
+        | "Groceries"               | gets the new task "butter" without a question         |
+        | "Groceries/Weekly"        | gets the new task "butter" without a question         |
+        | "Groceries-Old"           | is told that the call waits for a human to approve it |
+        | "Groceries/../Chores"     | is told that the call waits for a human to approve it |
+        | "Groceries/%2e%2e/Chores" | is told that the call waits for a human to approve it |
+        | "Groceries/..list"        | gets the new task "butter" without a question         |
+
+    Scenario: The admin cannot save a list prefix with a ".." part
+      When the admin tries to pre-approve adding any task to "Groceries/.."
+      Then the admin is told that a list prefix cannot have a "." or ".." part
+
+    Scenario: A stored list prefix with a ".." part is turned off at the next sync
+      Given the database holds a rule that approves adding any task to "Groceries/.."
+      When the admin syncs "tasks"
+      Then the rule is turned off, and the admin sees that a list prefix cannot have a "." or ".." part
 
     Scenario Outline: Every condition must hold, each in its own way
       Given the admin pre-approves adding tasks to "Groceries" with the tags "home" or "errands", a priority from 1 to 3 and a star
