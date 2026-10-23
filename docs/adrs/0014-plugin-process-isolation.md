@@ -25,7 +25,7 @@ Plugin code comes from many authors and handles upstream credentials (ADR-0013).
 
 Chosen option: "A child process for each instance, under the Node permission model". It needs no container runtime, and each instance has its own memory, secrets and crash.
 
-Core starts each enabled instance with `child_process.fork(entry)` and these limits:
+Core starts each enabled instance with `child_process.spawn` of Node on its entry, with a plain pipe for messages (ADR-0020), and these limits:
 
 - **Node permission model.** The flags are `--permission` and `--allow-fs-read=<plugin directory>`. There is no write, child-process, worker or add-on permission.
 - The child cannot read outside its directory, cannot write files, and cannot start processes. A plugin cannot change these flags.

@@ -111,7 +111,7 @@ model {
   }
   synoikia.core -> synoikia.sandbox 'runs model code in'
   synoikia.core -> synoikia.instance 'sends operation calls to' {
-    technology 'JSON-RPC 2.0 over IPC'
+    technology 'JSON-RPC 2.0, one JSON line each, on a pipe'
   }
   synoikia.core -> synoikia.database 'reads and writes'
   synoikia.core -> synoikia.bundles 'installs bundles into'
@@ -120,6 +120,9 @@ model {
     technology 'OIDC code flow with PKCE'
   }
   synoikia.core -> notificationReceiver 'sends events to'
+  synoikia.instance -> synoikia.core 'answers calls and sends log and catalog notices to' {
+    technology 'JSON-RPC 2.0, one JSON line each, on a pipe'
+  }
   synoikia.instance -> synoikia.bundles 'loads its own bundle, read only'
   synoikia.instance -> upstream 'calls the upstream API'
 }

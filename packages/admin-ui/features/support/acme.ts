@@ -114,7 +114,7 @@ export function publishedFiles(repo: FakeRepository) {
     const signature = repo.key?.sign(b.archive);
     return {
       version: b.version,
-      sdk: '^0.2.0',
+      sdk: '^0.3.0',
       url: file,
       sha256: sha256(b.archive),
       ...(signature ? { signature } : {}),

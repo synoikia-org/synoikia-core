@@ -1,8 +1,8 @@
-import { fork } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,8 @@ import {
   buildOpenApiCatalog,
   checkManifest,
   compileRules,
+  createFrameReader,
+  encodeFrame,
   HttpJsonClient,
   parseManifest,
   parsePluginSettings,
@@ -47,7 +49,7 @@ const minimalManifest = () => ({
   id: 'acme-tasks',
   name: 'Acme Tasks',
   version: '1.0.0',
-  sdk: '^0.2.2',
+  sdk: '^0.3.0',
   entry: 'dist/index.js',
   binding: { namespace: 'acme', functions: ['call'] },
   connection: { schema: { type: 'object', properties: { baseUrl: { type: 'string' } } } },
@@ -142,6 +144,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   pluginLog: string[] = [];
   replies: RpcResponse[] = [];
   private plugin?: ChildProcess;
+  private channel?: Socket;
   private waiting = new Map<number, (res: RpcResponse) => void>();
   private rpcId = 0;
   private servers: http.Server[] = [];
@@ -526,17 +529,23 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   async startPlugin() {
     await this.startAcme();
     this.writePluginYaml();
-    const child = fork(PLUGIN_MAIN, [], {
+    const child = spawn(process.execPath, ['--import', 'tsx', '--conditions', 'synoikia-source', PLUGIN_MAIN], {
       cwd: SDK_ROOT,
-      execArgv: ['--import', 'tsx', '--conditions', 'synoikia-source'],
       env: { ...process.env, ACME_PLUGIN_DIR: this.dir },
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      stdio: ['ignore', 'inherit', 'inherit', 'pipe'],
     });
-    child.on('message', (msg: RpcResponse | RpcNotification) => {
-      if ('id' in msg) this.waiting.get(msg.id)?.(msg);
-      else if (msg.method === 'log') this.pluginLog.push(msg.params.message);
+    const channel = child.stdio[3] as Socket;
+    const read = createFrameReader();
+    channel.on('data', (chunk: Buffer) => {
+      for (const frame of read(chunk) ?? []) {
+        if (!frame.ok) continue;
+        const msg = frame.value as RpcResponse | RpcNotification;
+        if ('id' in msg) this.waiting.get(msg.id)?.(msg);
+        else if (msg.method === 'log') this.pluginLog.push(msg.params.message);
+      }
     });
     this.plugin = child;
+    this.channel = channel;
   }
 
   /** Sends one request to the plugin, as core does, and waits for its reply. */
@@ -552,7 +561,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
         resolve(res);
       });
     });
-    this.plugin.send({ jsonrpc: '2.0', id, method, params });
+    this.channel?.write(encodeFrame({ jsonrpc: '2.0', id, method, params }));
     return reply;
   }
 
