@@ -61,6 +61,7 @@ function paramMatches(actual: unknown, op: string, expected: unknown): boolean {
         typeof actual === 'string' &&
         typeof expected === 'string' &&
         expected !== '' &&
+        !hasDotPart(actual) &&
         (actual === expected ||
           (actual.startsWith(expected) && (expected.endsWith('/') || actual[expected.length] === '/')))
       );
@@ -86,6 +87,32 @@ function targetMatches(target: ResolvedTarget, c: z.infer<typeof TargetCondition
     if (value === undefined || !values.includes(value)) return false;
   }
   return true;
+}
+
+// Slashes that NFKC leaves alone: ⁄ ∕ ⧵ ⧸ ⧹.
+const SEPARATOR = /[\\/\u2044\u2215\u29f5\u29f8\u29f9]/;
+const DOT_PART = /^[.\s]*\.[.\s]*$/;
+const ESCAPED = /%(25|2e|2f|5c)/gi;
+
+/** ADR-0003: whether a value has a part of only dots and spaces, also once %-escapes and NFKC forms are undone. */
+export function hasDotPart(value: string): boolean {
+  let text = value;
+  for (let round = 0; round < 3; round++) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(text);
+    } catch {
+      decoded = text.replace(ESCAPED, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    }
+    if (decoded === text) break;
+    text = decoded;
+  }
+  // Still encoded after three rounds: too deep to judge, so fail closed.
+  if (new RegExp(ESCAPED.source, 'i').test(text)) return true;
+  return text
+    .normalize('NFKC')
+    .split(SEPARATOR)
+    .some((part) => DOT_PART.test(part));
 }
 
 const escapePointer = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');

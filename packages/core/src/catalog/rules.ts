@@ -8,7 +8,7 @@ import { operations, preApprovalRules, roleInstances, users } from '../db/schema
 import { ConflictError, NotFoundError, ValidationError } from '../errors.js';
 import { FULL_ACCESS } from '../gate/access.js';
 import type { AccessPrincipal } from '../gate/access.js';
-import { MatchSchema } from '../gate/match.js';
+import { hasDotPart, MatchSchema } from '../gate/match.js';
 import { resolveAccess } from './groups.js';
 import type { LevelView } from './role-levels.js';
 
@@ -52,6 +52,12 @@ export function matchMisfit(
   op: Pick<OperationRow, 'key' | 'matchProfile'>,
   match: RuleInput['match'],
 ): ValidationError | null {
+  // ADR-0003: a value with a dot part never matches a prefix, so such a rule could never apply.
+  const dotted = match.find(
+    (c) =>
+      c.field !== '$targets' && 'op' in c && c.op === 'prefix' && typeof c.value === 'string' && hasDotPart(c.value),
+  );
+  if (dotted) return new ValidationError('prefix_dot_part', `${dotted.field}: a prefix cannot have a "." or ".." part`);
   if (match.every((c) => c.field !== '$targets' && 'op' in c && c.op === 'any')) return null;
   const profile = op.matchProfile ? manifest.matchProfiles[op.matchProfile] : undefined;
   if (!profile) return new ValidationError('no_match_profile', `${op.key} has no matchable fields; use an empty match`);

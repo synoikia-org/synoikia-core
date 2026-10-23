@@ -98,6 +98,13 @@ Given('Acme also has the lists {string} and {string}', (world: SynoikiaWorld, a:
 });
 
 Given(
+  'Acme also has the lists {string}, {string} and {string}',
+  (world: SynoikiaWorld, a: string, b: string, c: string) => {
+    for (const list of [a, b, c]) world.lists.set(list, []);
+  },
+);
+
+Given(
   'the role {string} lets its users write their own rules on {string}',
   async (world: SynoikiaWorld, role: string, slug: string) => {
     await world.setRoleSwitches(role, slug, { canManageOwnRules: true });
@@ -199,6 +206,45 @@ Given(
         )
         .run('rule-from-elsewhere', instanceId, operationId, match),
     );
+  },
+);
+
+const DOT_PART = 'a prefix cannot have a "." or ".." part';
+
+When('the admin tries to pre-approve adding any task to {string}', async (world: SynoikiaWorld, list: string) => {
+  await world.rule(world.lastInstance, 'add a task', anyTaskIn(list), { expect: 'refused' });
+});
+
+Then('the admin is told that a list prefix cannot have a "." or ".." part', (world: SynoikiaWorld) => {
+  expect(world.portalAnswer.body).toMatchObject({ error: 'prefix_dot_part', message: `/list: ${DOT_PART}` });
+});
+
+Given(
+  'the database holds a rule that approves adding any task to {string}',
+  async (world: SynoikiaWorld, list: string) => {
+    const instanceId = await world.tasksInstance(world.lastInstance);
+    const { id: operationId } = await world.operation(world.lastInstance, 'add a task');
+    world.editDataFile((db) =>
+      db
+        .prepare(
+          "INSERT INTO pre_approval_rules (id, instance_id, operation_id, match, reason, enabled) VALUES (?, ?, ?, ?, 'a rule from elsewhere', 1)",
+        )
+        .run('rule-from-elsewhere', instanceId, operationId, JSON.stringify(anyTaskIn(list))),
+    );
+  },
+);
+
+Then(
+  'the rule is turned off, and the admin sees that a list prefix cannot have a "." or ".." part',
+  async (world: SynoikiaWorld) => {
+    const rules = (await world.expectOk(
+      world.admin.get(`/api/instances/${await world.tasksInstance(world.lastInstance)}/rules`),
+      'list rules',
+    )) as unknown as { id: string; enabled: boolean }[];
+    expect(rules.find((r) => r.id === 'rule-from-elsewhere')).toMatchObject({ enabled: false });
+    expect(await world.audit({ decision: 'rules_disabled_operation_changed' })).toMatchObject([
+      { detail: { rules: [{ ruleId: 'rule-from-elsewhere', reason: `/list: ${DOT_PART}` }] } },
+    ]);
   },
 );
 

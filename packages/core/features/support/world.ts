@@ -633,7 +633,20 @@ export class SynoikiaWorld extends QuickPickleWorld {
   }
 
   private upstreamRoutes() {
-    const live = (name: string) => (this.archived.has(name) ? undefined : this.lists.get(name));
+    // Like many real upstreams, Acme decodes and resolves dot parts in a list path (issue #135).
+    const resolve = (name: string) => {
+      let decoded = name;
+      try {
+        decoded = decodeURIComponent(name);
+      } catch {
+        // Not encoded.
+      }
+      return path.posix.normalize(decoded);
+    };
+    const live = (name: string) => {
+      const resolved = resolve(name);
+      return this.archived.has(resolved) ? undefined : this.lists.get(resolved);
+    };
     const missing = { status: 404 };
     const slow = async () => {
       if (this.upstreamDelayMs) await sleep(this.upstreamDelayMs);

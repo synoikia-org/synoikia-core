@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPointer, matches, MatchSchema } from '../../src/gate/match.js';
+import { getPointer, hasDotPart, matches, MatchSchema } from '../../src/gate/match.js';
 
 describe('getPointer', () => {
   it('follows RFC 6901 pointers', () => {
@@ -98,5 +98,44 @@ describe('matches', () => {
     expect(MatchSchema.safeParse([{ field: '/n', op: 'regex', value: '.*' }]).success).toBe(false);
     expect(MatchSchema.safeParse([{ field: '', op: 'any' }]).success).toBe(true);
     expect(MatchSchema.safeParse([{ field: '', op: 'eq', value: 1 }]).success).toBe(false);
+  });
+});
+
+describe('hasDotPart (ADR-0003)', () => {
+  it.each([
+    'vol/media/../private',
+    'vol/media/./tv',
+    'vol/media/..',
+    'vol/media\\..\\private',
+    'vol/media/%2e%2e/x',
+    'vol/media/%2E%2e/x',
+    'vol/media/..%2fx',
+    'vol/media%2f..%2fx',
+    'vol/media/%252e%252e/x',
+    'vol/media/..%5cx',
+    'vol/media/\uff0e\uff0e/x',
+    'vol/media/..\uff0fx',
+    'vol/media/...',
+    'vol/media/.. /x',
+    'vol/media/%25252e%25252e/x',
+  ])('finds a dot part in %s', (value) => {
+    expect(hasDotPart(value)).toBe(true);
+  });
+
+  it.each([
+    'vol/media/..config',
+    'vol/media/a//b',
+    'vol/media/light.kitchen',
+    'vol/media/100%',
+    'v1.2..3',
+    'https://acme.example/a',
+  ])('finds none in %s', (value) => {
+    expect(hasDotPart(value)).toBe(false);
+  });
+
+  it('keeps a value with a dot part from matching a prefix', () => {
+    const rule = [{ field: '/name', op: 'prefix', value: 'vol/media' }] as const;
+    expect(matches(rule, { params: { name: 'vol/media/../private' }, targets: [] })).toBe(false);
+    expect(matches(rule, { params: { name: 'vol/media/..config' }, targets: [] })).toBe(true);
   });
 });
