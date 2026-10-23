@@ -208,7 +208,7 @@ When(
 const refused = new WeakMap<SynoikiaWorld, { status: number; body: Record<string, unknown> }>();
 
 Then(
-  'the admin is told that {string} may have at most 15, one less than the 16 runs in total, and its limit stays at 4',
+  'the admin is told that {string} may have at most 15 runs, one less than the total, and its limit stays at 4',
   async (world: SynoikiaWorld, slug: string) => {
     const { status, body } = refused.get(world)!;
     expect(status).toBe(400);
