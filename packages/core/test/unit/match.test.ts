@@ -122,6 +122,17 @@ describe('hasDotPart (ADR-0003)', () => {
     'vol/media/%EF%BC%8E%EF%BC%8E/x%zz',
     'vol/media/..%09/x%',
     'vol/media/%c0%ae%c0%ae/x',
+    'vol/media/%%32%65%%32%65/x',
+    'vol/media/%zz/%25%32%65%25%32%65/x',
+    'vol/media/%2525252e/x',
+    'vol/media/..\0x',
+    'vol/media/..%00x',
+    'vol/media/.\u200b./x',
+    'vol/media/..\u00ad/x',
+    'vol/media\u00a5..\u00a5x',
+    'vol/media\u20a9..\u20a9x',
+    'vol/media\u2216..\u2216x',
+    'vol/media/%u002e%u002e/x',
   ])('finds a dot part in %s', (value) => {
     expect(hasDotPart(value)).toBe(true);
   });
@@ -133,8 +144,16 @@ describe('hasDotPart (ADR-0003)', () => {
     'vol/media/100%',
     'v1.2..3',
     'https://acme.example/a',
+    'vol/media/\u{1f469}\u200d\u{1f4bb}',
+    'vol/media/\u00a5100',
   ])('finds none in %s', (value) => {
     expect(hasDotPart(value)).toBe(false);
+  });
+
+  it('takes linear time on a long run of dots', () => {
+    const start = performance.now();
+    expect(hasDotPart(`vol/${'.'.repeat(200_000)}x`)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(100);
   });
 
   it('keeps a value with a dot part from matching a prefix', () => {
