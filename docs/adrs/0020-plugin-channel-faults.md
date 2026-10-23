@@ -3,44 +3,47 @@ status: accepted
 date: 2026-10-23
 ---
 
-# Core survives a plugin that breaks its message channel
+# Core reads plugin messages from its own framing
 
 ## Context and Problem Statement
 
-Core and each plugin child talk over the IPC channel of `child_process.fork` (ADR-0011, ADR-0014). Core checks each message that reaches the `message` event. Node reads the channel before that event, and a child can make Node's own code throw there:
+Core and each plugin child talked over the IPC channel of `child_process.fork` (ADR-0011, ADR-0014). Node reads that channel in core before core sees a message, and a child can make Node fail there:
 
-- A line that is not JSON on the channel. The child can write it to the channel's file descriptor. Node throws a `SyntaxError` in `parseChannelMessages`.
-- A handle that the child sends with `process.send(message, handle)`. Node converts it in the parent, and a forged handle throws, for example `ERR_SOCKET_BAD_TYPE`. A converted server or socket can also emit an `error` later, and each handle keeps a file descriptor in core.
-- A Node internal message, such as `{ cmd: 'NODE_HANDLE_ACK' }`. Node throws `ERR_INTERNAL_ASSERTION`.
+- A line that is not JSON throws a `SyntaxError` in Node's parser.
+- A handle sent with `process.send(message, handle)` is converted in core. A forged one throws, and a converted server or socket can emit an `error` later.
+- A handle that Node never delivers keeps a file descriptor in core. A child can repeat this until core runs out of descriptors, and core then stops serving without exiting.
+- A regular file sent as a handle fails a check in Node's native code, and core aborts. No JavaScript can catch this.
+- A Node internal message, such as `{ cmd: 'NODE_HANDLE_ACK' }`, fails an assertion.
 
-Each error is uncaught, so core stops. How does core stay up?
+How do core and a plugin talk so that nothing a plugin sends can stop core?
 
 ## Decision Drivers
 
 - One plugin must not stop core or the other instances (ADR-0014).
 - A fault in core itself must still stop core, so that the restart policy starts it clean.
-- A guard must not depend on a list of error shapes that a Node update or a new handle type can extend.
+- Core must not depend on Node internals to stay up.
 
 ## Considered Options
 
-- Refuse handles and internal messages for each child, and handle the one parse fault in the server entry.
-- An `uncaughtException` handler that matches every fault by its error shape.
-- Core's own framing on a separate pipe, parsed for each child.
-- No guard. A plugin can already stop core with a signal (ADR-0002, remaining risk 13).
+- Core's own framing on a plain pipe.
+- The Node IPC channel, with the handle listener removed and the parser faults caught.
+- No change. A plugin can already stop core with a signal (ADR-0002, remaining risk 13).
 
 ## Decision Outcome
 
-Chosen option: "Refuse handles and internal messages for each child". Core never converts or keeps a plugin's handle, and it needs no SDK change.
+Chosen option: "Core's own framing on a plain pipe". A plain pipe carries bytes only. The kernel drops any file descriptor that a child sends on it, so core never receives a handle.
 
-- **For each child.** After the fork, the plugin host removes Node's `internalMessage` listener from the child. Its own listener closes any handle that arrives and counts the message as a message that is not valid, with the slug (`@id:plugin-isolation`). A child that sends a handle blocks its own channel, so only its own calls time out.
-- **In the server entry.** Only `main.ts` installs an `uncaughtException` handler, so the plugin harness and tests do not have one. The pure function `isPluginChannelFault` matches only the `SyntaxError` from `parseChannelMessages`, by the frames of its stack and not by its message. Core then logs a warning that a plugin broke its message channel, at most once a minute. The line has no slug, because Node does not say which child wrote it.
-- Any other error prints its stack, and core exits with code 1, as before.
+- Core starts the child with `child_process.spawn` and a plain pipe on file descriptor 3. It has no `ipc` channel.
+- Each message is one JSON value on one line, in UTF-8. JSON escapes line breaks inside strings, so a line break always ends a message.
+- The SDK writes and reads the same framing. A pure frame reader in the SDK splits the stream for both sides.
+- Core accepts a line of 64 MiB at most. A line that is not JSON is a message that is not valid (`@id:plugin-isolation`). A longer line ends the stream, so core stops the child, and supervision starts it again (ADR-0014).
+- This changes the contract, so the contract version becomes `0.3.0` (ADR-0011). A plugin built for `0.2` is incompatible and does not load.
 
 ### Consequences
 
-- Good, because no handle, internal message or line that is not JSON from a plugin stops core.
-- Good, because a fault in core still stops core.
-- Bad, because both parts depend on Node internals: the name of the `internalMessage` event and the `parseChannelMessages` frame. Unit tests with real Node processes pin both, so a Node update that changes them fails the tests.
-- Bad, because core cannot say which plugin wrote a line that is not JSON, and it does not stop that plugin.
+- Good, because no byte, handle or file descriptor from a plugin reaches Node's IPC code in core.
+- Good, because core needs no process-wide error handler and no Node internals for this.
+- Bad, because every plugin must be built again with the new SDK before it runs on this core.
+- Bad, because a plugin can no longer send a handle to core. No plugin uses this.
 
-Core's own framing on a pipe would name the plugin and stop it. It changes the SDK side of the channel, so it belongs with a separate user for each plugin (issues #108 and #111). The feature file `@id:plugin-isolation` specifies the behavior.
+The model view `coreComponents` shows the channel between the instance and the plugin host.
