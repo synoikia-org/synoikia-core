@@ -35,6 +35,7 @@ import {
 } from './connection.js';
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
+import { SANDBOX_CONCURRENCY } from '../runtime/index.js';
 
 /** Instance lifecycle (ADR-0013, @id:catalog-sync-schedule): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
@@ -122,6 +123,17 @@ const instanceBySlug = tableCache([pluginInstances, plugins], (db, slug: string)
     .where(eq(pluginInstances.slug, slug))
     .get(),
 );
+
+/** ADR-0003: one instance never takes every place, so another instance can always run. */
+function checkRunsAtOnce(slug: string, settings: InstanceSettings): InstanceSettings {
+  const total = SANDBOX_CONCURRENCY.total;
+  if (settings.runsAtOnce > total - 1)
+    throw new ValidationError(
+      'invalid_settings',
+      `"${slug}" may have at most ${total - 1} runs at once, one less than the ${total} runs in total`,
+    );
+  return settings;
+}
 
 export class InstanceManager {
   private readonly live = new Map<string, Live>();
@@ -422,7 +434,7 @@ export class InstanceManager {
     if (input.authMethods?.some((m) => !(AUTH_METHODS as readonly string[]).includes(m))) {
       throw new ValidationError('invalid_auth_method', 'Unknown client auth method');
     }
-    const settings = parseInstanceSettings(input.settings);
+    const settings = checkRunsAtOnce(slug, parseInstanceSettings(input.settings));
     const { config, secrets } = validateConnection(manifest, input.connection);
 
     const id = randomUUID();
@@ -489,7 +501,7 @@ export class InstanceManager {
       // rejects doesn't block saving an unrelated change.
       const stored = cleanInstanceSettings(before.settings, `/${before.slug} settings`).cleaned as object;
       const merged = { ...stored, ...(patch.settings as object) };
-      set.settings = parseInstanceSettings(merged);
+      set.settings = checkRunsAtOnce(before.slug, parseInstanceSettings(merged));
     }
     if (Object.keys(set).length === 0) return this.get(id);
 
