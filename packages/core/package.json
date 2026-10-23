@@ -46,7 +46,7 @@
     "openid-client": "^6.8.8",
     "semver": "^7.8.5",
     "tar": "^7.5.22",
-    "zod": "^4.6.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
