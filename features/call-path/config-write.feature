@@ -27,3 +27,19 @@ Feature: Config writes
       When the admin approves the call and agent 7 resumes it
       Then agent 7 is told that the list changed in Acme
       And Acme still has the list "Chores"
+
+  Rule: Rules and approvers see the list that the plugin will change
+    The plugin reads the object before the gate decides.
+    If the plugin then names another list, the gate decides on that list.
+
+    Scenario: A pre-approved rename that the plugin moves to another list waits for a human
+      Given the admin pre-approves renaming the list "Groceries"
+      And the plugin of "tasks" turns each rename of "Groceries" into a rename of "Chores"
+      When agent 7 renames "Groceries" to "Pantry"
+      Then agent 7 is told that the call waits for a human to approve it
+      And Acme still has the lists "Groceries" and "Chores"
+
+    Scenario: The approver sees the list that the plugin will rename
+      Given the plugin of "tasks" turns each rename of "Groceries" into a rename of "Chores"
+      When agent 7 renames "Groceries" to "Pantry"
+      Then the approval page names the list "Chores", and not "Groceries"

@@ -59,6 +59,23 @@ Feature: Redaction
       When the admin approves the call and agent 7 resumes it
       Then Acme receives the add of "butter" with the PIN "4711"
 
+    Scenario Outline: The PIN is hidden when the agent writes its name as "<name>"
+      Given agent 7 waits for the admin to approve the add of "butter" to "Groceries" with "<name>" set to "4711"
+      When the admin opens the approval page
+      Then the approval page shows "<name>" as [REDACTED]
+      And the audit log shows "<name>" of the add of "butter" as [REDACTED]
+
+      Examples:
+        | name |
+        | PIN  |
+        | Pin  |
+
+    Scenario: The approver never sees the lock code of a rename, whatever its case
+      Given Acme also has the list "Chores" with the open task "dishes"
+      When agent 7 renames "Chores" to "Housework" with "LockCode" set to "2468"
+      Then the approval page shows "LockCode" as [REDACTED] after
+      And the approval page never shows "2468"
+
   Rule: Declared secret results are hidden
 
     Scenario: A declared field is hidden on each task, though its name is plain
