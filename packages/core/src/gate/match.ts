@@ -62,7 +62,8 @@ function paramMatches(actual: unknown, op: string, expected: unknown): boolean {
         typeof expected === 'string' &&
         expected !== '' &&
         (actual === expected ||
-          (actual.startsWith(expected) && (expected.endsWith('/') || actual[expected.length] === '/')))
+          (actual.startsWith(expected) && (expected.endsWith('/') || actual[expected.length] === '/'))) &&
+        !hasDotPart(actual)
       );
     case 'range': {
       const { min, max } = (expected ?? {}) as { min?: unknown; max?: unknown };
@@ -86,6 +87,42 @@ function targetMatches(target: ResolvedTarget, c: z.infer<typeof TargetCondition
     if (value === undefined || !values.includes(value)) return false;
   }
   return true;
+}
+
+// Slashes that NFKC leaves alone (⁄ ∕ ⧵ ⧸ ⧹ ∖), Windows best-fit backslashes (¥ ₩) and control characters.
+const SEPARATOR = /[\\/\u2044\u2215\u2216\u29f5\u29f8\u29f9\u00a5\u20a9\p{Cc}]/u;
+const INVISIBLE = /\p{Cf}/gu;
+// The leading \s* cannot take a dot, so the test stays linear on a long run of dots.
+const DOT_PART = /^\s*\.[.\s]*$/;
+const ESCAPED = /(?:%[0-9a-f]{2})+/gi;
+
+/** ADR-0003: whether a value has a part of only dots and spaces, also once %-escapes and NFKC forms are undone. */
+export function hasDotPart(value: string): boolean {
+  let text = value;
+  for (let round = 0; round < 3; round++) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(text);
+    } catch {
+      // A malformed escape elsewhere: decode each well-formed run on its own.
+      decoded = text.replace(ESCAPED, (run) => {
+        try {
+          return decodeURIComponent(run);
+        } catch {
+          return run;
+        }
+      });
+    }
+    if (decoded === text) break;
+    text = decoded;
+  }
+  // Still encoded after three rounds, or not valid UTF-8: too hard to judge, so fail closed.
+  if (new RegExp(ESCAPED.source, 'i').test(text) || /%u[0-9a-f]{4}/i.test(text)) return true;
+  return text
+    .normalize('NFKC')
+    .replace(INVISIBLE, '')
+    .split(SEPARATOR)
+    .some((part) => DOT_PART.test(part));
 }
 
 const escapePointer = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');

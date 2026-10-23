@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPointer, matches, MatchSchema } from '../../src/gate/match.js';
+import { getPointer, hasDotPart, matches, MatchSchema } from '../../src/gate/match.js';
 
 describe('getPointer', () => {
   it('follows RFC 6901 pointers', () => {
@@ -98,5 +98,69 @@ describe('matches', () => {
     expect(MatchSchema.safeParse([{ field: '/n', op: 'regex', value: '.*' }]).success).toBe(false);
     expect(MatchSchema.safeParse([{ field: '', op: 'any' }]).success).toBe(true);
     expect(MatchSchema.safeParse([{ field: '', op: 'eq', value: 1 }]).success).toBe(false);
+  });
+});
+
+describe('hasDotPart (ADR-0003)', () => {
+  it.each([
+    'vol/media/../private',
+    'vol/media/./tv',
+    'vol/media/..',
+    'vol/media\\..\\private',
+    'vol/media/%2e%2e/x',
+    'vol/media/%2E%2e/x',
+    'vol/media/..%2fx',
+    'vol/media%2f..%2fx',
+    'vol/media/%252e%252e/x',
+    'vol/media/..%5cx',
+    'vol/media/\uff0e\uff0e/x',
+    'vol/media/..\uff0fx',
+    'vol/media/...',
+    'vol/media/.. /x',
+    'vol/media/%25252e%25252e/x',
+    'vol/media/..%20/x%zz',
+    'vol/media/%EF%BC%8E%EF%BC%8E/x%zz',
+    'vol/media/..%09/x%',
+    'vol/media/%c0%ae%c0%ae/x',
+    'vol/media/%%32%65%%32%65/x',
+    'vol/media/%zz/%25%32%65%25%32%65/x',
+    'vol/media/%2525252e/x',
+    'vol/media/..\0x',
+    'vol/media/..%00x',
+    'vol/media/.\u200b./x',
+    'vol/media/..\u00ad/x',
+    'vol/media\u00a5..\u00a5x',
+    'vol/media\u20a9..\u20a9x',
+    'vol/media\u2216..\u2216x',
+    'vol/media/%u002e%u002e/x',
+  ])('finds a dot part in %s', (value) => {
+    expect(hasDotPart(value)).toBe(true);
+  });
+
+  it.each([
+    'vol/media/..config',
+    'vol/media/a//b',
+    'vol/media/light.kitchen',
+    'vol/media/100%',
+    'v1.2..3',
+    'https://acme.example/a',
+    'vol/media/\u{1f469}\u200d\u{1f4bb}',
+    'vol/media/\u00a5100',
+  ])('finds none in %s', (value) => {
+    expect(hasDotPart(value)).toBe(false);
+  });
+
+  it('takes linear time on a long run of dots', () => {
+    const start = performance.now();
+    expect(hasDotPart(`vol/${'.'.repeat(200_000)}x`)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it('keeps a value with a dot part from matching a prefix', () => {
+    const rule = [{ field: '/name', op: 'prefix', value: 'vol/media' }] as const;
+    expect(matches(rule, { params: { name: 'vol/media/../private' }, targets: [] })).toBe(false);
+    expect(matches(rule, { params: { name: 'vol/media/..config' }, targets: [] })).toBe(true);
+    // A malformed escape elsewhere does not stop the decoding of the dot part.
+    expect(matches(rule, { params: { name: 'vol/media/..%20/x%zz' }, targets: [] })).toBe(false);
   });
 });
