@@ -454,7 +454,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
           externalKeys: (domain) => (domain === GATEWAY.teamDomain ? gatewayKeySet : undefined),
           repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
-          ...(this.supervision ? { supervisor: this.supervision } : {}),
+          supervisor: { idleSweepMs: 50, ...this.supervision },
           ...opts,
         },
       );

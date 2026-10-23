@@ -35,6 +35,8 @@ Auth kinds are `bearer`, `api-key` (with a header name), `basic` and `none`. The
 
 `synoikia-plugin build` bundles everything into one self-contained `dist/index.js`. It validates `plugin.yaml` and inlines it at build time. At runtime the plugin runs as a permission-confined child. It can read nothing outside its package directory, and it can't write files or spawn processes. **Network access is not restricted.** `network.hosts` is a declaration that the admin reviews before enabling the plugin. An update that changes it arrives disabled again. Core does not enforce it. A container egress policy is the mitigation (ADR-0014, issues #108 and #111). List exactly the hosts the plugin connects to.
 
+Set `"lifecycle": "on-demand"` in `manifest.json` when the plugin keeps nothing between calls. Then the admin can let core stop its child when nobody calls the instance, and core starts it again at the next call (ADR-0022). Leave it out when the plugin keeps a live connection, a subscription or other background work. The default `always` keeps the child running.
+
 ### Agent instructions
 
 `"instructions": "instructions.md"` in the manifest names a Markdown file in the package (letters, digits, `_ . -` and `/`, ending in `.md`, never `..` or absolute, not a symbolic link). Core adds its text to the MCP server `instructions` and to the `search` tool description in a `<plugin-notes plugin="<id>">` block between core's own text and core's approval rule. The agent reads it once per session, so it spends fewer `search` calls on conventions.

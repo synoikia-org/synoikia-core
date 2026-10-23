@@ -35,7 +35,7 @@ import {
 } from './connection.js';
 import { cleanInstanceSettings, parseInstanceSettings, readInstanceSettings } from './settings.js';
 import type { InstanceSettings } from './settings.js';
-import { SANDBOX_CONCURRENCY } from '../runtime/index.js';
+import { runsOf, SANDBOX_CONCURRENCY } from '../runtime/index.js';
 
 /** Instance lifecycle (ADR-0013, @id:catalog-sync-schedule): connection config, one supervised plugin child per enabled
  * instance, and sync scheduling. */
@@ -71,7 +71,13 @@ export interface ManagerOptions {
   now?: () => Date;
   log: Logger;
   /** Test hooks: faster restarts and shorter RPC/init timeouts. */
-  supervisor?: { backoff?: { initialMs: number; maxMs: number }; initTimeoutMs?: number; rpcTimeoutMs?: number };
+  supervisor?: {
+    backoff?: { initialMs: number; maxMs: number };
+    initTimeoutMs?: number;
+    rpcTimeoutMs?: number;
+    /** How often core looks for idle instances (ADR-0022). */
+    idleSweepMs?: number;
+  };
   /** How often a live session may trigger the cheap upstream version check. */
   versionCheckIntervalMs?: number;
 }
@@ -80,6 +86,8 @@ interface Live {
   supervisor: PluginSupervisor;
   syncing?: Promise<SyncSummary>;
   lastVersionCheck: number;
+  /** When a call last needed this instance, on core's clock (ADR-0022). */
+  lastCall: number;
   catalogChangedTimer?: NodeJS.Timeout;
   /** The running child's bundle version, read from its manifest.json just before each fork; the catalog
    * must have been synced from it (`ensureFresh`). */
@@ -138,6 +146,7 @@ function checkRunsAtOnce(slug: string, settings: InstanceSettings): InstanceSett
 export class InstanceManager {
   private readonly live = new Map<string, Live>();
   private readonly invalidMessages = new LogThrottle();
+  private idleSweep?: NodeJS.Timeout;
   private readonly db: Db;
   private readonly now: () => Date;
 
@@ -679,6 +688,8 @@ export class InstanceManager {
   // ── processes ──────────────────────────────────────────────────────────────────────────────────
 
   async startAll() {
+    clearInterval(this.idleSweep);
+    this.idleSweep = setInterval(() => this.stopIdle(), this.opts.supervisor?.idleSweepMs ?? 30_000).unref();
     for (const { instance, plugin } of this.db
       .select({ instance: pluginInstances, plugin: plugins })
       .from(pluginInstances)
@@ -690,6 +701,7 @@ export class InstanceManager {
   }
 
   async stopAll() {
+    clearInterval(this.idleSweep);
     await Promise.all([...this.live.keys()].map((id) => this.stop(id)));
   }
 
@@ -766,9 +778,21 @@ export class InstanceManager {
       },
       onHandlerFault: (err) => this.handlerFault(instanceId, err),
     });
-    const live: Live = { supervisor, lastVersionCheck: 0 };
+    const live: Live = { supervisor, lastVersionCheck: 0, lastCall: this.now().getTime() };
     this.live.set(instanceId, live);
     await supervisor.start();
+  }
+
+  /** ADR-0022: stops each `on-demand` instance that nobody called for its idle time, with nothing in flight. */
+  private stopIdle() {
+    for (const [id, live] of this.live) {
+      if (live.supervisor.status !== 'ready') continue;
+      const row = instanceRow(this.db, id);
+      const idleStopMs = row && this.settingsOf(row).idleStopMs;
+      if (!idleStopMs || pluginRow(this.db, row.pluginId)?.parsed?.lifecycle !== 'on-demand') continue;
+      const unused = () => !live.syncing && runsOf(id) === 0 && this.now().getTime() - live.lastCall >= idleStopMs;
+      if (unused()) void live.supervisor.idle(unused);
+    }
   }
 
   private async stop(instanceId: string) {
@@ -848,10 +872,17 @@ export class InstanceManager {
 
   /** Before serving MCP traffic: sync now if never synced or synced from other code (failure refuses
    * service), sync if stale (serving the last catalog on failure), else sync on an upstream version change. */
-  async ensureFresh(instanceId: string, opts: { forceVersionCheck?: boolean } = {}): Promise<void> {
+  async ensureFresh(instanceId: string, opts: { forceVersionCheck?: boolean; start?: boolean } = {}): Promise<void> {
     const row = this.row(instanceId);
     const live = this.live.get(instanceId);
+    // ADR-0022: an idle instance serves its stored catalog; only a call that needs the plugin starts it.
+    if (live?.supervisor.status === 'idle') {
+      if (!opts.start) return;
+      live.lastVersionCheck = 0;
+      await live.supervisor.wake();
+    }
     if (!live || live.supervisor.status !== 'ready') throw new PluginUnavailableError('The endpoint is not ready');
+    live.lastCall = this.now().getTime();
     if (!row.lastSyncedAt || !live.version || row.catalogPluginVersion !== live.version) {
       await this.syncNow(instanceId);
       return;
