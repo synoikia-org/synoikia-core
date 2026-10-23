@@ -5,9 +5,17 @@ import type { Db, DbLike } from './index.js';
 
 /** ADR-0021: core counts the writes to each table, so a cache in memory knows when to read again. */
 
-const WRITE = /^\s*(?:insert|replace|update|delete)\b(?:\s+or\s+\w+)?(?:\s+into|\s+from)?\s+["`]?(\w+)/i;
+const WRITE = /^\s*(?:insert|replace|update|delete)\b(?:\s+or\s+\w+)?(?:\s+into|\s+from)?\s+(?:\w+\.)?["`[]?(\w+)/i;
 const ROLLBACK = /^\s*rollback\b/i;
 const RUNS = ['run', 'get', 'all', 'iterate'] as const;
+
+/** The table a statement writes, `*` for a write it cannot name (it fails closed), or nothing for a read. */
+export function writeTarget(source: string, readonly: boolean): string | undefined {
+  if (ROLLBACK.test(source)) return '*';
+  const table = WRITE.exec(source)?.[1];
+  if (table) return table.toLowerCase();
+  return readonly ? undefined : '*';
+}
 
 export class TableWrites {
   private readonly counts = new Map<string, number>();
@@ -32,15 +40,20 @@ export class TableWrites {
             seen.add(c);
             queue.push(c);
           }
-      this.reach.set(table, [...seen]);
+      this.reach.set(
+        table.toLowerCase(),
+        [...seen].map((t) => t.toLowerCase()),
+      );
     }
   }
 
   wrote(table: string) {
-    for (const t of this.reach.get(table) ?? [table]) this.counts.set(t, (this.counts.get(t) ?? 0) + 1);
+    const reached = this.reach.get(table);
+    if (!reached) return this.wroteEverything();
+    for (const t of reached) this.counts.set(t, (this.counts.get(t) ?? 0) + 1);
   }
 
-  /** A rollback or raw SQL: every table may have changed. */
+  /** A rollback, raw SQL or a write to a table it cannot name: every table may have changed. */
   wroteEverything() {
     this.everything++;
   }
@@ -62,14 +75,13 @@ export function countWrites(sqlite: Database.Database): TableWrites {
   const prepare = sqlite.prepare.bind(sqlite);
   sqlite.prepare = ((source: string) => {
     const stmt = prepare(source);
-    const table = WRITE.exec(source)?.[1];
-    const rollback = ROLLBACK.test(source);
-    if (table || rollback)
+    const table = writeTarget(source, stmt.readonly);
+    if (table)
       for (const m of RUNS) {
         const run = (stmt[m] as (...a: unknown[]) => unknown).bind(stmt);
         (stmt as unknown as Record<string, unknown>)[m] = (...args: unknown[]) => {
-          if (table) writes.wrote(table);
-          else writes.wroteEverything();
+          if (table === '*') writes.wroteEverything();
+          else writes.wrote(table);
           return run(...args);
         };
       }
@@ -98,7 +110,7 @@ const isRoot = (db: DbLike): db is Db => '$client' in db;
 /** Values read from `tables`, kept until one of them is written (ADR-0021). A miss is never kept, so
  * unknown keys cannot grow the cache, and nothing is kept while a transaction is open. */
 export function tableCache<K, V>(tables: Table[], load: (db: DbLike, key: K) => V | undefined) {
-  const names = tables.map((t) => getTableName(t));
+  const names = tables.map((t) => getTableName(t).toLowerCase());
   const perDb = new WeakMap<Db, { version: number; values: Map<K, V> }>();
   return (db: DbLike, key: K): V | undefined => {
     const writes = isRoot(db) ? registry.get(db.$client) : undefined;
