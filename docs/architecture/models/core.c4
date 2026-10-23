@@ -30,7 +30,7 @@ model {
     }
     pluginHost = component 'Plugin host' {
       technology 'plugins/'
-      description 'Starts, supervises and restarts instance processes, and installs verified bundles.'
+      description 'Starts, supervises and restarts instance processes, stops an idle one until its next call, and installs verified bundles.'
     }
     catalogSync = component 'Catalog sync' {
       technology 'catalog/'
@@ -73,6 +73,7 @@ model {
   synoikia.instance -> synoikia.core.pluginHost 'answers calls and sends log and catalog notices to'
   synoikia.core.instances -> synoikia.core.crypto 'encrypts connection secrets with'
   synoikia.core.instances -> synoikia.core.pluginHost 'starts and stops instances with'
+  synoikia.core.gate -> synoikia.core.pluginHost 'starts an idle instance on a call through'
   synoikia.core.catalogSync -> synoikia.core.pluginHost 'reads catalogs and registries through'
   synoikia.core.notify -> notificationReceiver 'sends events to'
   synoikia.core.auth -> identityProvider 'signs users in with'

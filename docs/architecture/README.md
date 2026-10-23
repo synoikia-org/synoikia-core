@@ -144,7 +144,7 @@ in`" .-> SynoikiaCore.Instances
   SynoikiaCore.Auth -. "`[...]`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Runtime -. "`reads the catalog for search from`" .-> SynoikiaCore.CatalogSync
   SynoikiaCore.Gate -. "`asks for human approval in`" .-> SynoikiaCore.Approvals
-  SynoikiaCore.Gate -. "`resolves and invokes operations through`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Gate -. "`[...]`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Gate -. "`reads operations and access levels from`" .-> SynoikiaCore.CatalogSync
   SynoikiaCore.Gate -. "`records each decision in`" .-> SynoikiaCore.Audit
   SynoikiaCore.Approvals -. "`stores pending approvals through`" .-> SynoikiaCore.DbAccess
