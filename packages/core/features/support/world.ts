@@ -379,6 +379,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
   coreEnv: Record<string, string> = {};
   /** How core supervises plugins (restart pause, start and call limits), kept across restarts. */
   supervision?: AppOptions['supervisor'];
+  /** The CPUs core counts, kept across restarts; unset counts the machine's. */
+  cpus?: number;
   /** Whether core starts with the World's admin from its start-up settings. */
   bootstrapAdmin = true;
   acme?: AcmeId;
@@ -455,6 +457,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
           repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
           supervisor: { idleSweepMs: 50, ...this.supervision },
+          ...(this.cpus ? { cpus: this.cpus } : {}),
           ...opts,
         },
       );

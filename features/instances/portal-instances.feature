@@ -176,8 +176,8 @@ Feature: Instances in the portal
       Then the option was off at first, and the portal warned that a client "could then approve those calls itself"
       And /groceries approves Ask operations in the agent session
 
-    @backlog
     Scenario: Always on or more than an hour warns about memory
+      Given the plugin of /groceries may stop when idle
       When the admin picks always on for /groceries in the settings, saves, and then picks 2 hours and saves
       Then the portal warned both times that the server may use more memory, and /groceries stops after 2 hours
 

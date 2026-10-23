@@ -84,9 +84,9 @@ Feature: Instance supervision
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 gets "milk", "bread" and "eggs", and the admin sees "tasks" as ready
 
-    @backlog
     Scenario: An instance with a waiting approval does not go idle
-      Given agent 7 waits for the admin to approve the add of "butter" to "Groceries"
+      Given Acme Tasks runs as "tasks", which may stop when idle
+      And agent 7 waits for the admin to approve the add of "butter" to "Groceries"
       And 10 minutes go by without another call to "tasks"
       When the admin approves the add
       Then "butter" is on "Groceries", and the admin saw "tasks" as ready the whole time
@@ -97,13 +97,17 @@ Feature: Instance supervision
       When agent 7 asks for the open tasks of "Groceries", and asks again at once
       Then agent 7 is told both times that "tasks" is unavailable, and the admin sees one failed start, with the next one after a pause
 
-    @backlog
+    Scenario: A guide read on an idle instance starts it
+      Given "tasks" went idle
+      When agent 7 reads the guide of "import tasks"
+      Then agent 7 gets the guide "Import at most 100 tasks at once, one title for each line.", and the admin sees "tasks" as ready
+
     Scenario: A plugin that keeps a live connection never goes idle
       Given Acme Tasks runs as "tasks" with a plugin that does not say it may stop when idle
       When the admin tries to let "tasks" stop after 10 minutes
       Then the admin is told that this plugin must stay running, and "tasks" stays always on
 
-    @backlog
     Scenario: An idle time below 5 minutes is refused
+      Given Acme Tasks runs as "tasks", which may stop when idle
       When the admin tries to let "tasks" stop after 4 minutes
       Then the admin is told that an instance stops after 5 minutes at the least, and "tasks" still stops after 10 minutes

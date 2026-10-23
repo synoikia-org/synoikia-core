@@ -2,7 +2,7 @@
 Feature: Rate limits
   Each credential has its own budget of runs and of writes on an instance.
   Only a few runs go at once on an instance.
-  The admin sets the budgets in the settings of the instance.
+  The admin sets the budgets in the settings of the instance, and the total of runs at once in the settings of the server.
 
   Background:
     Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
@@ -89,16 +89,20 @@ Feature: Rate limits
       Then agent 7 gets the value 1 without waiting
 
     Scenario: An instance cannot take every place
+      Given the server lets 16 runs go at once in total
       When the admin tries to let 16 runs go at once on "tasks"
       Then the admin is told that "tasks" may have at most 15 runs, one less than the total, and its limit stays at 4
 
-    @backlog
     Scenario: The server lets 16 runs go at once for each CPU unless the admin changes it
       Given the server has 2 CPUs
       When the admin opens the run limits of the server
       Then the admin sees that 32 runs may go at once in total, and that this is the default
 
-    @backlog
+    Scenario: The admin lowers the total, and an instance still keeps one place free
+      Given the admin lets 8 runs go at once in total on the server
+      When the admin tries to let 8 runs go at once on "tasks"
+      Then the admin is told that "tasks" may have at most 7 runs, one less than the total, and its limit stays at 4
+
     Scenario: A limit below 1, or a total above 256, is refused
       When the admin tries to let 0 runs go at once on "tasks", and 257 in total on the server
-      Then the admin is told that an instance limit must be at least 1 and the total between 1 and 256, and both stay
+      Then the admin is told that an instance limit must be at least 1 and the total between 2 and 256, and both stay

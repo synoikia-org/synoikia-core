@@ -20,7 +20,7 @@ export const InstanceSettingsSchema = z
     executePerMinute: z.number().int().min(1).max(10_000).default(30),
     writesPerMinute: z.number().int().min(1).max(10_000).default(10),
     /** Runs that go at once on this instance; more wait for a place (ADR-0003). */
-    runsAtOnce: z.number().int().min(1).max(256).default(4),
+    runsAtOnce: z.number().int().min(1, 'must be at least 1').max(256).default(4),
     sandbox: z
       .object({
         timeoutMs: z.number().int().min(100).max(120_000).default(10_000),
@@ -41,20 +41,26 @@ export const InstanceSettingsSchema = z
       .min(60_000)
       .max(7 * 24 * 60 * 60_000)
       .default(60 * 60_000),
-    /** How long nobody calls an `on-demand` plugin before its child stops; null keeps it running (ADR-0022). */
+    /** How long nobody calls an `on-demand` plugin before its child stops; null keeps it running, unset is 10 minutes (ADR-0022). */
     idleStopMs: z
       .number()
       .int()
-      .min(5 * 60_000)
+      .min(5 * 60_000, 'an instance stops after 5 minutes at the least')
       .max(24 * 60 * 60_000)
       .nullable()
-      .default(null),
+      .optional(),
     /** Plugin child heap limit (ADR-0014). */
     memoryMb: z.number().int().min(64).max(4096).default(256),
   })
   .prefault({});
 
 export type InstanceSettings = z.infer<typeof InstanceSettingsSchema>;
+
+/** ADR-0022: only an `on-demand` plugin stops, after 10 minutes unless the admin chose another time. */
+export function idleStopMs(settings: InstanceSettings, lifecycle: 'always' | 'on-demand' | undefined): number | null {
+  if (lifecycle !== 'on-demand') return null;
+  return settings.idleStopMs === undefined ? 10 * 60_000 : settings.idleStopMs;
+}
 
 export function parseInstanceSettings(raw: unknown): InstanceSettings {
   return InstanceSettingsSchema.parse(raw ?? {});
