@@ -20,6 +20,6 @@
 - [ ] `pnpm lint`, `pnpm format:check`, `pnpm typecheck` and `pnpm test` pass
 - [ ] The git hooks pass on push
 - [ ] Docs updated (README, DEVELOPMENT, CONTRIBUTING, SECURITY, `docs/adrs/`, `docs/reference.md`), where applicable
-- [ ] Versions bumped where required (DEVELOPMENT.md › Which versions a change bumps)
+- [ ] No `version` bumped, and the `feature` or `breaking` label set where it applies (DEVELOPMENT.md › Which versions a release bumps)
 
 <!-- Every ready pull request needs a line of its own here. The line starts with "Security audit:", then names the boundary and what the review found. Write "Security audit: none." and the reason when the change crosses no boundary. -->
