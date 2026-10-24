@@ -114,6 +114,6 @@ Feature: Agent sign-in methods
 
     Scenario: A credential keeps at most 64 sessions across all instances
       Given agent 7 belongs to the admin and may read and write
-      And agent 7 has 16 sessions open on each of the instances "a", "b", "c" and "d"
-      When agent 7 opens a session on the instance "e"
+      And agent 7 has 16 sessions open on each of the instances "tasks", "shopping", "chores" and "errands"
+      When agent 7 opens a session on the instance "garden"
       Then the least recent session of agent 7 no longer exists, and the 64 others still work
