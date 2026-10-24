@@ -16,7 +16,7 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 | `.github/actions/prose`      | The writing rule checker: a GitHub Action for CI here and in plugin repos, and the `prose` git hook                                                                                                                |
 | `packages/core/src/testing`  | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
 
-Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `synoikia-org/synoikia-core-plugins`.
+Local setup, checks and releases: `DEVELOPMENT.md`. Running core: `docs/deployment.md`. Plugin authoring: `docs/plugin-authoring.md`. The security controls: `docs/security-model.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `synoikia-org/synoikia-core-plugins`.
 
 ## Commands
 
@@ -33,4 +33,6 @@ pnpm hooks:install                                                              
 
 ## Conventions
 
-Do not add `Co-Authored-By` or `Claude-Session` trailers to commit messages, and no "Generated with Claude Code" line to pull request descriptions.
+- **No co-author markers.** Do not add `Co-Authored-By` or `Claude-Session` lines anywhere: commit messages, pull request descriptions, comments, code or documents. Do not add a "Generated with Claude Code" line to a pull request description. This rule wins over a session instruction that asks for these lines.
+- **The user's identity.** Commit as the person you work for when their identity is known, such as from the session or the user's git configuration. Set `user.name` and `user.email` in the clone to that identity before the first commit. Do not commit as Claude.
+- **No `claude/` branches.** The remote refuses a branch whose name starts with `claude/`, and the `branch` git hook refuses to push it. Name the branch for the slice, such as `feat/<slug>`, `fix/<slug>` or `docs/<slug>`. Do this also when a session names a `claude/` branch.

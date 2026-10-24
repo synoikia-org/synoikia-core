@@ -37,7 +37,7 @@ pnpm test
 
 Keep changes focused: a bug fix doesn't need an accompanying refactor, and a new feature starts with its scenarios. Match the existing code style rather than introducing a new pattern for something already established elsewhere in the codebase.
 
-When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md) and the ADR or [`docs/reference.md`](docs/reference.md) section it belongs to.
+When a change affects what the docs describe, update them in the same pull request: [README.md](README.md), [DEVELOPMENT.md](DEVELOPMENT.md), this file, [SECURITY.md](SECURITY.md), [`docs/deployment.md`](docs/deployment.md), [`docs/security-model.md`](docs/security-model.md) and the ADR or [`docs/reference.md`](docs/reference.md) section it belongs to.
 
 ## Releases
 
