@@ -21,7 +21,7 @@ const SETTINGS_SCHEMAS = {
     .object({
       /** Force every user to enroll TOTP at next login. */
       requireTotp: z.boolean().default(false),
-      /** Only OIDC sign-in. Saving requires an OIDC-linked user; ADMIN_FORCE_LOCAL_LOGIN overrides. */
+      /** Only OIDC sign-in, but the primary owner keeps its password (ADR-0025). */
       disableLocalLogin: z.boolean().default(false),
       sessionIdleMinutes: z
         .number()
