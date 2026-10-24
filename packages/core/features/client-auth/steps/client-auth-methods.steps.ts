@@ -310,6 +310,43 @@ Given(
   },
 );
 
+Given(
+  'agent {word} has {int} sessions open on each of the instances {string}, {string}, {string} and {string}',
+  async (world: SynoikiaWorld, agent: string, n: number, a: string, b: string, c: string, d: string) => {
+    const opened: { slug: string; id: string }[] = [];
+    for (const slug of [a, b, c, d]) {
+      await world.tasksInstance(slug);
+      for (let i = 0; i < n; i++) {
+        const got = await knock(world, slug, bearerOf(world, agent));
+        expect(got.status, got.text).toBe(200);
+        opened.push({ slug, id: got.sessionId! });
+      }
+    }
+    clientAuth(world).seen.opened = opened;
+  },
+);
+
+When(
+  'agent {word} opens a session on the instance {string}',
+  async (world: SynoikiaWorld, agent: string, slug: string) => {
+    await world.tasksInstance(slug);
+    const got = await knock(world, slug, bearerOf(world, agent));
+    expect(got.status, got.text).toBe(200);
+    (clientAuth(world).seen.opened as { slug: string; id: string }[]).push({ slug, id: got.sessionId! });
+  },
+);
+
+Then(
+  'the least recent session of agent {word} no longer exists, and the {int} others still work',
+  async (world: SynoikiaWorld, agent: string, others: number) => {
+    const [first, ...rest] = clientAuth(world).seen.opened as { slug: string; id: string }[];
+    expect(await ping(world, first!.slug, bearerOf(world, agent), first!.id)).toMatchObject({ status: 404 });
+    expect(rest).toHaveLength(others);
+    for (const s of rest)
+      expect(await ping(world, s.slug, bearerOf(world, agent), s.id)).toMatchObject({ status: 200 });
+  },
+);
+
 Then(
   'all {int} sessions of agent {word} on {string} still work',
   async (world: SynoikiaWorld, n: number, agent: string, slug: string) => {
