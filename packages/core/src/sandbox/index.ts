@@ -69,7 +69,7 @@ class Budget implements BudgetControl {
   constructor(
     totalMs: number,
     private readonly onExpire: () => void,
-    private readonly cpuMs: () => number = () => 0,
+    private readonly cpuMs: () => number,
   ) {
     this.remaining = totalMs;
   }
