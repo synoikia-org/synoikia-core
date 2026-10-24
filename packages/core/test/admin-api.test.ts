@@ -14,7 +14,6 @@ import {
   users,
 } from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
-import { updateSettings } from '../src/settings.js';
 import { CORE_VERSION } from '../src/version.js';
 import { eq } from 'drizzle-orm';
 import { browser } from './admin-client.js';
@@ -73,15 +72,6 @@ describe('setup, login and sessions', () => {
     t.ctx.users.setDisabled(off.id, true);
     expect(await signIn('sub-22', 'user22@acme.example')).toBe('/login?error=oidc_not_allowed');
     expect(t.ctx.users.get(off.id)).toMatchObject({ oidcSubject: null, oidcEmail: 'user22@acme.example' });
-  });
-
-  it('counts only an SSO account that signed in as a way in once local login is off', async () => {
-    const t = await setup();
-    await signedIn(t);
-    const sso = await t.ctx.users.create({ username: 'user21', kind: 'sso', oidcEmail: 'user21@acme.example' });
-    expect(t.ctx.users.hasSsoAccount()).toBe(false);
-    t.ctx.users.bindOidc(sso.id, 'https://idp.example.com', 'sub-21');
-    expect(t.ctx.users.hasSsoAccount()).toBe(true);
   });
 
   it('gives an SSO account no password and no app', async () => {
@@ -228,7 +218,7 @@ describe('deleting users', () => {
     });
   });
 
-  it('refuses to delete yourself, the last admin, the last user or the last SSO user', async () => {
+  it('refuses to delete yourself, the last admin or the last user', async () => {
     const t = await withVictim();
     const refused = async (id: string, error: string) =>
       expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
@@ -239,12 +229,7 @@ describe('deleting users', () => {
     const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);
     expect(() => t.ctx.users.delete(t.me)).toThrow(expect.objectContaining({ code: 'last_admin' }));
 
-    const sso = (await t.ctx.users.create({ username: 'sso', kind: 'sso', oidcEmail: 'sso@acme.example' })).id;
-    t.ctx.users.bindOidc(sso, 'https://idp.example.com', 'sub-1');
-    updateSettings(t.ctx.db, 'security', { disableLocalLogin: true });
-    await refused(sso, 'local_login_disabled');
     expect((await t.b.del(`/api/users/${viewer}`)).status).toBe(204);
-    expect(t.ctx.users.get(sso)).toMatchObject({ oidcSubject: 'sub-1' });
   });
 });
 

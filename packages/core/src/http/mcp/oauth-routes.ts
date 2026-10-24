@@ -10,7 +10,7 @@ import type { SessionLimits, ValidSession } from '../../auth/sessions.js';
 import { randomToken, safeEqual, sha256, signPayload, verifyPayload } from '../../auth/tokens.js';
 import { ServiceError } from '../../errors.js';
 import { getSettings } from '../../settings.js';
-import { localLoginEnabled } from '../admin/auth.js';
+import { localLoginEnabled, passwordSignInAllowed } from '../admin/auth.js';
 import { clientIp, isSecure } from '../common.js';
 import { consentPage, errorPage, loginPage, totpPage } from './pages.js';
 
@@ -351,9 +351,10 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     const continueTo = safeContinue(body.continue);
     if (!checkUiCsrf(c, body.csrf))
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Your form expired; try again.', 401);
-    if (!localLoginEnabled(ctx)) return renderLogin(ctx, c, continueTo, 'Sign in', 'Use single sign-on.', 401);
     const ip = clientIp(c, ctx.config.TRUST_PROXY);
     const username = String(body.username ?? '').slice(0, 64);
+    if (!passwordSignInAllowed(ctx, username))
+      return renderLogin(ctx, c, continueTo, 'Sign in', 'Use single sign-on.', 401);
     if (!ctx.throttle.allowIp(ip) || ctx.throttle.lockedFor(username, 'mcp') > 0) {
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Too many attempts; try again later.', 429);
     }

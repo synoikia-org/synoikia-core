@@ -136,10 +136,19 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
 
   const events = new CoreEvents();
   const users = new UserService(db, secrets, opts.passwordHashCost, now);
-  const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD);
-  if (boot === 'created')
+  // The start-up admin is the way back in for the primary owner (ADR-0025); a name of another account stops the start.
+  const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD, {
+    resetTwoFactor: config.ADMIN_BOOTSTRAP_RESET_2FA,
+  });
+  if (boot.status === 'created')
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
-  if (boot === 'ignored') warnings.push('ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored — remove it');
+  if (boot.status === 'owner_made')
+    warnings.push(`Made the primary owner "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
+  if (boot.status === 'owner_kept')
+    warnings.push(
+      `ADMIN_BOOTSTRAP_* ${boot.changed.length ? `set the ${boot.changed.join(', ')} of` : 'matches'} the primary owner "${config.ADMIN_BOOTSTRAP_USERNAME}"; remove it once the owner is in`,
+    );
+  if (!users.owner()) warnings.push('The server has no primary owner: set ADMIN_BOOTSTRAP_USERNAME and _PASSWORD');
 
   const log = opts.log ?? createLogger(config.LOG_LEVEL);
   const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
@@ -324,5 +333,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   };
   // Grants from before instance binding (ADR-0009) get the ids their slugs name today.
   ctx.oauth.backfillInstanceIds(instances.list());
+  // A new owner password from the start-up settings ends the sessions that the old one opened.
+  if (boot.ownerId && boot.changed.includes('password')) ctx.sessions.revokeUser(boot.ownerId);
   return ctx;
 }

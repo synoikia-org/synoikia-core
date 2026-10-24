@@ -33,7 +33,10 @@ Given(
       db.exec(
         'DROP INDEX users_oidc_email_idx; ALTER TABLE users DROP COLUMN kind; ALTER TABLE users DROP COLUMN oidc_email;',
       );
-      db.exec('DELETE FROM __drizzle_migrations WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations)');
+      db.exec('DROP INDEX users_owner_idx; ALTER TABLE users DROP COLUMN owner;');
+      db.exec(
+        'DELETE FROM __drizzle_migrations WHERE created_at IN (SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 2)',
+      );
     });
   },
 );
@@ -64,3 +67,27 @@ Then(
     ]);
   },
 );
+
+// ── an upgrade to the primary owner (ADR-0025) ──
+
+Given('the admin and then user 15 were local admins before the upgrade', async (world: SynoikiaWorld) => {
+  const username = 'user15@acme.example';
+  await world.expectOk(
+    world.admin.post('/api/users', { username, password: `${username} world passphrase`, roleId: 'admin' }),
+    'create the second admin',
+  );
+  await world.stopCore();
+  // The data file of an earlier release: no primary owner yet.
+  world.editDataFile((db) => {
+    db.exec('DROP INDEX users_owner_idx; ALTER TABLE users DROP COLUMN owner;');
+    db.exec('DELETE FROM __drizzle_migrations WHERE created_at = (SELECT max(created_at) FROM __drizzle_migrations)');
+  });
+});
+
+Then('the user list marks the admin as the primary owner', async (world: SynoikiaWorld) => {
+  const list = (await world.expectOk(world.admin.get('/api/users'), 'list users')) as unknown as {
+    username: string;
+    owner: boolean;
+  }[];
+  expect(list.filter((u) => u.owner).map((u) => u.username)).toEqual([world.person('admin').username]);
+});

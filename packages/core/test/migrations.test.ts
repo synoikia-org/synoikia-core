@@ -485,7 +485,11 @@ describe('0020 account kinds migration', () => {
     expect(user('sso')).toMatchObject({ kind: 'sso', oidcSubject: 'sub-12' });
     expect(user('stale')).toMatchObject({ kind: 'local', passwordHash: 'hash', oidcIssuer: null, oidcSubject: null });
     expect(user('local')).toMatchObject({ kind: 'local', passwordHash: 'hash' });
-    const audit = db.select().from(schema.auditLog).all();
+    const audit = db
+      .select()
+      .from(schema.auditLog)
+      .all()
+      .filter((r) => r.decision !== 'owner_set');
     expect(audit.map((r) => [r.decision, r.actorId])).toEqual([
       ['password_removed_sso_account', 'both'],
       ['password_removed_sso_account', 'app'],
@@ -511,5 +515,32 @@ describe('0020 account kinds migration', () => {
       passwordHash: 'hash',
       oidcSubject: null,
     });
+  });
+});
+
+describe('0021 primary owner migration', () => {
+  it('makes the oldest local admin with a password the owner, and nobody without one', () => {
+    const { dir, sqlite } = databaseAt('0020_account_kinds');
+    sqlite.exec(`
+      INSERT INTO users (id, username, password_hash, kind, role_id, created_at) VALUES
+        ('sso', 'user12', NULL, 'sso', 'admin', 500),
+        ('old', 'admin', 'hash', 'local', 'admin', 1000),
+        ('new', 'user15', 'hash', 'local', 'admin', 2000);
+    `);
+    sqlite.close();
+
+    const db = openDatabase({ dataDir: dir });
+    const owners = db.select().from(schema.users).where(eq(schema.users.owner, true)).all();
+    expect(owners.map((u) => u.id)).toEqual(['old']);
+    expect(db.select().from(schema.auditLog).all()).toMatchObject([
+      { decision: 'owner_set', actorId: 'old', detail: { username: 'admin', migration: '0021_primary_owner' } },
+    ]);
+
+    const { dir: none, sqlite: empty } = databaseAt('0020_account_kinds');
+    empty.exec(
+      `INSERT INTO users (id, username, kind, role_id, created_at) VALUES ('sso', 'user12', 'sso', 'admin', 1);`,
+    );
+    empty.close();
+    expect(openDatabase({ dataDir: none }).select().from(schema.users).get()).toMatchObject({ owner: false });
   });
 });

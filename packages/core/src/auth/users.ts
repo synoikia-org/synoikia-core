@@ -42,6 +42,8 @@ export interface PublicUser {
   id: string;
   username: string;
   kind: AccountKind;
+  /** The primary owner, the way back in (ADR-0025). */
+  owner: boolean;
   /** The address an SSO account waits for until its first sign-in (ADR-0025). */
   oidcEmail: string | null;
   totpEnabled: boolean;
@@ -60,6 +62,7 @@ const toPublicUser = (u: UserRow, role: PublicRole): PublicUser => ({
   id: u.id,
   username: u.username,
   kind: u.kind,
+  owner: u.owner,
   oidcEmail: u.oidcEmail,
   totpEnabled: u.totpEnabled,
   oidcLinked: !!u.oidcSubject,
@@ -178,7 +181,7 @@ export class UserService {
   async create(
     input: { username: string; password?: string; roleId?: string; kind?: AccountKind; oidcEmail?: string },
     actor: { userId?: string } = {},
-    opts: { onlyIfFirst?: boolean; source?: RegistrationSource } = {},
+    opts: { onlyIfFirst?: boolean; owner?: boolean; source?: RegistrationSource } = {},
   ): Promise<PublicUser> {
     const roleId = input.roleId ?? ADMIN_ROLE_ID;
     if (!this.db.select({ id: roles.id }).from(roles).where(eq(roles.id, roleId)).get())
@@ -209,6 +212,8 @@ export class UserService {
       id: randomUUID(),
       username,
       kind,
+      // The first account is the primary owner (ADR-0025).
+      owner: !!(opts.onlyIfFirst || opts.owner),
       oidcEmail: oidcEmail ?? null,
       passwordHash: input.password ? await hash(input.password, this.hashCost) : null,
       createdAt: new Date(),
@@ -297,12 +302,68 @@ export class UserService {
     return this.create({ username, password }, {}, { onlyIfFirst: true });
   }
 
-  /** `ADMIN_BOOTSTRAP_*`: create the first user on boot if none exist; ignored afterwards. */
-  async bootstrap(username?: string, password?: string): Promise<'created' | 'ignored' | 'not_configured'> {
-    if (!username || !password) return 'not_configured';
-    if (this.count() > 0) return 'ignored';
-    await this.create({ username, password }, {}, { onlyIfFirst: true });
-    return 'created';
+  /** The primary owner, if the server has one (ADR-0025). */
+  owner(): UserRow | undefined {
+    return this.db.select().from(users).where(eq(users.owner, true)).get();
+  }
+
+  /** `ADMIN_BOOTSTRAP_*` at start (ADR-0025): the first user on an empty server, the owner on a server without one,
+   * and otherwise the owner's name and password, and on request no TOTP. A name of another account stops the start. */
+  async bootstrap(
+    username?: string,
+    password?: string,
+    opts: { resetTwoFactor?: boolean } = {},
+  ): Promise<{
+    status: 'not_configured' | 'created' | 'owner_made' | 'owner_kept';
+    changed: string[];
+    ownerId?: string;
+  }> {
+    if (!username || !password) return { status: 'not_configured', changed: [] };
+    if (this.count() === 0) {
+      const created = await this.create({ username, password }, {}, { onlyIfFirst: true });
+      return { status: 'created', changed: [], ownerId: created.id };
+    }
+    const owner = this.owner();
+    if (!owner) {
+      const made = await this.create({ username, password }, {}, { owner: true });
+      return { status: 'owner_made', changed: [], ownerId: made.id };
+    }
+    const changed: string[] = [];
+    if (username !== owner.username) {
+      const taken = this.byUsernameInsensitive(username);
+      if (taken && taken.id !== owner.id)
+        throw new ConflictError(
+          'owner_name_taken',
+          `ADMIN_BOOTSTRAP_USERNAME "${username}" belongs to another account`,
+        );
+      if (!USERNAME.test(username))
+        throw new ValidationError('invalid_username', 'ADMIN_BOOTSTRAP_USERNAME is not a valid username');
+      this.db.transaction((tx) => {
+        tx.update(users).set({ username }).where(eq(users.id, owner.id)).run();
+        writeAudit(tx, {
+          kind: 'auth',
+          decision: 'owner_renamed',
+          actorKind: 'system',
+          actorId: owner.id,
+          detail: { from: owner.username, to: username },
+        });
+      });
+      changed.push('name');
+    }
+    if (!owner.passwordHash || !(await verify(owner.passwordHash, password).catch(() => false))) {
+      checkPasswordPolicy(password);
+      const passwordHash = await hash(password, this.hashCost);
+      this.db.transaction((tx) => {
+        tx.update(users).set({ passwordHash }).where(eq(users.id, owner.id)).run();
+        writeAudit(tx, { kind: 'auth', decision: 'owner_password_set', actorKind: 'system', actorId: owner.id });
+      });
+      changed.push('password');
+    }
+    if (opts.resetTwoFactor && owner.totpEnabled) {
+      this.resetTotp(owner.id);
+      changed.push('two-factor');
+    }
+    return { status: 'owner_kept', changed, ownerId: owner.id };
   }
 
   async verifyPassword(username: string, password: string): Promise<UserRow | null> {
@@ -360,13 +421,12 @@ export class UserService {
     });
   }
 
-  /** Refuses a delete that would leave no user, no enabled admin or (local login off) no SSO user. */
+  /** Refuses a delete that would leave no user or no enabled admin. */
   assertDeletable(userId: string) {
     const user = this.get(userId);
     if (this.count() === 1) throw new ConflictError('last_user', 'You cannot delete the last user');
     if (user.roleId === ADMIN_ROLE_ID && !user.disabled && this.otherAdmins(userId) === 0)
       throw new ConflictError('last_admin', 'You cannot delete the last enabled admin');
-    this.assertSsoRemains({ losingUser: userId });
     return user;
   }
 
@@ -571,28 +631,6 @@ export class UserService {
         detail: { username: user.username, issuer, subject },
       });
     });
-  }
-
-  /** While local login is off, refuse any change that would leave no enabled SSO account (ADR-0008). */
-  assertSsoRemains(change: { oidcOff?: boolean; losingUser?: string }) {
-    if (!getSettings(this.db, 'security').disableLocalLogin) return;
-    if (change.oidcOff || !this.hasSsoAccount(change.losingUser)) {
-      throw new ConflictError(
-        'local_login_disabled',
-        'Local login is disabled, so this would lock everyone out. Re-enable local login first.',
-      );
-    }
-  }
-
-  hasSsoAccount(except?: string): boolean {
-    return (
-      this.db
-        .select()
-        .from(users)
-        .all()
-        // An account that waits for its first sign-in is no way in yet: its address may never arrive.
-        .some((u) => u.kind === 'sso' && !!u.oidcSubject && !u.disabled && u.id !== except)
-    );
   }
 
   // ── the user's own endpoints (ADR-0010) ──

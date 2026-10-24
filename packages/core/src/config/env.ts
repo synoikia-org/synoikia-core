@@ -65,7 +65,8 @@ const EnvSchema = z
     ADMIN_UI_DIR: z.string().default(path.join(workspaceRoot, 'packages/admin-ui/dist')),
     ADMIN_BOOTSTRAP_USERNAME: z.string().optional(),
     ADMIN_BOOTSTRAP_PASSWORD: z.string().optional(),
-    ADMIN_FORCE_LOCAL_LOGIN: bool,
+    /** With the start-up admin, removes the primary owner's TOTP app at each start (ADR-0025). */
+    ADMIN_BOOTSTRAP_RESET_2FA: bool,
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   })
   .refine((e) => e.MCP_PORT === 0 || e.MCP_PORT !== e.ADMIN_PORT, {
