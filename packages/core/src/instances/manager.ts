@@ -77,6 +77,8 @@ export interface ManagerOptions {
     rpcTimeoutMs?: number;
     /** How often core looks for idle instances (ADR-0022). */
     idleSweepMs?: number;
+    /** The least time between two syncs that change reports trigger (ADR-0011); a minute by default. */
+    changeSyncIntervalMs?: number;
   };
   /** The total of sandbox runs at once (ADR-0003); without it, 16. */
   runTotal?: () => number;
@@ -95,6 +97,8 @@ interface Live {
   /** The cold start of an idle instance that every caller waits for. */
   waking?: Promise<void>;
   catalogChangedTimer?: NodeJS.Timeout;
+  /** When a change report last started a sync, on the wall clock. */
+  lastChangeSync?: number;
   /** The running child's bundle version, read from its manifest.json just before each fork; the catalog
    * must have been synced from it (`ensureFresh`). */
   version?: string;
@@ -852,12 +856,16 @@ export class InstanceManager {
 
   // ── sync scheduling (@id:catalog-sync-schedule) ───────────────────────────────────────────────────────────────
 
-  private scheduleSync(instanceId: string, delayMs = 2000) {
+  /** A change report syncs within 2 s, but at most once a minute for each instance (ADR-0011). Later reports
+   * join the sync that is planned, so a plugin can neither flood core with syncs nor hold one off. */
+  private scheduleSync(instanceId: string) {
     const live = this.live.get(instanceId);
-    if (!live) return;
-    clearTimeout(live.catalogChangedTimer);
+    if (!live || live.catalogChangedTimer) return;
+    const interval = this.opts.supervisor?.changeSyncIntervalMs ?? 60_000;
+    const delayMs = Math.max(2000, (live.lastChangeSync ?? -Infinity) + interval - Date.now());
     live.catalogChangedTimer = setTimeout(() => {
       live.catalogChangedTimer = undefined;
+      live.lastChangeSync = Date.now();
       void this.syncNow(instanceId).catch(() => undefined);
     }, delayMs);
   }
