@@ -62,9 +62,11 @@ Choose **Sign out all approval browsers** when you lose a device, or use a share
 
 Enter your **Current password**, then the **New password** twice. A new password needs at least 12 characters. A change signs out your other sessions.
 
-## Link single sign-on
+The primary owner cannot change the password here while the start-up settings of the server set it. Each page then asks to remove `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD`. Remove them, then restart the server.
 
-This section shows when the server offers single sign-on. Choose **Link** to sign in with that account too. To unlink it, you need a password on your account first.
+## Sign in with single sign-on
+
+An SSO account signs in only with single sign-on. Your identity provider keeps its password and its two-factor sign-in, so this page shows neither. To sign in with a password instead, ask an admin for a local account.
 
 ## Users who lose their second factor {admin}
 

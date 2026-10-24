@@ -31,9 +31,9 @@ A longer approval sign-in means fewer sign-ins for people who approve calls. A s
 4. Keep the **Scopes** `openid email profile`, unless your provider needs more.
 5. Optionally, change the **Button label** that the sign-in page shows.
 6. Choose **Save single sign-on**.
-7. Ask each user to sign in with their password and link single sign-on on My profile.
+7. On the Users page, add an SSO account for each person, with their address at the identity provider.
 
-Without an issuer and a client ID, single sign-on does not turn on. An identity that no user linked cannot sign in, unless automatic accounts are on.
+Without an issuer and a client ID, single sign-on does not turn on. An identity that no SSO account has cannot sign in, unless automatic accounts are on. A local account never signs in with single sign-on.
 
 ## Choose who may sign in with single sign-on
 
@@ -43,7 +43,7 @@ Under **Who may sign in**, an identity may sign in when it matches one entry. **
 - An address counts only when the provider says that it is verified.
 - **Allowed subjects** takes the `sub` values of the provider.
 
-With all three empty, every identity that a user linked may sign in. The policy also applies to users who linked before you set it.
+With all three empty, every identity that has an SSO account may sign in. The policy also applies to SSO accounts that signed in before you set it.
 
 ## Let only one OIDC group sign in
 
@@ -79,14 +79,12 @@ If you pick Admin, you must type `ADMIN` to save. Each new account then administ
 
 ## Turn off password sign-in
 
-Select **Disable password sign-in (single sign-on only)** and save. This needs single sign-on on, and at least one linked user.
-
-Before you do this, sign in once with single sign-on yourself. While password sign-in is off, Synoikia refuses each change that leaves no linked user who can sign in. That includes turning single sign-on off, unlinking, and disabling or deleting the last linked user.
+Select **Disable password sign-in (single sign-on only)** and save. Every local account must then use single sign-on, except the primary owner. The owner still signs in with a password, with **Sign in with admin account** on the sign-in page. So the server always has a way in.
 
 ## If nobody can sign in
 
 - A name is locked for 15 minutes after five wrong passwords or codes. Wait, then try again.
-- If single sign-on fails while password sign-in is off, restart the server with `ADMIN_FORCE_LOCAL_LOGIN=true`. Password sign-in then works again.
-- A linked user without a password cannot unlink. Set a password for them on the Users page first.
+- If single sign-on fails while password sign-in is off, the primary owner signs in with **Sign in with admin account**.
+- If the owner lost the password, set `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD`, and restart the server. The start sets the owner's name and password. `ADMIN_BOOTSTRAP_RESET_2FA=true` also removes the owner's authenticator app. Remove the settings once the owner is in.
 - A refused single sign-on is in the audit log. Check the policy under **Who may sign in**.
 - The portal answers only to `localhost`, IP addresses, the host of `PUBLIC_ADMIN_URL` and the names in `ADMIN_ALLOWED_HOSTS`. Another host name is refused, so add it there.
