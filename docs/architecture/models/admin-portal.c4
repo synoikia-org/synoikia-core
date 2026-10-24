@@ -1,0 +1,24 @@
+model {
+  extend synoikia.adminPortal {
+    pages = component 'Pages' {
+      technology 'views/, layouts/, components/'
+      description 'The pages, dialogs and menu in which admins and users manage Synoikia.'
+    }
+    help = component 'Help' {
+      technology 'help/*.md, MarkdownLite, MiniSearch'
+      description 'The help topics of the pages, built into the portal, with the drawer that shows and searches them.'
+    }
+  }
+
+  admin -> synoikia.adminPortal.pages 'configures instances, roles, plugins and settings'
+  user -> synoikia.adminPortal.pages 'sets personal levels and grants'
+  admin -> synoikia.adminPortal.help 'reads the help of a page in'
+  user -> synoikia.adminPortal.help 'reads the help of a page in'
+  synoikia.adminPortal.pages -> synoikia.adminPortal.help 'opens the topic of the current page, or one heading of it, in'
+  synoikia.adminPortal.pages -> synoikia.core 'reads and changes configuration' {
+    technology 'Admin API, HTTPS'
+  }
+  synoikia.adminPortal.help -> synoikia.core 'reads the server version from the overview' {
+    technology 'Admin API, HTTPS'
+  }
+}

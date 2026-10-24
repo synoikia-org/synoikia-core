@@ -2,7 +2,6 @@
 import { computed, ref, useId } from 'vue';
 import { errorText } from '../../api';
 import { latestError } from '../../composables/useApiMutation';
-import InfoTip from '../../components/InfoTip.vue';
 import { useConfirm } from '../../composables/useConfirm';
 import { useOverviewQuery } from '../../composables/useOverview';
 import {
@@ -38,21 +37,18 @@ const error = computed(() => {
   );
 });
 
-const ENDPOINT_SWITCHES: { key: keyof EndpointSwitches; label: string; help: string }[] = [
+const ENDPOINT_SWITCHES: { key: keyof EndpointSwitches; label: string }[] = [
   {
     key: 'canSetOwnLevels',
     label: 'Set personal levels',
-    help: 'Users set personal levels for their own calls on this endpoint, up to the role maximum.',
   },
   {
     key: 'canManageOwnRules',
     label: 'Own pre-approval rules',
-    help: 'Users add pre-approval rules on this endpoint that apply only to their own calls.',
   },
   {
     key: 'canSeeStatus',
     label: 'See endpoint status',
-    help: 'Users see the health, plugin and sync state of this endpoint, and every operation, also those at None.',
   },
 ];
 
@@ -88,11 +84,7 @@ const toggleEndpoint = async (r: RoleRow, i: { id: string; slug: string }, box: 
 
 <template>
   <div class="stack">
-    <p class="small muted">
-      Admins do all administration and set the levels of each endpoint. Every other role gets the endpoints you pick
-      here, at most the levels you set for it on each endpoint's Access page. New endpoints and new groups start at None
-      for every role.
-    </p>
+    <p class="small muted">Each role other than Admin reaches the endpoints that you pick here.</p>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
     <form class="row add" @submit.prevent="create">
       <div class="field grow">
@@ -170,7 +162,6 @@ const toggleEndpoint = async (r: RoleRow, i: { id: string; slug: string }, box: 
                   />
                   {{ sw.label }}
                 </label>
-                <InfoTip :text="sw.help" :label="`About ${sw.label}`" />
               </span>
             </div>
           </li>

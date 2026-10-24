@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpButton from '../../components/HelpButton.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useOverviewQuery } from '../../composables/useOverview';
@@ -48,6 +49,7 @@ const tabs = [
             <template v-if="!instance.enabled"> · <strong>disabled</strong></template>
           </p>
         </div>
+        <HelpButton />
       </div>
       <p v-if="instance.statusError" class="alert error" role="alert">{{ instance.statusError }}</p>
       <nav class="tabs" aria-label="Endpoint sections">

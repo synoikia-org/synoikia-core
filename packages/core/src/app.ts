@@ -36,6 +36,7 @@ import type { FetchBytes } from './plugins/repos.js';
 import { ExecutionRegistry } from './runtime/executions.js';
 import { sandboxesRunning, sandboxTotal } from './runtime/index.js';
 import { normalizeStoredSettings } from './settings.js';
+import { CORE_VERSION } from './version.js';
 
 /** Wires every core service once (ADR-0015): one database, approval service and event bus for
  * both listeners, the scheduler and tests. */
@@ -58,6 +59,8 @@ export interface AppContext {
   oauth: OAuthService;
   /** Client names seen at MCP `initialize` (@id:client-policy). */
   seenClients: SeenClients;
+  /** The version the overview reports: the core's own, or the one a test sets. */
+  version: string;
   instances: InstanceManager;
   approvals: ApprovalService;
   /** Session grants (ADR-0006). */
@@ -115,6 +118,8 @@ export interface AppOptions {
   passwordHashCost?: PasswordHashCost;
   /** Tests only: the key set of an external provider's domain, in place of the one it publishes; undefined fetches it. */
   externalKeys?: ExternalKeys;
+  /** Tests only: the version the overview reports, in place of the core's own. */
+  version?: string;
 }
 
 export async function createAppContext(config: Config, opts: AppOptions = {}): Promise<AppContext> {
@@ -232,6 +237,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     tokens: new McpTokenService(db, now),
     oauth: new OAuthService(db, now),
     seenClients: new SeenClients(now),
+    version: opts.version ?? CORE_VERSION,
     instances,
     approvals,
     grants,

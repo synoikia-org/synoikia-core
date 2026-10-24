@@ -162,10 +162,7 @@ async function remove() {
             max="24"
             aria-describedby="s-grant-help"
           />
-          <p id="s-grant-help" class="help">
-            0 turns it off. While a session approval is active, every Ask operation of that client on this endpoint runs
-            without asking, except locked ones and ones that need a typed confirmation.
-          </p>
+          <p id="s-grant-help" class="help">0 turns it off.</p>
         </div>
       </div>
       <InSessionApprovalsField v-model="form.formApprovals" />

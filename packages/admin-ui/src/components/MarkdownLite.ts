@@ -24,7 +24,8 @@ export function parseBlocks(source: string): Block[] {
   return blocks;
 }
 
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g;
+// Prettier writes *em* as _em_, so both mark emphasis. An underscore inside a word does not.
+const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|(?<!\w)_[^_\s][^_]*_(?!\w))/g;
 
 function renderInline(text: string): (string | VNode)[] {
   return text
@@ -33,7 +34,7 @@ function renderInline(text: string): (string | VNode)[] {
     .map((part) => {
       if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return h('code', part.slice(1, -1));
       if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return h('strong', part.slice(2, -2));
-      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) return h('em', part.slice(1, -1));
+      if (/^([*_]).+\1$/.test(part) && part.length > 2) return h('em', part.slice(1, -1));
       return part;
     });
 }

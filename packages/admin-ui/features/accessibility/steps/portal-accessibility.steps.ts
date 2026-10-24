@@ -153,25 +153,9 @@ Then(
   },
 );
 
-Given(
-  "the admin typed {string} in a new rule's reason on {instance} and opened a tip in it",
-  async (world: PortalWorld, reason: string, slug: string) => {
-    await instancePage(world, slug, 'rules');
-    await world.page.getByRole('button', { name: 'New rule' }).click();
-    await dialog(world)
-      .getByRole('listbox', { name: /^Operation/ })
-      .selectOption('tasks.add');
-    await dialog(world)
-      .getByLabel(/^Reason/)
-      .fill(reason);
-    await dialog(world).getByRole('button', { name: 'About the operation' }).click();
-    await seen(dialog(world).getByRole('tooltip'));
-  },
-);
-
 When('the admin hits Escape twice', async (world: PortalWorld) => {
   await world.page.keyboard.press('Escape');
-  await expect.poll(() => dialog(world).getByRole('tooltip').isVisible()).toBe(false);
+  await expect.poll(() => world.page.getByRole('button', { name: 'Close help' }).count()).toBe(0);
   world.noted.afterFirst = JSON.stringify({
     dialogs: await dialog(world).count(),
     reason: await dialog(world)
@@ -179,10 +163,6 @@ When('the admin hits Escape twice', async (world: PortalWorld) => {
       .inputValue(),
   });
   await world.page.keyboard.press('Escape');
-});
-
-Then('the first Escape closed only the tip, with {string} kept', (world: PortalWorld, reason: string) => {
-  expect(JSON.parse(world.noted.afterFirst!)).toEqual({ dialogs: 1, reason });
 });
 
 Then('the second Escape closed the dialog', async (world: PortalWorld) => {

@@ -19,7 +19,7 @@ export default mergeConfig(
             name: 'features',
             environment: 'node',
             include: [
-              '../../features/{accessibility,audit,clients,my-instances,profile,roles,settings,shell,sign-in,users}/*.feature',
+              '../../features/{accessibility,audit,clients,help,my-instances,profile,roles,settings,shell,sign-in,users}/*.feature',
               '../../features/{instances,plugins}/portal-*.feature',
             ],
             globalSetup: ['features/support/build-portal.ts'],

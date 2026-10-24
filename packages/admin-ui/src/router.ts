@@ -35,6 +35,8 @@ declare module 'vue-router' {
     title?: string;
     /** Only the Admin role (ADR-0010); the API refuses the rest anyway. */
     admin?: boolean;
+    /** The help topic of the page, a file in src/help (@id:portal-help). */
+    help?: string;
   }
 }
 
@@ -46,25 +48,33 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     component: AppShell,
     children: [
-      { path: '', component: OverviewView, meta: { title: 'Overview', admin: true } },
-      { path: 'audit', component: AuditView, meta: { title: 'Audit Log', admin: true } },
-      { path: 'plugins', component: PluginsView, meta: { title: 'Plugins', admin: true } },
-      { path: 'clients', component: ClientsView, meta: { title: 'Clients & Tokens', admin: true } },
-      { path: 'endpoints/new', component: NewEndpointView, meta: { title: 'New endpoint', admin: true } },
-      { path: 'my', component: MyEndpointsView, meta: { title: 'My endpoints' } },
-      { path: 'my/:id', component: MyEndpointView, meta: { title: 'Endpoint' } },
-      { path: 'my/:id/about', component: MyEndpointAboutView, meta: { title: 'Endpoint' } },
-      { path: 'profile', component: ProfileView, meta: { title: 'My profile' } },
+      { path: '', component: OverviewView, meta: { title: 'Overview', admin: true, help: 'overview' } },
+      { path: 'audit', component: AuditView, meta: { title: 'Audit Log', admin: true, help: 'audit' } },
+      { path: 'plugins', component: PluginsView, meta: { title: 'Plugins', admin: true, help: 'plugins' } },
+      { path: 'clients', component: ClientsView, meta: { title: 'Clients & Tokens', admin: true, help: 'clients' } },
+      {
+        path: 'endpoints/new',
+        component: NewEndpointView,
+        meta: { title: 'New endpoint', admin: true, help: 'new-endpoint' },
+      },
+      { path: 'my', component: MyEndpointsView, meta: { title: 'My endpoints', help: 'my-endpoints' } },
+      { path: 'my/:id', component: MyEndpointView, meta: { title: 'Endpoint', help: 'my-endpoint' } },
+      { path: 'my/:id/about', component: MyEndpointAboutView, meta: { title: 'Endpoint', help: 'my-endpoint' } },
+      { path: 'profile', component: ProfileView, meta: { title: 'My profile', help: 'profile' } },
       {
         path: 'endpoints/:slug',
         component: InstanceLayout,
         meta: { admin: true },
         children: [
           { path: '', redirect: (to) => `/endpoints/${String(to.params.slug)}/connection` },
-          { path: 'connection', component: ConnectionView, meta: { title: 'Connection' } },
-          { path: 'access', component: AccessPage, meta: { title: 'Access' } },
-          { path: 'rules', component: RulesView, meta: { title: 'Pre-Approval Rules' } },
-          { path: 'settings', component: InstanceSettingsView, meta: { title: 'Endpoint Settings' } },
+          { path: 'connection', component: ConnectionView, meta: { title: 'Connection', help: 'connection' } },
+          { path: 'access', component: AccessPage, meta: { title: 'Access', help: 'access' } },
+          { path: 'rules', component: RulesView, meta: { title: 'Pre-Approval Rules', help: 'rules' } },
+          {
+            path: 'settings',
+            component: InstanceSettingsView,
+            meta: { title: 'Endpoint Settings', help: 'endpoint-settings' },
+          },
         ],
       },
       // Old links to the profile page; keep the query.
@@ -76,13 +86,21 @@ const routes: RouteRecordRaw[] = [
         children: [
           { path: '', redirect: '/settings/client-auth' },
           { path: 'mcp', redirect: '/settings/client-auth' },
-          { path: 'client-auth', component: ClientAuthView, meta: { title: 'Client auth' } },
+          { path: 'client-auth', component: ClientAuthView, meta: { title: 'Client auth', help: 'client-auth' } },
           { path: 'security', redirect: '/settings/user-auth' },
-          { path: 'user-auth', component: UserAuthView, meta: { title: 'User auth' } },
-          { path: 'users', component: UsersView, meta: { title: 'Users' } },
-          { path: 'roles', component: RolesView, meta: { title: 'Roles' } },
-          { path: 'notifications', component: NotificationsView, meta: { title: 'Notifications' } },
-          { path: 'server', component: ServerSettingsView, meta: { title: 'Server settings' } },
+          { path: 'user-auth', component: UserAuthView, meta: { title: 'User auth', help: 'user-auth' } },
+          { path: 'users', component: UsersView, meta: { title: 'Users', help: 'users' } },
+          { path: 'roles', component: RolesView, meta: { title: 'Roles', help: 'roles' } },
+          {
+            path: 'notifications',
+            component: NotificationsView,
+            meta: { title: 'Notifications', help: 'notifications' },
+          },
+          {
+            path: 'server',
+            component: ServerSettingsView,
+            meta: { title: 'Server settings', help: 'server-settings' },
+          },
         ],
       },
     ],

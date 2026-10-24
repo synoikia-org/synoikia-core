@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpButton from '../components/HelpButton.vue';
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { errorText } from '../api';
@@ -17,6 +18,7 @@ const error = computed(() => (loadError.value ? errorText(loadError.value) : und
         <h1 class="mono">/{{ about?.slug ?? '…' }}</h1>
         <p class="sub">{{ about ? `${about.displayName} · ${about.plugin}` : '' }}</p>
       </div>
+      <HelpButton />
     </div>
     <div class="stack" :aria-busy="loading">
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>

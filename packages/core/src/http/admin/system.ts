@@ -9,7 +9,6 @@ import { CORE_EVENT_NAMES } from '../../events.js';
 import { effectiveAuthMethods } from '../../instances/manager.js';
 import { LIMITS } from '../../plugins/repos.js';
 import { getSettings, isSettingsSection, updateSettings } from '../../settings.js';
-import { CORE_VERSION } from '../../version.js';
 import { readJson } from '../common.js';
 import type { AdminEnv } from './auth.js';
 
@@ -32,7 +31,7 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         .map((p) => ({ id: p.id, pluginId: p.pluginId, status: p.status, enabled: p.enabled })),
       warnings: ctx.warnings,
       publicMcpUrl: ctx.config.PUBLIC_MCP_URL ?? null,
-      version: CORE_VERSION,
+      version: ctx.version,
     });
   });
 

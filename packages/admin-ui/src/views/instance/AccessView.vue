@@ -283,26 +283,6 @@ function status(op: Operation): { text: string; tone: string } {
         Regroup…
       </button>
     </div>
-    <ul class="legend small muted">
-      <li v-for="l in LEVELS" :key="l">
-        <strong>{{ LEVEL_LABELS[l] }}</strong
-        >: {{ LEVEL_HELP[l] }}.
-      </li>
-      <li v-if="!readonly" class="note">
-        Setting a group's level resets every {{ instance.plugin?.labels?.operation?.toLowerCase() ?? 'operation' }} in
-        it to follow; ↺ puts one with its own level back.
-      </li>
-      <li v-if="!scope">New groups start at Ask.</li>
-      <li v-else-if="scope.kind === 'role'">
-        A role never goes above the endpoint's own level. Groups it has no level for, and new ones, are None.
-      </li>
-      <li v-else-if="!readonly">
-        Your role sets the most each one can do; ↺ on a group goes back to your role's level.
-      </li>
-      <li v-if="scope?.kind === 'own' && ops.some((o) => !o.reachable)">
-        Off means your clients can't call it. An administrator can give your role more.
-      </li>
-    </ul>
     <p v-if="pendingTotal" class="alert warn">
       {{ pendingTotal }} new write {{ pendingTotal === 1 ? 'operation is' : 'operations are' }} at Write but still
       {{ pendingTotal === 1 ? 'asks' : 'ask' }} for approval until you acknowledge
@@ -512,14 +492,6 @@ function status(op: Operation): { text: string; tone: string } {
   </div>
 </template>
 <style scoped>
-.legend {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.legend .note {
-  margin-top: 6px;
-}
 .search {
   padding: 8px 11px;
   border: 1px solid var(--border-strong);

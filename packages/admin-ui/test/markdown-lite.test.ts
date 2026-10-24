@@ -12,4 +12,10 @@ describe('MarkdownLite (connection setup help)', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
   });
+
+  it('reads _em_ as emphasis, but not an underscore inside a word', () => {
+    const html = mount(MarkdownLite, { props: { source: 'An _optional_ key such as snake_case_name.' } }).html();
+    expect(html).toContain('<em>optional</em>');
+    expect(html).toContain('snake_case_name');
+  });
 });

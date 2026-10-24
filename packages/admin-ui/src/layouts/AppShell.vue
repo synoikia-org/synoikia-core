@@ -3,7 +3,9 @@ import { useQueryClient } from '@tanstack/vue-query';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BrandLockup from '../components/BrandLockup.vue';
+import HelpDrawer from '../components/HelpDrawer.vue';
 import { announce } from '../composables/useAnnounce';
+import { openHelp, showTopic, useHelp } from '../composables/useHelp';
 import { useMyEndpointsQuery } from '../composables/useMyEndpoints';
 import { useOverviewQuery } from '../composables/useOverview';
 import { pageTitle } from '../format';
@@ -40,6 +42,22 @@ watch(
   },
 );
 
+// The help follows the page; ? opens it anywhere but in a field (@id:portal-help).
+const help = useHelp();
+watch(
+  () => route.meta.help,
+  (topic) => {
+    if (help.open && topic) showTopic(topic);
+  },
+);
+function helpKey(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  if (e.key !== '?' || e.defaultPrevented || !route.meta.help) return;
+  if (t?.closest('input, textarea, select, [contenteditable="true"]')) return;
+  e.preventDefault();
+  openHelp(route.meta.help);
+}
+
 function focusMain() {
   main.value?.focus({ preventScroll: true });
 }
@@ -62,8 +80,12 @@ const adminNav = [
 
 onMounted(() => {
   if (isAdmin) app.connect(queryClient);
+  window.addEventListener('keydown', helpKey);
 });
-onBeforeUnmount(() => app.disconnect());
+onBeforeUnmount(() => {
+  app.disconnect();
+  window.removeEventListener('keydown', helpKey);
+});
 
 async function logout() {
   app.disconnect();
@@ -176,6 +198,7 @@ async function logout() {
     <main id="main" ref="main" class="content" tabindex="-1">
       <RouterView />
     </main>
+    <HelpDrawer />
   </div>
 </template>
 

@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, ref } from 'vue';
-import InfoTip from '../src/components/InfoTip.vue';
 import ModalDialog from '../src/components/ModalDialog.vue';
 
 afterEach(() => {
@@ -18,7 +17,7 @@ const press = (target: Element, key: string, init: KeyboardEventInit = {}) => {
   return event;
 };
 
-/** A page with an "Open" trigger and a dialog holding a name field, an InfoTip and two buttons. */
+/** A page with an "Open" trigger and a dialog holding a name field and two buttons. */
 function mountPage() {
   const root = document.createElement('div');
   root.id = 'app';
@@ -32,10 +31,7 @@ function mountPage() {
           ModalDialog,
           { title: 'Edit thing', onClose: () => (open.value = false) },
           {
-            default: () => [
-              h('input', { id: 'name' }),
-              h(InfoTip, { text: 'Explains the field.', label: 'About the field' }),
-            ],
+            default: () => [h('input', { id: 'name' })],
             footer: () => [h('button', { type: 'button' }, 'Cancel'), h('button', { type: 'button' }, 'Save')],
           },
         ),
@@ -60,25 +56,6 @@ describe('ModalDialog', () => {
     name.addEventListener('keydown', (e) => e.preventDefault(), { once: true });
     press(name, 'Escape');
     await flushPromises();
-    expect(dialog()).not.toBeNull();
-
-    press(name, 'Escape');
-    await flushPromises();
-    expect(dialog()).toBeNull();
-  });
-
-  it('lets Escape hide a hovered InfoTip first, then close the dialog', async () => {
-    await openDialog();
-    const name = document.getElementById('name')!;
-    const tip = document.body.querySelector<HTMLButtonElement>('[aria-label="About the field"]')!;
-    const infotip = tip.closest('.infotip')!;
-    expect(tip.hasAttribute('aria-expanded')).toBe(false);
-    infotip.dispatchEvent(new MouseEvent('mouseenter'));
-    await flushPromises();
-
-    expect(press(name, 'Escape').defaultPrevented).toBe(true);
-    await flushPromises();
-    expect(infotip.classList.contains('dismissed')).toBe(true);
     expect(dialog()).not.toBeNull();
 
     press(name, 'Escape');

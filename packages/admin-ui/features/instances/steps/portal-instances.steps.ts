@@ -840,15 +840,31 @@ When('the admin starts a rule for {string} on {instance}', async (world: PortalW
 });
 
 Then(
-  'every setting in the rule editor has a tip, and the tip of the operation mentions {string}',
+  'the help of the rules explains every setting of the rule editor, and its part on the operation mentions {string}',
   async (world: PortalWorld, text: string) => {
-    expect(
-      await dialog(world)
-        .getByRole('button', { name: /^About / })
-        .count(),
-    ).toBeGreaterThanOrEqual(10);
-    await dialog(world).getByRole('button', { name: 'About the operation' }).click();
-    await seen(dialog(world).getByRole('tooltip').filter({ hasText: text }));
+    await dialog(world).getByRole('button', { name: 'Help on Only when' }).click();
+    const help = world.page
+      .getByRole('complementary')
+      .filter({ has: world.page.getByRole('button', { name: 'Close help' }) });
+    await seen(help.getByRole('heading', { name: 'Pre-Approval Rules' }));
+    const headings = await help.getByRole('heading', { level: 3 }).allTextContents();
+    for (const setting of [
+      'Operation',
+      'Only when',
+      'Other parameters',
+      'Any other parameters',
+      'Rate limit',
+      'Expires',
+      'Reason',
+      'Enabled',
+    ])
+      expect(headings).toContain(setting);
+    await seen(
+      help
+        .locator('section')
+        .filter({ has: world.page.getByRole('heading', { name: 'Operation', exact: true }) })
+        .filter({ hasText: text }),
+    );
   },
 );
 
