@@ -450,5 +450,14 @@ describe('0019 typed confirmation locks migration', () => {
     expect(rule('r1')).toMatchObject({ enabled: false });
     expect(rule('r1')?.updatedAt).toBeInstanceOf(Date);
     expect(rule('r2')).toMatchObject({ enabled: true });
+    expect(db.select().from(schema.auditLog).all()).toMatchObject([
+      {
+        kind: 'config',
+        instanceId: 'i1',
+        decision: 'rules_disabled_operation_locked',
+        actorKind: 'system',
+        detail: { operations: ['a.archive'], rulesDisabled: 1, migration: '0019_typed_confirmation_locks' },
+      },
+    ]);
   });
 });
