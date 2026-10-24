@@ -9,7 +9,7 @@ import { createMetricsApp } from './http/metrics-app.js';
 export interface RunningServers {
   mcp: { server: Server; port: number };
   admin: { server: Server; port: number };
-  /** Only when METRICS_PORT is set (ADR-0023). */
+  /** Only when METRICS_PORT is set (ADR-0024). */
   metrics?: { server: Server; port: number };
   /** Stops accepting, then waits up to `graceMs` for open requests before cutting their connections. */
   close(graceMs?: number): Promise<void>;
@@ -36,7 +36,7 @@ function close(server: Server, graceMs: number) {
   });
 }
 
-/** Starts the two listeners on separate ports (ADR-0015), and the metrics listener when it is on (ADR-0023). */
+/** Starts the two listeners on separate ports (ADR-0015), and the metrics listener when it is on (ADR-0024). */
 export async function startServers(ctx: AppContext): Promise<RunningServers> {
   const { config } = ctx;
   const mcp = await listen(createMcpApp(ctx), config.MCP_HOST, config.MCP_PORT);
