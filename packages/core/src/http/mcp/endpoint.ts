@@ -38,6 +38,8 @@ import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION
 const SESSION_IDLE_MS = 30 * 60_000;
 /** Open MCP sessions of a principal on one endpoint (ADR-0015); a new one past the cap closes its oldest there. */
 export const MAX_SESSIONS_PER_ENDPOINT = 16;
+/** Open MCP sessions of a principal on all endpoints together (ADR-0015). */
+export const MAX_SESSIONS_PER_PRINCIPAL = 64;
 const SERVER_VERSION = '0.1.0';
 
 interface Session {
@@ -284,12 +286,19 @@ export class McpEndpoints {
 
   /** One principal can't pile up servers on an endpoint: past the cap, its least recently used sessions there go.
    * Runs as the new session is kept, with no await, so opens that resume together cannot pass it (ADR-0015). */
+  /** ADR-0015: past each cap, the least recently used sessions of the principal go, on this endpoint and then on
+   * any. Runs as the new session is kept, with no await, so opens that resume together cannot pass it. */
   private capSessions(principal: string, instanceId: string, kept: string) {
-    const mine = [...this.sessions]
-      .filter(([id, s]) => id !== kept && s.principal === principal && s.instanceId === instanceId)
+    const oldestFirst = [...this.sessions]
+      .filter(([id, s]) => id !== kept && s.principal === principal)
       .sort(([, a], [, b]) => a.lastSeen - b.lastSeen);
-    for (const [id] of mine.slice(0, Math.max(0, mine.length - (MAX_SESSIONS_PER_ENDPOINT - 1))))
-      void this.closeSession(id);
+    const here = oldestFirst.filter(([, s]) => s.instanceId === instanceId);
+    const closing = new Set(
+      here.slice(0, Math.max(0, here.length - (MAX_SESSIONS_PER_ENDPOINT - 1))).map(([id]) => id),
+    );
+    const left = oldestFirst.filter(([id]) => !closing.has(id));
+    for (const [id] of left.slice(0, Math.max(0, left.length - (MAX_SESSIONS_PER_PRINCIPAL - 1)))) closing.add(id);
+    for (const id of closing) void this.closeSession(id);
   }
 
   async closeAll() {
