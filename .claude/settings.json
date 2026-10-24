@@ -25,7 +25,8 @@
   },
   "enabledPlugins": {
     "novibe@nv-plugins": true,
-    "synoikia-core-dev@synoikia-dev-kit": true
+    "synoikia-core-dev@synoikia-dev-kit": true,
+    "security-audit@synoikia-dev-kit": true
   },
   "hooks": {
     "SessionStart": [

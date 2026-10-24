@@ -10,4 +10,4 @@ if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
   # stdout becomes session context; keep the install log out of it.
   pnpm install --frozen-lockfile >&2
 fi
-node .claude/hooks/check-plugins.mjs required novibe synoikia-core-dev
+node .claude/hooks/check-plugins.mjs required novibe synoikia-core-dev security-audit

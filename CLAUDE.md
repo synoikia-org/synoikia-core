@@ -2,7 +2,7 @@
 
 One MCP server for many self-hosted services. Each plugin instance gets its own endpoint exposing `search(code)`, `execute(code)` and `resume(executionId)` (for a call parked on an approval). Every call goes through one sandbox, permission gate, approval flow, redaction and audit log. The security decisions are ADRs in `docs/adrs/`, and the behavior is the feature files in `features/`. The structure is the LikeC4 model in `docs/architecture/`, and other facts are in `docs/reference.md`. Code comments cite an ADR (`ADR-0003`) or a feature `@id`.
 
-[NoVibe](https://github.com/novibe-org/novibe) runs the workflow: its `novibe` plugin and its git hooks in `.githooks/`. The Synoikia skills, rules, agent and hooks come from the `synoikia-core-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). `.claude/settings.json` enables both plugins, and a session start hook says when they are not loaded. This repository needs them. `.claude/guard-paths.json` lists the files that the path guard protects.
+[NoVibe](https://github.com/novibe-org/novibe) runs the workflow: its `novibe` plugin and its git hooks in `.githooks/`. The Synoikia skills, rules, agent and hooks come from the `synoikia-core-dev` plugin of the [Synoikia dev kit](https://github.com/synoikia-org/synoikia-dev-kit). Cloudflare's `security-audit` skill comes from the `security-audit` plugin of the dev kit. `.claude/settings.json` enables the three plugins, and a session start hook says when they are not loaded. This repository needs them. `.claude/guard-paths.json` lists the files that the path guard protects.
 
 ## Layout
 
