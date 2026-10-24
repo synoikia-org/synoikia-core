@@ -422,3 +422,33 @@ describe('0016 client auth methods migration', () => {
     expect(settings).toBeUndefined();
   });
 });
+
+describe('0019 typed confirmation locks migration', () => {
+  it('locks each operation with a typed confirmation, clears its own level and turns its rules off', () => {
+    const { dir, sqlite } = databaseAt('0018_plugin_manual');
+    const now = Date.now();
+    sqlite.exec(`
+      INSERT INTO plugins (id, plugin_id, version, path, manifest, status) VALUES ('p1', 'echo', '1.0.0', '/x', '{}', 'ok');
+      INSERT INTO plugin_instances (id, plugin_id, slug, display_name) VALUES ('i1', 'p1', 'nas', 'NAS');
+      INSERT INTO operation_groups (id, instance_id, key, label, level, first_seen_at) VALUES ('g', 'i1', 'a', 'A', 'write', ${now});
+      INSERT INTO operations (id, instance_id, key, kind, plugin_group, group_id, classification, classification_source,
+          inferred_classification, inferred_reason, typed_confirmation, level_override, write_acknowledged, first_seen_at, last_seen_at)
+        VALUES
+          ('o1', 'i1', 'a.archive', 'method', 'a', 'g', 'write', 'inferred', 'write', 'x', 1, 'write', 1, ${now}, ${now}),
+          ('o2', 'i1', 'a.set', 'method', 'a', 'g', 'write', 'inferred', 'write', 'x', 0, 'write', 1, ${now}, ${now});
+      INSERT INTO pre_approval_rules (id, instance_id, operation_id, reason, created_at)
+        VALUES ('r1', 'i1', 'o1', 'archive', ${now}), ('r2', 'i1', 'o2', 'set', ${now});
+    `);
+    sqlite.close();
+
+    const db = openDatabase({ dataDir: dir });
+    const op = (id: string) => db.select().from(schema.operations).where(eq(schema.operations.id, id)).get();
+    const rule = (id: string) =>
+      db.select().from(schema.preApprovalRules).where(eq(schema.preApprovalRules.id, id)).get();
+    expect(op('o1')).toMatchObject({ locked: true, classificationSource: 'locked', levelOverride: null });
+    expect(op('o2')).toMatchObject({ locked: false, classificationSource: 'inferred', levelOverride: 'write' });
+    expect(rule('r1')).toMatchObject({ enabled: false });
+    expect(rule('r1')?.updatedAt).toBeInstanceOf(Date);
+    expect(rule('r2')).toMatchObject({ enabled: true });
+  });
+});
