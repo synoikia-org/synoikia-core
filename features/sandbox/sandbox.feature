@@ -44,6 +44,12 @@ Feature: Sandbox
       When agent 7 asks for the open tasks of "Groceries"
       Then agent 7 is told that Acme did not answer in time
 
+    Scenario: Code that loops while an approval waits is stopped at the time limit
+      Given a run on "tasks" may take 1 second
+      When the code of agent 7 asks to add "butter" to "Groceries" and loops forever while the add waits for approval
+      Then agent 7 is told that the run went over its time limit
+      And the add of "butter" no longer waits for the admin
+
   Rule: Large results and logs are cut
 
     Scenario: A result over 64 KB is cut to a preview
@@ -53,6 +59,14 @@ Feature: Sandbox
     Scenario: Logs over 16 KB are cut
       When the code of agent 7 logs 100 KB of text
       Then the logs of agent 7 stop at 16 KB
+
+    Scenario: Logs count bytes, so letters of two bytes stop at 16 KB too
+      When the code of agent 7 logs 100 KB of the letter "é"
+      Then the logs of agent 7 stop at 16 KB
+
+    Scenario: Empty log lines count too
+      When the code of agent 7 logs 100,000 empty lines
+      Then agent 7 gets at most 16,384 log lines
 
     Scenario: The preview of a cut result does not show the API token
       Given Acme has a task in "Groceries" whose title quotes the API token

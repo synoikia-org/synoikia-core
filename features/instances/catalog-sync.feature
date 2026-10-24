@@ -36,6 +36,12 @@ Feature: Catalog sync
       When the plugin of "tasks" reports that its catalog changed
       Then the admin sees the saved view "Weekend" in the catalog of "tasks" within 5 seconds
 
+    Scenario: A plugin that reports changes without end is synced at most once a minute
+      Given Acme Tasks runs as the instance "tasks"
+      And the plugin of "tasks" reported that its catalog changed, and core synced it
+      When the plugin of "tasks" reports a change of its catalog each second for 10 seconds
+      Then core did not sync "tasks" again in those 10 seconds, and syncs it once the minute is over
+
   Rule: Bad catalog output changes nothing
 
     Scenario: A catalog with the same operation twice is refused
