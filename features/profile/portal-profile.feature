@@ -12,6 +12,13 @@ Feature: My profile in the portal
       When user 12 opens their profile
       Then the profile shows no password and no two-factor setup, and says that user 12 signs in with "Acme ID"
 
+  Rule: While the start-up admin is set, the portal asks to remove it
+
+    Scenario: The owner sees a banner and no password form
+      Given the operator started the server with the start-up admin "admin"
+      When the admin opens their profile
+      Then each page shows a banner to remove the start-up admin, and the profile has a note in place of the password form
+
   Rule: Own tokens revoke after a question
 
     Scenario: The admin revokes their own token "laptop"

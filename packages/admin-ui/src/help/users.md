@@ -6,17 +6,20 @@ related: roles, user-auth
 
 Use this page to add people, give each one a role, and take access away when needed. Each account has one role. The role decides which endpoints the person and their clients reach.
 
-The **Sign-in** column shows how a person signs in: **password**, **2FA** for an authenticator app, and **SSO** for a linked single sign-on identity.
+The **Sign-in** column shows how a person signs in. A local account has **password**, and **2FA** for an authenticator app. An SSO account has **SSO**, and **not signed in yet** until its first sign-in.
+
+The **primary owner** is the first account of the server. It keeps the password sign-in when password sign-in is off, so the server always has a way in.
 
 ## Add a user
 
 1. Choose **Add user**.
 2. Enter a **Username**. Spaces are not allowed, and names do not depend on case.
-3. Enter a **Password** of at least 12 characters, or leave it empty.
-4. Pick the **Role**. The dialog starts at Admin, so change it for everyone who must not administer the server.
-5. Choose **Add**.
+3. Under **Sign-in**, pick **Local account** or **SSO account**.
+4. For a local account, enter a **Password** of at least 12 characters. For an SSO account, enter the person's address at the identity provider.
+5. Pick the **Role**. The dialog starts at Admin, so change it for everyone who must not administer the server.
+6. Choose **Add**.
 
-Give the person their username and password. They sign in and see their endpoints under My endpoints.
+Give the person their username and password, or tell them to sign in with single sign-on. The first sign-in with the verified address takes an SSO account. An account never changes kind: for the other kind, add a new account.
 
 ## Add a user for Cloudflare Access
 
@@ -42,7 +45,7 @@ The last enabled admin cannot leave the Admin role. Give a second user the Admin
 
 ## Set a password
 
-Choose **Set password** to give a new password of at least 12 characters. Use it when a person forgot their password.
+Choose **Set password** to give a new password of at least 12 characters. Use it when a person forgot their password. An SSO account has no password, so its row has no **Set password**.
 
 The person is signed out everywhere, also on the approval page. Each OAuth client that they connected loses access and must sign in again. Their bearer tokens keep working.
 
@@ -58,7 +61,7 @@ Choose **Disable** to stop a person at once. Their sessions end now. Their beare
 
 **Enable** lets the person sign in again, but brings none of that back. They make new tokens and connect their clients again.
 
-You cannot disable your own account. While password sign-in is off, you cannot disable the last user who is linked to single sign-on.
+You cannot disable your own account.
 
 ## Delete a user
 
@@ -76,5 +79,6 @@ A new user with the same name gets nothing of the old one. An automatic single s
 - The sign-in says "try again in 15 min": five wrong passwords or codes locked the name. Wait 15 minutes.
 - The user lost the authenticator app: choose **Reset 2FA**.
 - The user is disabled: choose **Enable**.
-- The user has only **SSO** and single sign-on fails: check the policy on User auth, or set a password for them.
+- The user has **SSO** and single sign-on fails: check the policy on User auth.
+- The account shows **not signed in yet**: the identity provider must verify the address that you entered.
 - Adding a user says "That username is taken": another account has that name, in another case.

@@ -49,8 +49,18 @@ function clearSessionCookies(c: Context) {
 }
 
 export function localLoginEnabled(ctx: AppContext): boolean {
-  return ctx.config.ADMIN_FORCE_LOCAL_LOGIN || !getSettings(ctx.db, 'security').disableLocalLogin;
+  return !getSettings(ctx.db, 'security').disableLocalLogin;
 }
+
+/** While local sign-in is off, only the primary owner signs in with a password (ADR-0025). The check runs after the
+ * password, and every refusal reads the same, so the answer never tells which name is the owner. */
+export function passwordSignInAllowed(ctx: AppContext, user: UserRow | null): user is UserRow {
+  return !!user && (localLoginEnabled(ctx) || user.owner);
+}
+
+/** The start-up admin is set, so it owns the owner's password (ADR-0025). */
+export const bootstrapAdminSet = (ctx: AppContext) =>
+  !!ctx.config.ADMIN_BOOTSTRAP_USERNAME && !!ctx.config.ADMIN_BOOTSTRAP_PASSWORD;
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -181,6 +191,8 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       ...base,
       user: ctx.users.toPublic(session.user),
       mustEnrollTotp: ctx.users.mustEnrollTotp(session.user),
+      // Only the owner hears that the start-up admin is set: it is the owner's way back in (ADR-0025).
+      ...(session.user.owner && bootstrapAdminSet(ctx) ? { bootstrapAdminSet: true } : {}),
     });
   });
 
@@ -216,12 +228,11 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     const ip = clientIp(c, ctx.config.TRUST_PROXY);
     if (!ctx.throttle.allowIp(ip))
       return c.json({ error: 'rate_limited', message: 'Too many attempts; try again later' }, 429);
-    if (!localLoginEnabled(ctx)) return c.json({ error: 'local_login_disabled', message: 'Use single sign-on' }, 403);
     const body = await readJson(c, LoginBody);
     const lockedFor = ctx.throttle.lockedFor(body.username);
     if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
     const user = await ctx.users.verifyPassword(body.username, body.password);
-    if (!user) {
+    if (!passwordSignInAllowed(ctx, user)) {
       const locked = ctx.throttle.fail(body.username);
       writeAudit(ctx.db, {
         kind: 'auth',
@@ -230,6 +241,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         detail: { username: body.username, ip },
       });
       if (locked) ctx.events.emit('auth.lockout', { username: body.username, ip });
+      if (!localLoginEnabled(ctx)) return c.json({ error: 'local_login_disabled', message: 'Use single sign-on' }, 403);
       return c.json({ error: 'invalid_credentials', message: 'Invalid username or password' }, 401);
     }
     if (user.totpEnabled) {
@@ -329,6 +341,8 @@ export function registerProfileRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   app.post('/api/profile/password', async (c) => {
     const body = await readJson(c, z.object({ currentPassword: z.string().optional(), newPassword: z.string() }));
     const user = c.get('user');
+    if (user.owner && bootstrapAdminSet(ctx))
+      throw new ConflictError('bootstrap_admin_set', 'The start-up settings set this password; remove them first');
     // The current password is a guess like a sign-in: it counts toward the name's lock (ADR-0008).
     const lockedFor = ctx.throttle.lockedFor(user.username);
     if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);

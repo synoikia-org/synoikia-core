@@ -1,7 +1,7 @@
 import type { Locator } from 'playwright';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { totpCode } from '../../support/world.js';
+import { ADMIN, totpCode } from '../../support/world.js';
 import type { PortalWorld } from '../../support/world.js';
 
 const seen = (locator: Locator) => locator.waitFor({ state: 'visible', timeout: 10_000 });
@@ -39,6 +39,30 @@ Then(
 Then('the profile says {string}', async (world: PortalWorld, text: string) => {
   await seen(world.page.getByText(text));
 });
+
+// ── the start-up admin (ADR-0025) ──
+
+Given(
+  'the operator started the server with the start-up admin {string}',
+  async (world: PortalWorld, username: string) => {
+    await world.restartCore({ ADMIN_BOOTSTRAP_USERNAME: username, ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password });
+  },
+);
+
+When('the admin opens their profile', async (world: PortalWorld) => {
+  await profile(world);
+});
+
+Then(
+  'each page shows a banner to remove the start-up admin, and the profile has a note in place of the password form',
+  async (world: PortalWorld) => {
+    await seen(world.page.getByText('The start-up admin is set.'));
+    await seen(passwordCard(world).getByText('The start-up settings of the server set your password.'));
+    expect(await passwordCard(world).getByLabel('New password').count()).toBe(0);
+    await world.openAsAdmin('/settings/users');
+    await seen(world.page.getByText('The start-up admin is set.'));
+  },
+);
 
 // ── own tokens ──
 

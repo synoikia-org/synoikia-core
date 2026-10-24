@@ -22,3 +22,10 @@ Feature: Upgrades
       Given user 30 had a password and a linked Acme ID before the upgrade
       When the server starts on the new release
       Then the audit log says that the upgrade removed the password of user 30, because the account signs in with Acme ID
+
+  Rule: An upgrade makes the oldest local admin the primary owner
+
+    Scenario: Of two local admins, the older one becomes the primary owner
+      Given the admin and then user 15 were local admins before the upgrade
+      When the server starts on the new release
+      Then the user list marks the admin as the primary owner

@@ -34,7 +34,6 @@ const security = ref<Settings['security']>();
 const oidc = ref<Omit<Oidc, 'clientSecretSet'>>();
 const oidcSecretSet = computed(() => loaded.value?.oidc?.clientSecretSet ?? false);
 const oidcSecret = ref('');
-const forceLocal = computed(() => loaded.value?.forceLocalLogin ?? false);
 const adminUrl = computed(() => loaded.value?.publicAdminUrl ?? null);
 const saved = ref<Record<string, Message>>({});
 const messages = computed<Record<string, Message>>(() => {
@@ -126,10 +125,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
           Disable password sign-in (single sign-on only)
         </label>
         <p id="s-local-help" class="help">
-          Needs working OIDC and at least one linked user.
-          <template v-if="forceLocal">
-            <strong>ADMIN_FORCE_LOCAL_LOGIN</strong> is set, so password sign-in stays on.</template
-          >
+          The primary owner still signs in with a password, so the server keeps a way in.
         </p>
       </div>
       <div class="form-grid">

@@ -41,6 +41,8 @@ export const users = sqliteTable(
     kind: text('kind', { enum: ['local', 'sso'] })
       .notNull()
       .default('local'),
+    /** The primary owner: one local admin, the way back in (ADR-0025). */
+    owner: flag('owner').notNull().default(false),
     /** The address an admin gave an SSO account; the first verified sign-in with it binds the subject and clears it. */
     oidcEmail: text('oidc_email'),
     oidcIssuer: text('oidc_issuer'),
@@ -53,7 +55,12 @@ export const users = sqliteTable(
     /** How the user came to exist without an admin (ADR-0010); null: an admin or setup made it. */
     registeredVia: text('registered_via', { enum: ['oidc', 'external', 'signup'] }),
   },
-  (t) => [uniqueIndex('users_oidc_email_idx').on(sql`lower(${t.oidcEmail})`)],
+  (t) => [
+    uniqueIndex('users_oidc_email_idx').on(sql`lower(${t.oidcEmail})`),
+    uniqueIndex('users_owner_idx')
+      .on(t.owner)
+      .where(sql`${t.owner} = 1`),
+  ],
 );
 
 export const sessions = sqliteTable(

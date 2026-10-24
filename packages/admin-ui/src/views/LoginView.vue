@@ -30,6 +30,9 @@ const redirect = computed(() => {
   const r = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
   return r.startsWith('/') && !r.startsWith('//') ? r : '/';
 });
+// While password sign-in is off, the primary owner still signs in with a password (ADR-0025).
+const adminForm = ref(false);
+const passwordForm = computed(() => session.localLoginEnabled || adminForm.value);
 const oidcHref = computed(() => `/auth/oidc/start?returnTo=${encodeURIComponent(redirect.value)}`);
 const canSubmit = computed(() =>
   step.value === 'totp'
@@ -93,7 +96,7 @@ async function submit() {
         <p v-if="step === 'signup'" class="muted small hint">
           Create an account. An administrator decides what it can reach.
         </p>
-        <template v-if="session.localLoginEnabled">
+        <template v-if="passwordForm">
           <div class="field">
             <label for="username">Username</label>
             <input id="username" v-model="username" name="username" autocomplete="username" autofocus />
@@ -122,12 +125,7 @@ async function submit() {
 
       <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-      <button
-        v-if="step === 'totp' || session.localLoginEnabled"
-        class="btn btn-primary"
-        type="submit"
-        :disabled="!canSubmit"
-      >
+      <button v-if="step === 'totp' || passwordForm" class="btn btn-primary" type="submit" :disabled="!canSubmit">
         {{ submitting ? 'Signing in…' : step === 'totp' ? 'Verify' : step === 'signup' ? 'Create account' : 'Sign in' }}
       </button>
       <button
@@ -143,9 +141,17 @@ async function submit() {
       </button>
 
       <template v-if="session.oidcEnabled && step === 'password'">
-        <div v-if="session.localLoginEnabled" class="divider"><span>or</span></div>
+        <div v-if="passwordForm" class="divider"><span>or</span></div>
         <a class="btn oidc" :href="oidcHref">Sign in with {{ session.oidcLabel }}</a>
       </template>
+      <button
+        v-if="!passwordForm && step === 'password'"
+        class="btn-link small"
+        type="button"
+        @click="adminForm = true"
+      >
+        Sign in with admin account
+      </button>
     </form>
   </main>
 </template>

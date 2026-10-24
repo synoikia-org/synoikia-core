@@ -210,17 +210,6 @@ When('the server starts on an empty data directory without a start-up admin', as
   await startServer(world, newServer(world, {}));
 });
 
-Given('the server started once and made the admin {string}', async (world: SynoikiaWorld, username: string) => {
-  const run = newServer(world, of(world).startEnv ?? {});
-  await startServer(world, run);
-  expect(run.log).toContain(`Created admin user "${username}"`);
-  await stopServer(run);
-});
-
-When('the server starts again with the same start-up settings', async (world: SynoikiaWorld) => {
-  await startServer(world, of(world).server!);
-});
-
 Then('the server log says that it made the admin {string}', (world: SynoikiaWorld, username: string) => {
   expect(of(world).server!.log).toContain(`WARN Created admin user "${username}" from ADMIN_BOOTSTRAP_*`);
 });
@@ -233,21 +222,141 @@ Then(
   },
 );
 
-Then('the server log warns that the start-up admin is ignored and should be removed', (world: SynoikiaWorld) => {
-  const { log } = of(world).server!;
-  expect(log).toContain('WARN ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored');
-  expect(log).toContain('remove it');
-  expect(log).not.toContain('Created admin user');
-});
-
-Then('the server still has one account', async (world: SynoikiaWorld) => {
-  const { env } = of(world).server!;
-  const users = await accountsOf(of(world).server!, env.ADMIN_BOOTSTRAP_USERNAME!, env.ADMIN_BOOTSTRAP_PASSWORD!);
-  expect(users).toHaveLength(1);
-});
-
 Then('the server log says to open the portal to make the first account', (world: SynoikiaWorld) => {
   const { log } = of(world).server!;
   expect(log).toContain('No users yet: open the admin portal to create the first account.');
   expect(log).not.toContain('Created admin user');
+});
+
+// ── the start-up admin as the owner's way back in (ADR-0025) ──
+
+const startUp = (username: string, password: string) => ({
+  ADMIN_BOOTSTRAP_USERNAME: username,
+  ADMIN_BOOTSTRAP_PASSWORD: password,
+});
+const PASSWORD = 'correct horse battery';
+const states = new WeakMap<SynoikiaWorld, { refused?: string; totpSecret?: string }>();
+const story = (world: SynoikiaWorld) => {
+  let s = states.get(world);
+  if (!s) states.set(world, (s = {}));
+  return s;
+};
+
+/** The server made the owner from the start-up admin, then the owner signed in to the portal of that server. */
+async function ownerServer(world: SynoikiaWorld, username: string, password: string) {
+  const run = newServer(world, startUp(username, password));
+  await startServer(world, run);
+  expect(run.log).toContain(`Created admin user "${username}"`);
+  const page = portalOf(run.adminBase);
+  await page.init();
+  expect((await page.post('/auth/login', { username, password })).status).toBe(200);
+  return { run, page };
+}
+
+async function signIn(run: ServerRun, username: string, password: string) {
+  const page = portalOf(run.adminBase);
+  await page.init();
+  const res = await page.post('/auth/login', { username, password });
+  return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown>, page };
+}
+
+async function startAgain(world: SynoikiaWorld, env: Record<string, string>) {
+  const run = of(world).server!;
+  run.env = env;
+  try {
+    await startServer(world, run);
+  } catch (err) {
+    story(world).refused = err instanceof Error ? err.message : String(err);
+  }
+}
+
+Given(
+  'the server started once and made the admin {string} with the password {string}',
+  async (world: SynoikiaWorld, username: string, password: string) => {
+    const { run } = await ownerServer(world, username, password);
+    await stopServer(run);
+  },
+);
+
+Given(
+  'the server started once and made the admin {string}, and the admin made the account {string}',
+  async (world: SynoikiaWorld, username: string, other: string) => {
+    const { run, page } = await ownerServer(world, username, PASSWORD);
+    const made = await page.post('/api/users', { username: other, password: `${other} passphrase`, roleId: 'admin' });
+    expect(made.status).toBe(201);
+    await stopServer(run);
+  },
+);
+
+Given(
+  'the server started once and made the admin {string}, who set up an authenticator app',
+  async (world: SynoikiaWorld, username: string) => {
+    const { run, page } = await ownerServer(world, username, PASSWORD);
+    const begun = (await (await page.post('/api/profile/totp/begin')).json()) as { secret: string };
+    const confirmed = await page.post('/api/profile/totp/confirm', { code: world.totpCode(begun.secret, -1) });
+    expect(confirmed.status).toBe(200);
+    story(world).totpSecret = begun.secret;
+    await stopServer(run);
+  },
+);
+
+When(
+  'the server starts again with the start-up admin {string} and the password {string}',
+  async (world: SynoikiaWorld, username: string, password: string) => {
+    await startAgain(world, startUp(username, password));
+  },
+);
+
+When('the server starts again with the start-up admin {string}', async (world: SynoikiaWorld, username: string) => {
+  await startAgain(world, startUp(username, PASSWORD));
+});
+
+When(
+  'the server starts again with the start-up admin {string} and the two-factor reset',
+  async (world: SynoikiaWorld, username: string) => {
+    await startAgain(world, { ...startUp(username, PASSWORD), ADMIN_BOOTSTRAP_RESET_2FA: 'true' });
+  },
+);
+
+Then(
+  '{string} signs in with {string}, and not with {string}',
+  async (world: SynoikiaWorld, username: string, now: string, before: string) => {
+    const run = of(world).server!;
+    expect(story(world).refused).toBeUndefined();
+    expect(await signIn(run, username, now)).toMatchObject({ status: 200, body: { status: 'ok' } });
+    expect((await signIn(run, username, before)).status).toBe(401);
+  },
+);
+
+Then(
+  '{string} signs in to the portal, and the server has no account {string}',
+  async (world: SynoikiaWorld, username: string, gone: string) => {
+    expect(story(world).refused).toBeUndefined();
+    const names = (await accountsOf(of(world).server!, username, PASSWORD)).map((u) => u.username);
+    expect(names).toContain(username);
+    expect(names).not.toContain(gone);
+  },
+);
+
+Then(
+  'the server does not start, and its log says that {string} belongs to another account',
+  (world: SynoikiaWorld, username: string) => {
+    expect(story(world).refused).toContain('core stopped at start-up');
+    expect(of(world).server!.log).toContain(`ADMIN_BOOTSTRAP_USERNAME "${username}" belongs to another account`);
+  },
+);
+
+Then('{string} signs in to the portal with the password alone', async (world: SynoikiaWorld, username: string) => {
+  expect(story(world).refused).toBeUndefined();
+  expect(await signIn(of(world).server!, username, PASSWORD)).toMatchObject({ status: 200, body: { status: 'ok' } });
+});
+
+// ── the first account in the portal is the owner ──
+
+Then('the user list marks {string} as the primary owner', async (world: SynoikiaWorld, username: string) => {
+  const list = (await world.expectOk(world.admin.get('/api/users'), 'list users')) as unknown as {
+    username: string;
+    owner: boolean;
+  }[];
+  expect(list.filter((u) => u.owner).map((u) => u.username)).toEqual([username]);
 });

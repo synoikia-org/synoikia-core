@@ -47,6 +47,7 @@ export const signedIn = {
     id: 'u1',
     username: 'admin',
     kind: 'local' as const,
+    owner: true,
     oidcEmail: null,
     totpEnabled: false,
     oidcLinked: false,

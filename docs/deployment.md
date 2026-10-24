@@ -20,10 +20,22 @@ Core listens on two ports ([ADR-0015](adrs/0015-two-listeners.md)):
 
 ## First start
 
-1. Open the admin portal and make the first account. It gets the Admin role. A server without a browser can set `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` once instead.
+1. Open the admin portal and make the first account. It gets the Admin role, and it is the primary owner. A server without a browser can set `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` instead.
 2. Install and enable plugins.
 3. Make an instance, and raise the access groups that you want above Read.
 4. Connect your MCP client to `PUBLIC_MCP_URL/<slug>`.
+
+## If the owner cannot sign in
+
+The primary owner always keeps the password sign-in, also while password sign-in is off. If the owner lost the password:
+
+1. Set `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD`, and restart the server. The start sets the owner's name and password, and ends the owner's sessions.
+2. If the owner also lost the authenticator app, set `ADMIN_BOOTSTRAP_RESET_2FA=true` as well.
+3. Sign in as the owner. Then remove the three settings and restart. Until then, the owner cannot change the password in the portal.
+
+A name in `ADMIN_BOOTSTRAP_USERNAME` that another account has stops the start.
+
+Older releases ignored these settings once an account existed. Before you upgrade, remove them unless you mean them. The first start of this release applies them to the owner.
 
 ## Reverse proxy
 

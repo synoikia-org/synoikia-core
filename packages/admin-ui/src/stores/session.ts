@@ -15,6 +15,7 @@ export const useSessionStore = defineStore('session', () => {
   const oidcLabel = ref('SSO');
   const user = ref<PublicUser>();
   const mustEnrollTotp = ref(false);
+  const bootstrapAdminSet = ref(false);
 
   const username = computed(() => user.value?.username);
   const isAdmin = computed(() => user.value?.role.isAdmin ?? false);
@@ -31,6 +32,7 @@ export const useSessionStore = defineStore('session', () => {
     oidcLabel.value = s?.oidc.label ?? 'SSO';
     user.value = s?.user;
     mustEnrollTotp.value = s?.mustEnrollTotp ?? false;
+    bootstrapAdminSet.value = s?.bootstrapAdminSet ?? false;
   }
 
   const afterSignIn = async (): Promise<LoginResult> => {
@@ -82,6 +84,7 @@ export const useSessionStore = defineStore('session', () => {
     oidcLabel,
     user,
     mustEnrollTotp,
+    bootstrapAdminSet,
     username,
     isAdmin,
     role,

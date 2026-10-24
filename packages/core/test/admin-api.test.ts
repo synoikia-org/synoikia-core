@@ -14,7 +14,6 @@ import {
   users,
 } from '../src/db/schema.js';
 import { createAdminApp } from '../src/http/admin-app.js';
-import { updateSettings } from '../src/settings.js';
 import { CORE_VERSION } from '../src/version.js';
 import { eq } from 'drizzle-orm';
 import { browser } from './admin-client.js';
@@ -73,15 +72,6 @@ describe('setup, login and sessions', () => {
     t.ctx.users.setDisabled(off.id, true);
     expect(await signIn('sub-22', 'user22@acme.example')).toBe('/login?error=oidc_not_allowed');
     expect(t.ctx.users.get(off.id)).toMatchObject({ oidcSubject: null, oidcEmail: 'user22@acme.example' });
-  });
-
-  it('counts only an SSO account that signed in as a way in once local login is off', async () => {
-    const t = await setup();
-    await signedIn(t);
-    const sso = await t.ctx.users.create({ username: 'user21', kind: 'sso', oidcEmail: 'user21@acme.example' });
-    expect(t.ctx.users.hasSsoAccount()).toBe(false);
-    t.ctx.users.bindOidc(sso.id, 'https://idp.example.com', 'sub-21');
-    expect(t.ctx.users.hasSsoAccount()).toBe(true);
   });
 
   it('gives an SSO account no password and no app', async () => {
@@ -228,7 +218,7 @@ describe('deleting users', () => {
     });
   });
 
-  it('refuses to delete yourself, the last admin, the last user or the last SSO user', async () => {
+  it('refuses to delete yourself, the last admin or the last user', async () => {
     const t = await withVictim();
     const refused = async (id: string, error: string) =>
       expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
@@ -239,12 +229,7 @@ describe('deleting users', () => {
     const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);
     expect(() => t.ctx.users.delete(t.me)).toThrow(expect.objectContaining({ code: 'last_admin' }));
 
-    const sso = (await t.ctx.users.create({ username: 'sso', kind: 'sso', oidcEmail: 'sso@acme.example' })).id;
-    t.ctx.users.bindOidc(sso, 'https://idp.example.com', 'sub-1');
-    updateSettings(t.ctx.db, 'security', { disableLocalLogin: true });
-    await refused(sso, 'local_login_disabled');
     expect((await t.b.del(`/api/users/${viewer}`)).status).toBe(204);
-    expect(t.ctx.users.get(sso)).toMatchObject({ oidcSubject: 'sub-1' });
   });
 });
 
@@ -496,5 +481,69 @@ describe('instances and access', () => {
       (await t.b.post('/api/instances', { pluginId: 'echo', slug: 'echo-2', connection: {}, authMode: 'bearer' }))
         .status,
     ).toBe(400);
+  });
+});
+
+describe('the primary owner (ADR-0025)', () => {
+  const START_UP = { ADMIN_BOOTSTRAP_USERNAME: 'admin', ADMIN_BOOTSTRAP_PASSWORD: PASSWORD };
+
+  it('gives every refused password sign-in the same answer while password sign-in is off', async () => {
+    const t = await setup();
+    const owner = await signedIn(t);
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    expect((await owner.put('/api/settings/security', { disableLocalLogin: true })).status).toBe(200);
+    const signIn = async (username: string, password: string) => {
+      const res = await (await t.client()).post('/auth/login', { username, password });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    };
+    const refused = { status: 403, body: { error: 'local_login_disabled', message: 'Use single sign-on' } };
+    expect(await signIn('user15', PASSWORD)).toEqual(refused);
+    expect(await signIn('admin', 'not the password')).toEqual(refused);
+    expect(await signIn('nobody', PASSWORD)).toEqual(refused);
+    expect(await signIn('admin', PASSWORD)).toMatchObject({ status: 200, body: { status: 'ok' } });
+  });
+
+  it('turns password sign-in off only while the server has an owner', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    t.ctx.db.update(users).set({ owner: false }).run();
+    expect(await (await b.put('/api/settings/security', { disableLocalLogin: true })).json()).toMatchObject({
+      error: 'owner_required',
+    });
+  });
+
+  it('keeps the password of the owner for the start-up admin, and tells only the owner', async () => {
+    const t = await setup(START_UP);
+    const owner = await t.client();
+    expect((await owner.post('/auth/login', { username: 'admin', password: PASSWORD })).status).toBe(200);
+    expect(await (await owner.get('/api/session')).json()).toMatchObject({ bootstrapAdminSet: true });
+    expect(
+      await (
+        await owner.post('/api/profile/password', { currentPassword: PASSWORD, newPassword: `${PASSWORD} 2` })
+      ).json(),
+    ).toMatchObject({ error: 'bootstrap_admin_set' });
+
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    const other = await t.client();
+    await other.post('/auth/login', { username: 'user15', password: PASSWORD });
+    expect(await (await other.get('/api/session')).json()).not.toHaveProperty('bootstrapAdminSet');
+  });
+
+  it('ends the sessions of the owner when a start sets a new password', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-owner-'));
+    cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
+    const first = await createTestApp({ DATA_DIR: dataDir, ...START_UP });
+    const owner = browser(createAdminApp(first));
+    await owner.init();
+    expect((await owner.post('/auth/login', { username: 'admin', password: PASSWORD })).status).toBe(200);
+    const cookies = [...owner.jar];
+    await first.stop();
+
+    const second = await createTestApp({ DATA_DIR: dataDir, ...START_UP, ADMIN_BOOTSTRAP_PASSWORD: `${PASSWORD} new` });
+    cleanup.push(() => second.stop());
+    const again = browser(createAdminApp(second));
+    for (const [name, value] of cookies) again.jar.set(name, value);
+    expect(await (await again.get('/api/session')).json()).toMatchObject({ authenticated: false });
+    expect(second.users.owner()).toMatchObject({ username: 'admin' });
   });
 });

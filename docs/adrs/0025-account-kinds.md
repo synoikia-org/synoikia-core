@@ -30,15 +30,21 @@ Chosen option: "Two kinds of account". Any proof that a session can make for its
 - **Making an SSO account.** The admin gives an e-mail address (`users.oidc_email`, unique, compared without case). The first OIDC sign-in with that address, verified by the provider, sets `oidc_issuer` and `oidc_subject` and clears `oidc_email`. After that, only the issuer and subject count. A changed address at the provider keeps the account.
 - Automatic users (ADR-0010) are SSO accounts. The first account, the start-up admin and accounts from the sign-up form are local.
 - An identity that no SSO account has does not sign in, even when a local account has the same address.
-- An SSO account that waits for its address is no way in yet. While local sign-in is off, only an SSO account that signed in once counts as a way in.
 - A proxy identity (ADR-0009) still names any account that the admin made, of either kind. The admin sets up the proxy and trusts it.
-- **Upgrade.** A user whose identity still signs in becomes an SSO account: single sign-on is on, and the identity comes from the configured issuer. The migration removes the password, the TOTP app and the recovery codes of that user. When the identity cannot sign in and the user has a password, the migration removes the identity instead, and the user keeps the password. So the upgrade locks nobody out. Each change has an audit row.
+- **The primary owner.** One local admin is the primary owner (`users.owner`, unique). It is the first account, or the start-up admin on a server without one.
+- While local sign-in is off (ADR-0008), the owner still signs in with a password. So the server always has a way in.
+- **The way back in.** While an owner exists, `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` set its name and password at each start. A name that another account has stops the start. `ADMIN_BOOTSTRAP_RESET_2FA=true` also removes the owner's TOTP app and recovery codes. Each change has an audit row.
+- While the start-up admin is set, the owner cannot change the password in the portal, and the portal asks to remove the settings.
+- **Upgrade.** The oldest enabled local admin with a password becomes the primary owner. Without one, the server has no owner until the operator sets the start-up admin.
+- A user whose identity still signs in becomes an SSO account: single sign-on is on, and the identity comes from the configured issuer. The migration removes the password, the TOTP app and the recovery codes of that user. When the identity cannot sign in and the user has a password, the migration removes the identity instead, and the user keeps the password. So the upgrade locks nobody out. Each change has an audit row.
 
 ### Consequences
 
 - Good, because a stolen session cannot add a password, an app or an identity to its account.
 - Good, because each sign-in path checks one kind, so a gap in one path cannot open the other.
+- Good, because the owner and the start-up admin give a way back in without a change to the data file.
+- Bad, because anyone who can change the start-up settings and restart the server owns it. That person can already read the data file.
 - Bad, because a person who wants to change the way they sign in needs a new account. Their own levels, rules and tokens stay with the old one.
 - Bad, because a user who signed in with a password and also had a working link loses the password on upgrade.
 
-The model views `containers` and `coreComponents` show the auth component. The feature files `@id:single-sign-on`, `@id:portal-profile`, `@id:portal-users` and `@id:upgrades` specify its behavior.
+The model views `containers` and `coreComponents` show the auth component. The feature files `@id:single-sign-on`, `@id:first-account`, `@id:local-sign-in-off`, `@id:portal-profile`, `@id:portal-users` and `@id:upgrades` specify its behavior.

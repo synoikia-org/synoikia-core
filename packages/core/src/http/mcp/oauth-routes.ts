@@ -10,7 +10,7 @@ import type { SessionLimits, ValidSession } from '../../auth/sessions.js';
 import { randomToken, safeEqual, sha256, signPayload, verifyPayload } from '../../auth/tokens.js';
 import { ServiceError } from '../../errors.js';
 import { getSettings } from '../../settings.js';
-import { localLoginEnabled } from '../admin/auth.js';
+import { localLoginEnabled, passwordSignInAllowed } from '../admin/auth.js';
 import { clientIp, isSecure } from '../common.js';
 import { consentPage, errorPage, loginPage, totpPage } from './pages.js';
 
@@ -351,14 +351,13 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
     const continueTo = safeContinue(body.continue);
     if (!checkUiCsrf(c, body.csrf))
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Your form expired; try again.', 401);
-    if (!localLoginEnabled(ctx)) return renderLogin(ctx, c, continueTo, 'Sign in', 'Use single sign-on.', 401);
     const ip = clientIp(c, ctx.config.TRUST_PROXY);
     const username = String(body.username ?? '').slice(0, 64);
     if (!ctx.throttle.allowIp(ip) || ctx.throttle.lockedFor(username, 'mcp') > 0) {
       return renderLogin(ctx, c, continueTo, 'Sign in', 'Too many attempts; try again later.', 429);
     }
     const user = await ctx.users.verifyPassword(username, String(body.password ?? '').slice(0, 1024));
-    if (!user) {
+    if (!passwordSignInAllowed(ctx, user)) {
       if (ctx.throttle.fail(username, 'mcp')) ctx.events.emit('auth.lockout', { username, ip, surface: 'mcp' });
       writeAudit(ctx.db, {
         kind: 'auth',
@@ -366,7 +365,8 @@ export function registerOAuthRoutes(app: Hono, ctx: AppContext, oauth: OAuthServ
         actorKind: 'system',
         detail: { username, ip, surface: 'mcp' },
       });
-      return renderLogin(ctx, c, continueTo, 'Sign in', 'Invalid username or password.', 401);
+      const why = localLoginEnabled(ctx) ? 'Invalid username or password.' : 'Use single sign-on.';
+      return renderLogin(ctx, c, continueTo, 'Sign in', why, 401);
     }
     if (ctx.users.mustEnrollTotp(user)) {
       // The portal would force enrollment first; the internet-facing sign-in must not skip it.

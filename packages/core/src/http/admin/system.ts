@@ -198,7 +198,6 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (body.disabled !== undefined) {
       if (id === c.get('user').id && body.disabled)
         throw new ConflictError('self_disable', 'You cannot disable yourself');
-      if (body.disabled) ctx.users.assertSsoRemains({ losingUser: id });
       ctx.users.setDisabled(id, body.disabled, actor(c));
       if (body.disabled) {
         // Everything the user could still reach MCP with goes too; re-enabling revives none of it.
@@ -244,7 +243,6 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       audit: getSettings(ctx.db, 'audit'),
       runtime: { ...getSettings(ctx.db, 'runtime'), total: ctx.runTotal() },
       oidc: ctx.oidc.getSettings(),
-      forceLocalLogin: ctx.config.ADMIN_FORCE_LOCAL_LOGIN,
       publicMcpUrl: ctx.config.PUBLIC_MCP_URL ?? null,
       publicAdminUrl: ctx.config.PUBLIC_ADMIN_URL ?? null,
     }),
@@ -255,7 +253,6 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
 
   app.put('/api/settings/oidc', async (c) => {
     const body = await readJson(c, z.record(z.string(), z.unknown()));
-    if (body.enabled === false) ctx.users.assertSsoRemains({ oidcOff: true });
     return c.json(ctx.oidc.updateSettings(body, actor(c)));
   });
 
@@ -264,15 +261,9 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!isSettingsSection(section)) throw new NotFoundError('unknown_section', 'Unknown settings section');
     const body = await readJson(c, z.record(z.string(), z.unknown()));
     if (section === 'security' && typeof body.defaultRoleId === 'string') ctx.roles.get(body.defaultRoleId);
-    // Disabling local login locks everyone out unless SSO works and someone can use it (ADR-0008).
-    if (section === 'security' && body.disableLocalLogin === true) {
-      if (!ctx.oidc.isEnabled() || !ctx.users.hasSsoAccount()) {
-        throw new ValidationError(
-          'oidc_required',
-          'Enable OIDC and add at least one SSO account before disabling local login',
-        );
-      }
-    }
+    // The primary owner keeps the password sign-in, so it is the way in once local login is off (ADR-0025).
+    if (section === 'security' && body.disableLocalLogin === true && !ctx.users.owner())
+      throw new ValidationError('owner_required', 'Set the start-up admin first: the server has no primary owner');
     return c.json(updateSettings(ctx.db, section, body, actor(c)));
   });
 

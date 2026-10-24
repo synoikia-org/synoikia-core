@@ -33,9 +33,14 @@ describe('UserService', () => {
     const t = setup();
     await expect(t.users.setupFirstUser('admin', 'short')).rejects.toBeInstanceOf(ValidationError);
     const admin = await t.users.setupFirstUser('admin', PASSWORD);
-    expect(admin).toMatchObject({ username: 'admin', hasPassword: true, totpEnabled: false });
+    expect(admin).toMatchObject({ username: 'admin', hasPassword: true, totpEnabled: false, owner: true });
     await expect(t.users.setupFirstUser('other', PASSWORD)).rejects.toBeInstanceOf(ConflictError);
-    expect(await t.users.bootstrap('x', PASSWORD)).toBe('ignored');
+    expect(await t.users.bootstrap('admin', PASSWORD)).toMatchObject({ status: 'owner_kept', changed: [] });
+    await expect(t.users.bootstrap('service:x', PASSWORD)).rejects.toMatchObject({ code: 'invalid_username' });
+    t.db.update(users).set({ owner: false }).run();
+    await expect(t.users.bootstrap('admin', PASSWORD)).rejects.toMatchObject({ code: 'username_taken' });
+    expect(await t.users.bootstrap('owner', PASSWORD)).toMatchObject({ status: 'owner_made' });
+    expect(t.users.owner()).toMatchObject({ username: 'owner', kind: 'local', roleId: 'admin' });
     const hash = t.db.select().from(users).get()!.passwordHash!;
     expect(hash).toMatch(/^\$argon2id\$v=19\$m=65536,t=3,p=1\$/);
   });

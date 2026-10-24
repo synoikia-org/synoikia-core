@@ -147,7 +147,10 @@ async function enrolled() {
 
       <section v-if="me.kind === 'local'" class="card">
         <h2>Password</h2>
-        <form class="form-grid" @submit.prevent="changePassword">
+        <p v-if="session.bootstrapAdminSet" class="small">
+          The start-up settings of the server set your password. Remove them to change it here.
+        </p>
+        <form v-else class="form-grid" @submit.prevent="changePassword">
           <div v-if="me.hasPassword" class="field">
             <label for="p-cur">Current password</label>
             <input id="p-cur" v-model="pw.current" type="password" autocomplete="current-password" />

@@ -136,10 +136,26 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
 
   const events = new CoreEvents();
   const users = new UserService(db, secrets, opts.passwordHashCost, now);
-  const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD);
-  if (boot === 'created')
+  const sessions = new SessionService(db, secrets.deriveKey('session-pepper'), now);
+  const oauth = new OAuthService(db, now);
+  // The start-up admin is the way back in for the primary owner (ADR-0025); a name of another account stops the start.
+  const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD, {
+    resetTwoFactor: config.ADMIN_BOOTSTRAP_RESET_2FA,
+  });
+  // A new owner password or two-factor ends what the old one opened, before anything else can stop the start.
+  if (boot.ownerId && (boot.changed.includes('password') || boot.changed.includes('two-factor'))) {
+    sessions.revokeUser(boot.ownerId);
+    oauth.revokeUserGrants(boot.ownerId, 'password_changed', {});
+  }
+  if (boot.status === 'created')
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
-  if (boot === 'ignored') warnings.push('ADMIN_BOOTSTRAP_* is set but users already exist; it is ignored — remove it');
+  if (boot.status === 'owner_made')
+    warnings.push(`Made the primary owner "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
+  if (boot.status === 'owner_kept')
+    warnings.push(
+      `ADMIN_BOOTSTRAP_* ${boot.changed.length ? `set the ${boot.changed.join(', ')} of` : 'matches'} the primary owner "${config.ADMIN_BOOTSTRAP_USERNAME}"; remove it once the owner is in`,
+    );
+  if (!users.owner()) warnings.push('The server has no primary owner: set ADMIN_BOOTSTRAP_USERNAME and _PASSWORD');
 
   const log = opts.log ?? createLogger(config.LOG_LEVEL);
   const executions = new ExecutionRegistry(nowMs, opts.resumeWaitMs);
@@ -231,11 +247,11 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     metrics,
     users,
     roles: new RoleService(db),
-    sessions: new SessionService(db, secrets.deriveKey('session-pepper'), now),
+    sessions,
     throttle: new LoginThrottle({}, nowMs),
     oidc: new OidcService(db, secrets, keys.state, opts.oidcAllowInsecure ?? false, now),
     tokens: new McpTokenService(db, now),
-    oauth: new OAuthService(db, now),
+    oauth,
     seenClients: new SeenClients(now),
     version: opts.version ?? CORE_VERSION,
     instances,
