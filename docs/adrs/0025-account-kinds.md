@@ -30,13 +30,15 @@ Chosen option: "Two kinds of account". Any proof that a session can make for its
 - **Making an SSO account.** The admin gives an e-mail address (`users.oidc_email`, unique, compared without case). The first OIDC sign-in with that address, verified by the provider, sets `oidc_issuer` and `oidc_subject` and clears `oidc_email`. After that, only the issuer and subject count. A changed address at the provider keeps the account.
 - Automatic users (ADR-0010) are SSO accounts. The first account, the start-up admin and accounts from the sign-up form are local.
 - An identity that no SSO account has does not sign in, even when a local account has the same address.
-- **Upgrade.** A user who had both a password and an identity becomes an SSO account. The migration removes the password, the TOTP app and the recovery codes, and writes an audit row for each user.
+- An SSO account that waits for its address is no way in yet. While local sign-in is off, only an SSO account that signed in once counts as a way in.
+- A proxy identity (ADR-0009) still names any account that the admin made, of either kind. The admin sets up the proxy and trusts it.
+- **Upgrade.** A user whose identity still signs in becomes an SSO account: single sign-on is on, and the identity comes from the configured issuer. The migration removes the password, the TOTP app and the recovery codes of that user. When the identity cannot sign in and the user has a password, the migration removes the identity instead, and the user keeps the password. So the upgrade locks nobody out. Each change has an audit row.
 
 ### Consequences
 
 - Good, because a stolen session cannot add a password, an app or an identity to its account.
 - Good, because each sign-in path checks one kind, so a gap in one path cannot open the other.
 - Bad, because a person who wants to change the way they sign in needs a new account. Their own levels, rules and tokens stay with the old one.
-- Bad, because a user who signed in with a password and also had a link loses the password on upgrade.
+- Bad, because a user who signed in with a password and also had a working link loses the password on upgrade.
 
 The model views `containers` and `coreComponents` show the auth component. The feature files `@id:single-sign-on`, `@id:portal-profile`, `@id:portal-users` and `@id:upgrades` specify its behavior.
