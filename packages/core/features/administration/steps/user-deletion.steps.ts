@@ -147,3 +147,11 @@ Then(
     for (const line of lines) expect(line).toContain(`,${name},true,`);
   },
 );
+
+When('user {int} tries to delete the admin', async (world: SynoikiaWorld, user: number) => {
+  await keep(world, world.person(`user ${user}`).portal!.del(`/api/users/${world.person('admin').id}`));
+});
+
+Then('user {int} is told that the primary owner cannot be deleted', (world: SynoikiaWorld, _user: number) => {
+  expect(refusal(world)).toBe('owner_delete');
+});

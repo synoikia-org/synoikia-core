@@ -33,6 +33,7 @@ Chosen option: "Two kinds of account". Any proof that a session can make for its
 - A proxy identity (ADR-0009) still names any account that the admin made, of either kind. The admin sets up the proxy and trusts it.
 - **The primary owner.** One local admin is the primary owner (`users.owner`, unique). It is the first account, or the start-up admin on a server without one.
 - While local sign-in is off (ADR-0008), the owner still signs in with a password. So the server always has a way in.
+- Core refuses to delete or disable the owner, or to move it out of the Admin role. It also refuses another admin who sets the owner's password or resets its TOTP app, on every route. Only the start-up admin does those two things. A start does not repair an owner that is already disabled or out of the Admin role.
 - **The way back in.** While an owner exists, `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` set its name and password at each start. A name that another account has stops the start. `ADMIN_BOOTSTRAP_RESET_2FA=true` also removes the owner's TOTP app and recovery codes. Each change has an audit row.
 - While the start-up admin is set, the owner cannot change the password in the portal, and the portal asks to remove the settings.
 - **Upgrade.** The oldest enabled local admin with a password becomes the primary owner. Without one, the server has no owner until the operator sets the start-up admin.
@@ -43,6 +44,7 @@ Chosen option: "Two kinds of account". Any proof that a session can make for its
 - Good, because a stolen session cannot add a password, an app or an identity to its account.
 - Good, because each sign-in path checks one kind, so a gap in one path cannot open the other.
 - Good, because the owner and the start-up admin give a way back in without a change to the data file.
+- Good, because another admin cannot lock the owner out or take over its password sign-in.
 - Bad, because anyone who can change the start-up settings and restart the server owns it. That person can already read the data file.
 - Bad, because a person who wants to change the way they sign in needs a new account. Their own levels, rules and tokens stay with the old one.
 - Bad, because a user who signed in with a password and also had a working link loses the password on upgrade.

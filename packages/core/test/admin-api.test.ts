@@ -218,12 +218,15 @@ describe('deleting users', () => {
     });
   });
 
-  it('refuses to delete yourself, the last admin or the last user', async () => {
+  it('refuses to delete yourself, the owner, the last admin or the last user', async () => {
     const t = await withVictim();
     const refused = async (id: string, error: string) =>
       expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
     await refused(t.me, 'self_delete');
     expect((await t.b.del('/api/users/nobody')).status).toBe(404);
+    expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'owner_delete' }));
+    // A server without an owner (ADR-0025, the upgrade) still keeps its last user and its last enabled admin.
+    t.ctx.db.update(users).set({ owner: false }).where(eq(users.id, t.me)).run();
     expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'last_user' }));
 
     const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);
@@ -501,6 +504,32 @@ describe('the primary owner (ADR-0025)', () => {
     expect(await signIn('admin', 'not the password')).toEqual(refused);
     expect(await signIn('nobody', PASSWORD)).toEqual(refused);
     expect(await signIn('admin', PASSWORD)).toMatchObject({ status: 200, body: { status: 'ok' } });
+  });
+
+  it('lets an admin repair an owner that an older release disabled or moved out of the Admin role', async () => {
+    const t = await setup();
+    await signedIn(t);
+    const owner = t.ctx.users.owner()!;
+    const viewer = t.ctx.roles.create({ name: 'Viewer' }).id;
+    const helper = await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    t.ctx.db.update(users).set({ disabled: true, roleId: viewer }).where(eq(users.id, owner.id)).run();
+    expect(() => t.ctx.users.setRole(owner.id, 'admin', { userId: helper.id })).not.toThrow();
+    expect(() => t.ctx.users.setDisabled(owner.id, false, { userId: helper.id })).not.toThrow();
+    expect(() => t.ctx.users.setRole(owner.id, viewer)).toThrow(expect.objectContaining({ code: 'owner_admin' }));
+    expect(t.ctx.users.get(owner.id)).toMatchObject({ roleId: 'admin', disabled: false });
+  });
+
+  it('keeps the last enabled admin in the Admin role on a server without an owner', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const me = t.ctx.users.owner()!;
+    t.ctx.db.update(users).set({ owner: false }).run();
+    const viewer = t.ctx.roles.create({ name: 'Viewer' }).id;
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: viewer });
+    expect(await (await b.patch(`/api/users/${me.id}`, { roleId: viewer })).json()).toMatchObject({
+      error: 'last_admin',
+    });
+    expect(() => t.ctx.users.setDisabled(me.id, true)).toThrow(expect.objectContaining({ code: 'last_admin' }));
   });
 
   it('turns password sign-in off only while the server has an owner', async () => {

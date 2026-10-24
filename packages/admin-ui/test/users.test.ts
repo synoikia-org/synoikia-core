@@ -20,7 +20,7 @@ const roles: RoleRow[] = [
   },
 ];
 const me: PublicUser = { ...signedIn.user, createdAt: '2026-01-01T00:00:00Z', lastLoginAt: null };
-const olga: PublicUser = { ...me, id: 'u2', username: 'olga', totpEnabled: true, role: operators };
+const olga: PublicUser = { ...me, id: 'u2', username: 'olga', owner: false, totpEnabled: true, role: operators };
 
 const button = (text: string, root: ParentNode = document.body) =>
   [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
@@ -75,6 +75,19 @@ describe('the Users page', () => {
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ username: 'olga', roleId: 'r1' });
     expect(dialog()).toBeNull();
     expect(gets(calls, '/api/users')).toBe(2);
+  });
+
+  it('offers only Enable and the role picker on an owner that an older release disabled and demoted', async () => {
+    const helper = { ...signedIn.user, id: 'u3', username: 'helper', owner: false };
+    fakeApi({
+      'GET /api/session': { ...signedIn, user: helper },
+      'GET /api/users': [{ ...me, disabled: true, role: operators }],
+      'GET /api/roles': roles,
+    });
+    const { wrapper } = await mountAt('/settings/users');
+    const row = wrapper.get('tbody tr');
+    expect(row.findAll('button').map((b) => b.text())).toEqual(['Enable']);
+    expect(row.get('select').attributes('disabled')).toBeUndefined();
   });
 
   it('keeps the delete dialog open with core’s refusal', async () => {

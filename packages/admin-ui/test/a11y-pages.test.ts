@@ -49,7 +49,7 @@ describe('Tables', () => {
       'GET /api/session': signedIn,
       'GET /api/overview': overview,
       'GET /api/roles': [],
-      'GET /api/users': [signedIn.user],
+      'GET /api/users': [signedIn.user, { ...signedIn.user, id: 'u2', username: 'olga', owner: false }],
     });
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => (release = resolve));
@@ -68,7 +68,7 @@ describe('Tables', () => {
     expect(table.getAttribute('aria-busy')).toBe('false');
     expect(document.querySelector('.table-card [role="status"]')).toBeNull();
     const reset = [...table.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Set password')!;
-    expect(refText(reset, 'aria-describedby')).toContain('admin');
+    expect(refText(reset, 'aria-describedby')).toContain('olga');
   });
 });
 

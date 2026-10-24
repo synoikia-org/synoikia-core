@@ -10,6 +10,8 @@ The **Sign-in** column shows how a person signs in. A local account has **passwo
 
 The **primary owner** is the first account of the server. It keeps the password sign-in when password sign-in is off, so the server always has a way in.
 
+Nobody can delete or disable the primary owner, or change its role. Only the start-up settings set its password or reset its two-factor sign-in. So its row has no actions. An older release could disable the owner or move it out of the Admin role. Then its row offers **Enable** and the role, so that you can repair it.
+
 ## Add a user
 
 1. Choose **Add user**.
@@ -41,7 +43,7 @@ The person reaches only that endpoint. Their clients never go above the levels t
 
 Pick the new role in the **Role** column. The change applies to the next call of each client of that user. A client loses the endpoints that the new role does not have.
 
-The last enabled admin cannot leave the Admin role. Give a second user the Admin role first.
+The primary owner always keeps the Admin role. On a server without an owner, the last enabled admin cannot leave the Admin role. Give a second user the Admin role first.
 
 ## Set a password
 
@@ -78,6 +80,7 @@ A new user with the same name gets nothing of the old one. An automatic single s
 
 - The sign-in says "try again in 15 min": five wrong passwords or codes locked the name. Wait 15 minutes.
 - The user lost the authenticator app: choose **Reset 2FA**.
+- The primary owner lost the password: set `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD`, and restart the server. If the owner also lost the app, add `ADMIN_BOOTSTRAP_RESET_2FA=true`.
 - The user is disabled: choose **Enable**.
 - The user has **SSO** and single sign-on fails: check the policy on User auth.
 - The account shows **not signed in yet**: the identity provider must verify the address that you entered.

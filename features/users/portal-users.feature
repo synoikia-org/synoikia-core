@@ -12,10 +12,6 @@ Feature: Users in the portal
       When the admin picks the role "viewers" for user 12 on the user list
       Then the roles page shows 1 user in "viewers" and 0 users in "family"
 
-    Scenario: The last admin cannot leave the admin role
-      When the admin picks the role "viewers" for themselves on the user list
-      Then the portal shows the alert "You cannot remove the last enabled admin"
-
     Scenario: A user list that cannot load says why
       Given the server cannot read its users
       When the admin opens the user list
@@ -66,3 +62,9 @@ Feature: Users in the portal
     Scenario: The admin cannot delete or disable their own account
       When the admin opens the user list
       Then the row of the admin offers no delete and no disable
+
+    Scenario: User 12, a second admin, sees no way to change the primary owner
+      Given user 12 has the Admin role
+      When user 12 opens the user list
+      Then the row of the admin offers no delete, no disable, no "Set password" and no two-factor reset
+      And the role of the admin cannot be changed

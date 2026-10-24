@@ -2,6 +2,7 @@
 Feature: Users
   The admin adds the people who use core, each with one role.
   Core never lets administration lock itself out: someone enabled always keeps the Admin role.
+  The primary owner is always an enabled admin.
   Disabling a user ends at once everything their agents could reach, and enabling them again brings none of it back.
 
   Background:
@@ -36,16 +37,39 @@ Feature: Users
       When the admin tries to disable themselves
       Then the admin is told that they cannot disable themselves
 
-  Rule: The last enabled admin keeps the Admin role
+  Rule: The primary owner stays an enabled admin
+    Unit tests cover the last enabled admin on a server without an owner.
 
-    Scenario: The only admin cannot leave the Admin role
-      When the admin tries to move themselves to the role "family"
-      Then the admin is told that the last enabled admin keeps the Admin role
-
-    Scenario: With user 12 as a second admin, the admin can leave the Admin role
+    Scenario: With the admin as the owner, user 12 can leave the Admin role
       Given the admin gave user 12 the Admin role
-      When the admin moves themselves to the role "family"
-      Then the next administration request of the admin is refused, and user 12 can still administer core
+      When user 12 moves themselves to the role "family"
+      Then the next administration request of user 12 is refused, and the admin can still administer core
+
+    Scenario: User 12, a second admin, cannot disable the primary owner
+      Given the admin gave user 12 the Admin role
+      When user 12 tries to disable the admin
+      Then user 12 is told that the primary owner cannot be disabled
+      And the admin still signs in to the portal
+
+    Scenario: User 12, a second admin, cannot move the primary owner out of the Admin role
+      Given the admin gave user 12 the Admin role
+      When user 12 tries to move the admin to the role "family"
+      Then user 12 is told that the primary owner keeps the Admin role
+      And the admin can still administer core
+
+  Rule: Only the start-up admin changes how the primary owner signs in
+
+    Scenario: User 12, a second admin, cannot set a password for the primary owner
+      Given the admin gave user 12 the Admin role
+      When user 12 tries to set the password "taken over passphrase" for the admin
+      Then user 12 is told that only the start-up admin sets the primary owner's password
+      And the admin signs in with their old password, and not with "taken over passphrase"
+
+    Scenario: User 12, a second admin, cannot reset the two-factor sign-in of the primary owner
+      Given the admin set up an authenticator app, and gave user 12 the Admin role
+      When user 12 tries to reset two-factor for the admin
+      Then user 12 is told that only the start-up admin resets the primary owner's two-factor sign-in
+      And the admin still needs a code from the app to sign in
 
   Rule: Disabling a user ends what their agents could reach
 

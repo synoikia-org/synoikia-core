@@ -138,6 +138,7 @@ function confirmDelete() {
                 class="select"
                 :value="u.role.id"
                 :aria-label="`Role of ${u.username}`"
+                :disabled="u.owner && u.role.isAdmin"
                 @change="changeRole(u, $event)"
               >
                 <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
@@ -154,7 +155,7 @@ function confirmDelete() {
             <td class="small">{{ ago(u.lastLoginAt) }}</td>
             <td class="right">
               <button
-                v-if="u.kind === 'local'"
+                v-if="u.kind === 'local' && !u.owner"
                 class="btn btn-sm"
                 type="button"
                 :aria-describedby="`${uid}-${u.id}`"
@@ -163,7 +164,7 @@ function confirmDelete() {
                 Set password
               </button>
               <button
-                v-if="u.totpEnabled"
+                v-if="u.totpEnabled && !u.owner"
                 class="btn btn-sm"
                 type="button"
                 :aria-describedby="`${uid}-${u.id}`"
@@ -172,7 +173,7 @@ function confirmDelete() {
                 Reset 2FA
               </button>
               <button
-                v-if="u.id !== session.user?.id"
+                v-if="u.id !== session.user?.id && (!u.owner || u.disabled)"
                 class="btn btn-sm"
                 :class="{ 'btn-danger': !u.disabled }"
                 type="button"
@@ -182,7 +183,7 @@ function confirmDelete() {
                 {{ u.disabled ? 'Enable' : 'Disable' }}
               </button>
               <button
-                v-if="u.id !== session.user?.id"
+                v-if="u.id !== session.user?.id && !u.owner"
                 class="btn btn-sm btn-danger"
                 type="button"
                 :aria-describedby="`${uid}-${u.id}`"

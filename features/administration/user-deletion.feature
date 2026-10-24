@@ -1,6 +1,7 @@
 @id:user-deletion
 Feature: User deletion
   The admin can delete a user for good.
+  Nobody deletes the primary owner.
   The delete first takes away every credential of the user and ends their waiting approvals.
   It then removes what only the user had, and keeps shared records and the history in the audit log.
 
@@ -18,6 +19,14 @@ Feature: User deletion
     Scenario: A user who does not exist is not found
       When the admin tries to delete a user who does not exist
       Then the admin is told that there is no such user
+
+  Rule: Nobody deletes the primary owner
+
+    Scenario: User 15, a second admin, cannot delete the primary owner
+      Given the admin gave user 15 the Admin role
+      When user 15 tries to delete the admin
+      Then user 15 is told that the primary owner cannot be deleted
+      And the admin still signs in to the portal
 
   Rule: A delete first takes every credential away
     The delete cancels each waiting approval first, so no approval can stop it. A unit test covers that guard.

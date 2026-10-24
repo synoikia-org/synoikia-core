@@ -88,12 +88,6 @@ Then(
   },
 );
 
-When('the admin picks the role {string} for themselves on the user list', async (world: PortalWorld, role: string) => {
-  await world.role(role);
-  await userList(world);
-  await row(world, 'admin').getByRole('combobox').selectOption({ label: role });
-});
-
 // ── row actions ──
 
 When(
@@ -210,8 +204,33 @@ Then('user {int} is gone from the user list', async (world: PortalWorld, n: numb
 
 Then('the row of the admin offers no delete and no disable', async (world: PortalWorld) => {
   const own = row(world, 'admin');
-  await seen(own.getByRole('button', { name: 'Set password' }));
+  await seen(own.getByRole('combobox'));
   expect(await own.getByRole('button', { name: /^(Delete|Disable)$/ }).count()).toBe(0);
+});
+
+// ── the primary owner (ADR-0025) ──
+
+Given('user {int} has the Admin role', async (world: PortalWorld, n: number) => {
+  await world.user(`user ${n}`, { id: 'admin' });
+});
+
+When('user {int} opens the user list', async (world: PortalWorld, n: number) => {
+  await world.openAs(`user ${n}`, '/settings/users');
+  await seen(row(world, 'admin'));
+});
+
+Then(
+  'the row of the admin offers no delete, no disable, no "Set password" and no two-factor reset',
+  async (world: PortalWorld) => {
+    const owner = row(world, 'admin');
+    await seen(owner.getByText('primary owner', { exact: true }));
+    expect(await owner.getByRole('button').count()).toBe(0);
+    await seen(row(world, 'user 12').getByRole('button', { name: 'Set password' }));
+  },
+);
+
+Then('the role of the admin cannot be changed', async (world: PortalWorld) => {
+  expect(await row(world, 'admin').getByRole('combobox').isDisabled()).toBe(true);
 });
 
 // ── an SSO account (ADR-0025) ──
