@@ -79,7 +79,7 @@ For example, `GET :8080/api/instances` and `GET :8081/{slug}` both return 404.
 
 - Good, because the admin portal is not on the internet unless an admin publishes its port.
 - Good, because a stolen consent or approval cookie cannot reach the Admin API or the other purpose.
-- Good, because a rebinding page cannot reach either listener through another host name. So it cannot claim the first account.
+- Good, because a rebinding page cannot reach the MCP or the admin listener through another host name. So it cannot claim the first account.
 - Bad, because an install that reaches the portal through an unlisted name must add it to `ADMIN_ALLOWED_HOSTS`.
 - Bad, because an install without `PUBLIC_MCP_URL` has no OAuth.
 - Bad, because plugin text still reaches the model. The block marks it, and core's rules come before and after it.
