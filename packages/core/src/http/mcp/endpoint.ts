@@ -284,8 +284,6 @@ export class McpEndpoints {
     await s.server.close().catch(() => undefined);
   }
 
-  /** One principal can't pile up servers on an endpoint: past the cap, its least recently used sessions there go.
-   * Runs as the new session is kept, with no await, so opens that resume together cannot pass it (ADR-0015). */
   /** ADR-0015: past each cap, the least recently used sessions of the principal go, on this endpoint and then on
    * any. Runs as the new session is kept, with no await, so opens that resume together cannot pass it. */
   private capSessions(principal: string, instanceId: string, kept: string) {
