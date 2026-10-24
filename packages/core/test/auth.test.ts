@@ -36,6 +36,7 @@ describe('UserService', () => {
     expect(admin).toMatchObject({ username: 'admin', hasPassword: true, totpEnabled: false, owner: true });
     await expect(t.users.setupFirstUser('other', PASSWORD)).rejects.toBeInstanceOf(ConflictError);
     expect(await t.users.bootstrap('admin', PASSWORD)).toMatchObject({ status: 'owner_kept', changed: [] });
+    await expect(t.users.bootstrap('service:x', PASSWORD)).rejects.toMatchObject({ code: 'invalid_username' });
     const hash = t.db.select().from(users).get()!.passwordHash!;
     expect(hash).toMatch(/^\$argon2id\$v=19\$m=65536,t=3,p=1\$/);
   });

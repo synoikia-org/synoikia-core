@@ -336,7 +336,8 @@ export class UserService {
           'owner_name_taken',
           `ADMIN_BOOTSTRAP_USERNAME "${username}" belongs to another account`,
         );
-      if (!USERNAME.test(username))
+      // `:` names Cloudflare service tokens (ADR-0009), so the owner never takes such a name.
+      if (!USERNAME.test(username) || username.includes(':'))
         throw new ValidationError('invalid_username', 'ADMIN_BOOTSTRAP_USERNAME is not a valid username');
       this.db.transaction((tx) => {
         tx.update(users).set({ username }).where(eq(users.id, owner.id)).run();
