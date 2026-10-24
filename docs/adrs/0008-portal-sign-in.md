@@ -29,8 +29,8 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 
 **First user.**
 
-- If there are no users, the portal shows a Setup page. The setup endpoint works only while the users table is empty. The first user gets the Admin role.
-- For an install without a browser, `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` create the first user at start if the table is empty. After that, core ignores them and logs a warning.
+- If there are no users, the portal shows a Setup page. The setup endpoint works only while the users table is empty. The first user gets the Admin role and is the primary owner (ADR-0025).
+- For an install without a browser, `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` create the first user at start if the table is empty. Once an owner exists, they set its name and password at each start (ADR-0025).
 
 **TOTP (optional, for each user).**
 
@@ -53,9 +53,7 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 **Local sign-in fallback.**
 
 - Local password sign-in is always available, unless `security.disableLocalLogin` is true.
-- The admin can set it only while OIDC is on and at least one enabled SSO account exists.
-- While it is set, core refuses with 409 `local_login_disabled`: turning OIDC off, or disabling or deleting the last enabled SSO account.
-- `ADMIN_FORCE_LOCAL_LOGIN=true` turns local sign-in on again.
+- While it is true, only the primary owner signs in with a password (ADR-0025). So the server always has a way in, and the admin can set it without OIDC.
 
 **Sessions.**
 
@@ -76,7 +74,7 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 
 **Delete a user.** An admin deletes a user (`DELETE /api/users/:id`). The delete is permanent.
 
-- Core refuses to delete the admin who asks, the last user or the last enabled admin. While local sign-in is off, it also keeps the last enabled SSO account.
+- Core refuses to delete the admin who asks, the last user or the last enabled admin.
 - First, core takes every credential of the user away: sessions, OAuth grants and bearer tokens. It also ends their pending approvals and the session grants that they gave (ADR-0006).
 - Then, in one transaction, core deletes the user, their personal levels and their own pre-approval rules. It keeps the shared rows that name the user and clears that name. It writes the audit event `user_deleted`.
 - Core does not change the audit log. The log reads the user name of a deleted user from `user_deleted`.
