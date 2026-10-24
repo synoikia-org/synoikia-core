@@ -203,8 +203,8 @@ function confirmDelete() {
       </div>
       <fieldset class="field">
         <legend>Sign-in</legend>
-        <label><input v-model="adding.kind" type="radio" value="local" /> Local account</label>
-        <label><input v-model="adding.kind" type="radio" value="sso" /> SSO account ({{ session.oidcLabel }})</label>
+        <label class="row"><input v-model="adding.kind" type="radio" value="local" /> Local account</label>
+        <label class="row"><input v-model="adding.kind" type="radio" value="sso" /> SSO account</label>
       </fieldset>
       <div v-if="adding.kind === 'sso'" class="field">
         <label for="u-email">Address at {{ session.oidcLabel }}</label>

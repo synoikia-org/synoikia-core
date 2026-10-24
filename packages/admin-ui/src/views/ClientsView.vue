@@ -290,7 +290,7 @@ function createClient() {
           </label>
         </template>
       </div>
-      <fieldset class="access">
+      <fieldset class="field">
         <legend>Access</legend>
         <label class="row small"><input v-model="newToken.access" type="radio" value="read" /> Read only</label>
         <label class="row small"
@@ -359,21 +359,6 @@ function createClient() {
 </template>
 
 <style scoped>
-.access {
-  border: none;
-  padding: 0;
-  margin: 0 0 14px;
-}
-.access legend {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-muted);
-  margin-bottom: 5px;
-  padding: 0;
-}
-.access label + label {
-  margin-top: 4px;
-}
 .off td {
   opacity: 0.55;
 }
