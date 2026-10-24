@@ -46,6 +46,6 @@ Chosen option: "A third Hono app on its own port". Prometheus can reach it witho
 - Bad, because the listener has no Host check. Without a token, a web page can make a browser on the LAN read the metrics through DNS rebinding. Set `METRICS_TOKEN` where browsers share the network.
 - Bad, because the token is one shared secret in the environment, with no rotation in the portal.
 - Bad, because a restart sets the counters and the active users back to zero.
-- Bad, because a client can claim the name of another app.
+- Bad, because a client can claim the name of another app. One client can also take all 32 names until core stops, so later apps count as `other`.
 
 The model views `index` and `coreComponents` show the metrics listener. The feature file `@id:134` specifies its behavior.
