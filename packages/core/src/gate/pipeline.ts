@@ -8,6 +8,7 @@ import { writeAudit } from '../audit.js';
 import type { AuditEvent } from '../audit.js';
 import { resolveAccess } from '../catalog/groups.js';
 import type { Db } from '../db/index.js';
+import type { CallOutcome, CoreEvents } from '../events.js';
 import type { AccessPrincipal } from './access.js';
 import { operations } from '../db/schema.js';
 import type { InstanceSettings } from '../instances/settings.js';
@@ -43,6 +44,8 @@ export interface GateDeps {
   executions?: ExecutionRegistry;
   /** The total of sandbox runs at once (ADR-0003); without it, 16. */
   runTotal?: () => number;
+  /** Each call's outcome goes on the bus for the metrics (ADR-0024). */
+  events?: CoreEvents;
 }
 
 /** How an execution parks (ADR-0006): the gate audits the hand-over and reports each decision. */
@@ -188,8 +191,16 @@ export function createGateBindings(
       detail: { executionId, fn },
     };
     let audited = false;
+    const report = (outcome: CallOutcome) =>
+      deps.events?.emit('call.finished', {
+        slug: rt.slug,
+        outcome,
+        durationMs: Date.now() - started,
+        userId: caller.principal.userId,
+      });
     const finish = (decision: string, extra: { resultStatus?: string; detail?: Record<string, unknown> } = {}) => {
       audited = true;
+      report(extra.resultStatus === 'ok' ? 'done' : extra.resultStatus === 'error' ? 'failed' : 'denied');
       writeAudit(
         deps.db,
         {
@@ -383,6 +394,7 @@ export function createGateBindings(
             reserve: () => opts.park!.reserve(),
             offer: (a, info) => {
               parked = true;
+              report('awaiting_approval');
               writeAudit(
                 deps.db,
                 {

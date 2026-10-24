@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { writeAudit } from '../audit.js';
 import type { Db } from '../db/index.js';
 import { operations, pendingApprovals, pluginInstances } from '../db/schema.js';
+import type { CoreEvents } from '../events.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors.js';
 import { readInstanceSettings } from '../instances/settings.js';
 import type { ApprovalLinkService } from './links.js';
@@ -143,6 +144,7 @@ export class ApprovalService {
     private readonly links: ApprovalLinkService,
     private readonly now: () => Date = () => new Date(),
     private readonly formFallbackMs = FORM_FALLBACK_MS,
+    private readonly events?: CoreEvents,
   ) {}
 
   /** At startup, deny and audit pending rows from a previous process: their params lived only in memory (ADR-0006). */
@@ -233,6 +235,8 @@ export class ApprovalService {
           .where(and(eq(pendingApprovals.id, id), eq(pendingApprovals.status, 'pending')))
           .run();
         this.links.consumeAll(id);
+        if (d.outcome !== 'cancelled')
+          this.events?.emit('approval.ended', { instanceId: row.instanceId, outcome: d.outcome });
         if (channel === 'url') prompts.urlComplete?.(id);
         resolve({ ...d, channel: d.channel ?? channel! });
       };

@@ -25,6 +25,7 @@ import { InstanceManager } from './instances/manager.js';
 import { createLogger } from './log.js';
 import type { Logger } from './log.js';
 import { runHousekeeping } from './maintenance.js';
+import { Metrics } from './metrics.js';
 import type { ManagerOptions } from './instances/manager.js';
 import { NotifierService } from './notify/service.js';
 import type { FetchLike } from './notify/service.js';
@@ -46,6 +47,8 @@ export interface AppContext {
   db: Db;
   secrets: SecretBox;
   events: CoreEvents;
+  /** The metrics for Prometheus (ADR-0024). */
+  metrics: Metrics;
   users: UserService;
   roles: RoleService;
   sessions: SessionService;
@@ -160,7 +163,8 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   if (config.METRICS_PORT !== undefined && !config.METRICS_TOKEN)
     warnings.push('METRICS_TOKEN is not set: anyone who reaches the metrics port can read the metrics.');
   const links = new ApprovalLinkService(db, now);
-  const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
+  const approvals = new ApprovalService(db, links, now, opts.formFallbackMs, events);
+  const metrics = new Metrics(events, instances, now);
   const grants = new SessionGrantService(db, now);
   // An approval, a parked run or a grant must not outlive the plugin process and configuration it was given for.
   events.on('instance.status', ({ instanceId, status }) => {
@@ -219,6 +223,7 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     db,
     secrets,
     events,
+    metrics,
     users,
     roles: new RoleService(db),
     sessions: new SessionService(db, secrets.deriveKey('session-pepper'), now),
@@ -239,7 +244,17 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     warnings,
     now,
     externalKeys: opts.externalKeys,
-    gateDeps: () => ({ db, approvals, limiter, attestationKey: keys.attestation, now, grants, executions, runTotal }),
+    gateDeps: () => ({
+      db,
+      approvals,
+      limiter,
+      attestationKey: keys.attestation,
+      now,
+      grants,
+      executions,
+      runTotal,
+      events,
+    }),
     runTotal,
     discoverPlugins: discover,
     async start() {

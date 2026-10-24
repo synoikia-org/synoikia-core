@@ -128,6 +128,22 @@ scrape_configs:
       - targets: ['synoikia.lan:9464']
 ```
 
+| Metric                                  | Labels                | What                                                              |
+| --------------------------------------- | --------------------- | ----------------------------------------------------------------- |
+| `synoikia_build_info`                   | `version`             | The version of core                                               |
+| `synoikia_calls_total`                  | `instance`, `outcome` | Calls by outcome: `done`, `denied`, `failed`, `awaiting_approval` |
+| `synoikia_call_duration_seconds`        | `instance`            | How long calls take to answer                                     |
+| `synoikia_approvals_total`              | `instance`, `outcome` | Approvals by how they end: `approved`, `denied`, `timed_out`      |
+| `synoikia_agent_sign_in_failures_total` |                       | Agent requests refused for their credential                       |
+| `synoikia_active_users`                 |                       | Users with a call in the last hour                                |
+| `synoikia_plugins_installed`            |                       | Installed plugins                                                 |
+| `synoikia_instances`                    |                       | Configured instances                                              |
+| `synoikia_instance_state`               | `instance`, `state`   | 1 for the current state of each instance                          |
+| `synoikia_sessions_open`                | `instance`            | Open agent sessions                                               |
+| `synoikia_sessions_by_app`              | `app`                 | Open agent sessions by the app that the client names              |
+
+Counters start at zero when core starts. The app name comes from the client, so any client can claim any name.
+
 ### Network egress
 
 Core does not restrict the network access of plugins yet (issues #108 and #111). Use a container network policy. Allow outbound traffic only to the upstream hosts, the ntfy and webhook targets, the OIDC issuer and the plugin repository hosts.
