@@ -32,7 +32,7 @@ Feature: Help for each page of the portal
     Scenario: The admin finds the OIDC help from the rules of /groceries
       Given the admin has the help of the rules of /groceries open
       When the admin searches the help for "OIDC group"
-      Then the admin reads "Match a role to an OIDC group" from User auth, still on the rules of /groceries
+      Then the admin reads "Let only one OIDC group sign in" from User auth, still on the rules of /groceries
       And one step takes the admin back to "Pre-Approval Rules"
 
     Scenario: The admin goes from the help on rules to the help on access levels
