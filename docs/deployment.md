@@ -35,6 +35,8 @@ The primary owner always keeps the password sign-in, also while password sign-in
 
 A name in `ADMIN_BOOTSTRAP_USERNAME` that another account has stops the start.
 
+Older releases ignored these settings once an account existed. Before you upgrade, remove them unless you mean them. The first start of this release applies them to the owner.
+
 ## Reverse proxy
 
 Put the agent port behind a reverse proxy, such as [Caddy](https://caddyserver.com/), [Traefik](https://traefik.io/traefik/) or a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/). Set `PUBLIC_MCP_URL` to its public address.
