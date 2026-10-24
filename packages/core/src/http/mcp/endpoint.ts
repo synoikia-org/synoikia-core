@@ -264,6 +264,13 @@ export class McpEndpoints {
   ) {
     this.sweeper = setInterval(() => this.sweep(), 60_000);
     this.sweeper.unref();
+    ctx.metrics.readSessionsFrom(() => {
+      const slugs = new Map(ctx.instances.slugs().map((i) => [i.id, i.slug]));
+      return [...this.sessions.values()].map((s) => ({
+        slug: slugs.get(s.instanceId) ?? 'unknown',
+        app: s.clientName,
+      }));
+    });
   }
 
   get sessionCount() {
@@ -605,6 +612,7 @@ export class McpEndpoints {
 
     const auth = await authenticateMcp(this.ctx, this.oauth, c, instance);
     if (!auth.ok) {
+      if (presentsCredential(c)) this.ctx.events.emit('credential.refused', {});
       this.refused(c, slug, auth.status, auth.detail, {
         methods: effectiveAuthMethods(this.ctx.db, instance.authMethods).join(',') || 'none',
       });

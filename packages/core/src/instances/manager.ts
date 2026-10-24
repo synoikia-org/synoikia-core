@@ -225,6 +225,15 @@ export class InstanceManager {
       .map((p) => ({ ...p, instances: counts.get(p.id) ?? 0 }));
   }
 
+  /** The id and slug of each instance, without parsing manifests: the metrics read it at each scrape (ADR-0024). */
+  slugs() {
+    return this.db.select({ id: pluginInstances.id, slug: pluginInstances.slug }).from(pluginInstances).all();
+  }
+
+  pluginCount() {
+    return this.db.select({ n: count() }).from(plugins).get()?.n ?? 0;
+  }
+
   /** A plugin by row id only, or null. */
   findPlugin(pluginRowId: string): PluginRow | null {
     return this.db.select().from(plugins).where(eq(plugins.id, pluginRowId)).get() ?? null;

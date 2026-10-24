@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 
-/** In-process event bus (ADR-0019) for notifiers and admin SSE; payloads never carry params or secrets. */
+export type CallOutcome = 'done' | 'denied' | 'failed' | 'awaiting_approval';
+
+/** In-process event bus (ADR-0019) for notifiers, admin SSE and metrics; payloads never carry params or secrets. */
 export interface CoreEventMap {
   'instance.status': [{ instanceId: string; slug: string; status: string; error?: string }];
   'plugin.crashed': [{ instanceId: string; slug: string; error: string }];
@@ -16,6 +18,10 @@ export interface CoreEventMap {
   ];
   'sync.failed': [{ instanceId: string; slug: string; error: string }];
   'auth.lockout': [{ username: string; ip?: string; surface?: 'admin' | 'mcp' }];
+  // Only the metrics listener counts these (ADR-0024); they are not in CORE_EVENT_NAMES.
+  'call.finished': [{ slug: string; outcome: CallOutcome; durationMs: number; userId?: string }];
+  'approval.ended': [{ instanceId: string; outcome: 'approved' | 'denied' | 'timed_out' }];
+  'credential.refused': [Record<string, never>];
 }
 
 export type CoreEventName = keyof CoreEventMap;

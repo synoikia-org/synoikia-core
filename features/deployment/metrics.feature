@@ -33,18 +33,16 @@ Feature: Metrics for Prometheus
   Rule: Prometheus sees what is installed and how it runs
 
     Scenario: The version of core is shown
-      Given the operator started core 0.24.0 with metrics on the port 9464
+      Given the operator started core 0.25.0 with metrics on the port 9464
       When Prometheus reads the metrics
-      Then Prometheus reads the version "0.24.0"
+      Then Prometheus reads the version "0.25.0"
 
-    @backlog
     Scenario: The installed plugins and the instances are counted
       Given the operator started the server with metrics on the port 9464
       And Acme Tasks is installed with the instances "tasks" and "chores"
       When Prometheus reads the metrics
       Then Prometheus reads 1 installed plugin and 2 instances
 
-    @backlog
     Scenario Outline: An instance is shown in its state <state>
       Given the operator started the server with metrics on the port 9464
       And the instance "tasks" is <state>
@@ -58,7 +56,6 @@ Feature: Metrics for Prometheus
         | stopped |
         | error   |
 
-  @backlog
   Rule: Calls are counted for each instance and outcome
 
     Scenario: A read that runs at once is counted as done
@@ -88,7 +85,6 @@ Feature: Metrics for Prometheus
       When agent 7 adds "butter" to "Groceries"
       Then Prometheus reads 1 call to "tasks" that is awaiting approval
 
-  @backlog
   Rule: Prometheus sees how fast calls answer
 
     Scenario: A call that takes 300 ms falls in the bucket up to 0.5 s
@@ -98,9 +94,9 @@ Feature: Metrics for Prometheus
       When agent 7 asks for the open tasks of "Groceries"
       Then Prometheus reads 1 call to "tasks" in the bucket up to 0.5 s, and none up to 0.25 s
 
-  @backlog
   Rule: Prometheus sees how approvals end
 
+    @long-running
     Scenario Outline: An approval that ends as <end> is counted
       Given the operator started the server with metrics on the port 9464
       And agent 7 added "butter" to "Groceries" of the instance "tasks" and waits for approval
@@ -113,7 +109,6 @@ Feature: Metrics for Prometheus
         | is refused       | denied    |
         | runs out of time | timed out |
 
-  @backlog
   Rule: Prometheus sees who uses core
 
     Scenario: Users who called in the last hour are counted as active
@@ -128,7 +123,6 @@ Feature: Metrics for Prometheus
       When Prometheus reads the metrics
       Then Prometheus reads 1 session from "claude-code" and 1 from "cursor"
 
-  @backlog
   Rule: Prometheus sees the agent sessions and the sign-ins that fail
 
     Scenario: Open agent sessions are counted for each instance
@@ -143,7 +137,6 @@ Feature: Metrics for Prometheus
       When agent 9 calls "tasks"
       Then Prometheus reads 1 failed agent sign-in
 
-  @backlog
   Rule: Metrics never show what an agent sent or got
 
     Scenario: A call with a share password leaves no trace of it in the metrics

@@ -101,4 +101,11 @@ model {
   prometheus -> synoikia.core.metrics 'scrapes metrics from' {
     technology 'Prometheus text format, HTTP'
   }
+  synoikia.core.gate -> synoikia.core.notify 'emits an event for each call, with its outcome and duration, on'
+  synoikia.core.approvals -> synoikia.core.notify 'emits an event for each approval that ends on'
+  synoikia.core.mcpEndpoints -> synoikia.core.notify 'emits an event for each refused agent credential on'
+  synoikia.core.metrics -> synoikia.core.notify 'counts the call, approval and credential events of'
+  synoikia.core.metrics -> synoikia.core.instances 'reads the instances and their states at each scrape from'
+  synoikia.core.metrics -> synoikia.core.pluginHost 'reads the installed plugins at each scrape from'
+  synoikia.core.metrics -> synoikia.core.mcpEndpoints 'reads the open sessions and their apps at each scrape from'
 }

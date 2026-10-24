@@ -1508,13 +1508,14 @@ export class SynoikiaWorld extends QuickPickleWorld {
       mode: 'url' | 'form' | 'both';
       answer: (p: Prompt) => Promise<PromptAnswer>;
     },
+    appName = `agent ${agent}`,
   ) {
     const a = this.agents.get(agent);
     if (!a) throw new Error(`The World has no agent ${agent} yet`);
     if (a.client) this.oldClients.push(a.client);
     const modes = { url: { url: {} }, form: { form: {} }, both: { url: {}, form: {} } };
     const capabilities = prompts ? { elicitation: modes[prompts.mode] } : {};
-    const client = new Client({ name: `agent ${agent}`, version: '1.0.0' }, { capabilities });
+    const client = new Client({ name: appName, version: '1.0.0' }, { capabilities });
     if (prompts)
       client.setRequestHandler(ElicitRequestSchema, async (req) => {
         const p = req.params as {

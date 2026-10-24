@@ -116,21 +116,21 @@ graph TB
   subgraph SynoikiaCore["`Core`"]
     SynoikiaCore.Metrics@{ shape: rectangle, label: "Metrics listener" }
     SynoikiaCore.Gate@{ shape: rectangle, label: "Gate" }
-    SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
     SynoikiaCore.AdminApi@{ shape: rectangle, label: "Admin API" }
-    SynoikiaCore.Notify@{ shape: rectangle, label: "Notifications" }
+    SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
     SynoikiaCore.Auth@{ shape: rectangle, label: "Auth" }
     SynoikiaCore.Instances@{ shape: rectangle, label: "Instance manager" }
     SynoikiaCore.Runtime@{ shape: rectangle, label: "Runtime" }
     SynoikiaCore.Approvals@{ shape: rectangle, label: "Approvals" }
     SynoikiaCore.Crypto@{ shape: rectangle, label: "Secret box" }
     SynoikiaCore.CatalogSync@{ shape: rectangle, label: "Catalog sync" }
+    SynoikiaCore.Notify@{ shape: rectangle, label: "Notifications" }
     SynoikiaCore.PluginHost@{ shape: rectangle, label: "Plugin host" }
     SynoikiaCore.Audit@{ shape: rectangle, label: "Audit log" }
     SynoikiaCore.DbAccess@{ shape: rectangle, label: "Database access" }
   end
-  NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
+  NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   PluginRepository@{ shape: rectangle, label: "Plugin repository" }
   SynoikiaBundles@{ shape: disk, label: "Plugin bundles" }
   SynoikiaDatabase@{ shape: disk, label: "Database" }
@@ -145,10 +145,20 @@ approver with`" .-> SynoikiaCore.Auth
 in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.McpEndpoints -. "`looks up the instance of each endpoint 
 in`" .-> SynoikiaCore.Instances
+  SynoikiaCore.McpEndpoints -. "`emits an event for each refused agent 
+credential on`" .-> SynoikiaCore.Notify
+  SynoikiaCore.Metrics -. "`reads the open sessions and their apps 
+at each scrape from`" .-> SynoikiaCore.McpEndpoints
   SynoikiaCore.AdminApi -. "`signs admins in with`" .-> SynoikiaCore.Auth
   SynoikiaCore.AdminApi -. "`sets the total of runs at once in`" .-> SynoikiaCore.Runtime
   SynoikiaCore.AdminApi -. "`configures instances in`" .-> SynoikiaCore.Instances
   SynoikiaCore.AdminApi -. "`[...]`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Metrics -. "`reads the instances and their states at 
+each scrape from`" .-> SynoikiaCore.Instances
+  SynoikiaCore.Metrics -. "`reads the installed plugins at each 
+scrape from`" .-> SynoikiaCore.PluginHost
+  SynoikiaCore.Metrics -. "`counts the call, approval and credential 
+events of`" .-> SynoikiaCore.Notify
   SynoikiaCore.Auth -. "`[...]`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Runtime -. "`starts an idle instance for a guide read 
 through`" .-> SynoikiaCore.PluginHost
@@ -158,7 +168,11 @@ of an instance in`" .-> SynoikiaCore.Runtime
   SynoikiaCore.Gate -. "`asks for human approval in`" .-> SynoikiaCore.Approvals
   SynoikiaCore.Gate -. "`[...]`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.Gate -. "`reads operations and access levels from`" .-> SynoikiaCore.CatalogSync
+  SynoikiaCore.Gate -. "`emits an event for each call, with its 
+outcome and duration, on`" .-> SynoikiaCore.Notify
   SynoikiaCore.Gate -. "`records each decision in`" .-> SynoikiaCore.Audit
+  SynoikiaCore.Approvals -. "`emits an event for each approval that 
+ends on`" .-> SynoikiaCore.Notify
   SynoikiaCore.Approvals -. "`stores pending approvals through`" .-> SynoikiaCore.DbAccess
   SynoikiaCore.Instances -. "`asks for the open approvals of an 
 instance in`" .-> SynoikiaCore.Approvals

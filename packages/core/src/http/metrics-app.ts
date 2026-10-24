@@ -1,22 +1,11 @@
 import { Hono } from 'hono';
-import { Gauge, Registry } from '@prometheus-io/client';
 import type { AppContext } from '../app.js';
 import { safeEqual, sha256 } from '../auth/tokens.js';
-import { CORE_VERSION } from '../version.js';
 import { errorResponse } from './common.js';
 
 /** The metrics listener for Prometheus (ADR-0024): `/metrics`, behind the scrape token, compared as digests in constant time. */
 export function createMetricsApp(ctx: AppContext): Hono {
-  const registry = new Registry();
-  new Gauge({
-    name: 'synoikia_build_info',
-    help: 'The version of core.',
-    labelNames: ['version'],
-    registers: [registry],
-  })
-    .labels(CORE_VERSION)
-    .set(1);
-
+  const { registry } = ctx.metrics;
   const token = ctx.config.METRICS_TOKEN;
   const expected = token ? sha256(token) : undefined;
   const app = new Hono();
