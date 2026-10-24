@@ -282,6 +282,7 @@ export class UserService {
     if (!this.db.select({ id: roles.id }).from(roles).where(eq(roles.id, roleId)).get())
       throw new ValidationError('unknown_role', 'No such role');
     if (user.roleId === roleId) return;
+    if (user.owner) throw new ConflictError('owner_admin', 'The primary owner keeps the Admin role');
     if (user.roleId === ADMIN_ROLE_ID && !user.disabled && this.otherAdmins(userId) === 0)
       throw new ConflictError('last_admin', 'You cannot remove the last enabled admin');
     this.db.transaction((tx) => {
@@ -405,6 +406,7 @@ export class UserService {
   setDisabled(userId: string, disabled: boolean, actor: { userId?: string } = {}) {
     const user = this.get(userId);
     if (disabled) {
+      if (user.owner) throw new ConflictError('owner_disable', 'The primary owner cannot be disabled');
       const active = this.db.select().from(users).where(eq(users.disabled, false)).all();
       if (active.length === 1 && active[0]!.id === userId) {
         throw new ConflictError('last_user', 'You cannot disable the last active user');
@@ -424,9 +426,10 @@ export class UserService {
     });
   }
 
-  /** Refuses a delete that would leave no user or no enabled admin. */
+  /** Refuses a delete of the primary owner (ADR-0025), or one that would leave no user or no enabled admin. */
   assertDeletable(userId: string) {
     const user = this.get(userId);
+    if (user.owner) throw new ConflictError('owner_delete', 'The primary owner cannot be deleted');
     if (this.count() === 1) throw new ConflictError('last_user', 'You cannot delete the last user');
     if (user.roleId === ADMIN_ROLE_ID && !user.disabled && this.otherAdmins(userId) === 0)
       throw new ConflictError('last_admin', 'You cannot delete the last enabled admin');

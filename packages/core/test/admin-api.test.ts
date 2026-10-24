@@ -218,12 +218,15 @@ describe('deleting users', () => {
     });
   });
 
-  it('refuses to delete yourself, the last admin or the last user', async () => {
+  it('refuses to delete yourself, the owner, the last admin or the last user', async () => {
     const t = await withVictim();
     const refused = async (id: string, error: string) =>
       expect(await (await t.b.del(`/api/users/${id}`)).json()).toMatchObject({ error });
     await refused(t.me, 'self_delete');
     expect((await t.b.del('/api/users/nobody')).status).toBe(404);
+    expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'owner_delete' }));
+    // A server without an owner (ADR-0025, the upgrade) still keeps its last user and its last enabled admin.
+    t.ctx.db.update(users).set({ owner: false }).where(eq(users.id, t.me)).run();
     expect(() => t.ctx.users.assertDeletable(t.me)).toThrow(expect.objectContaining({ code: 'last_user' }));
 
     const viewer = await t.add('viewer', t.ctx.roles.create({ name: 'Viewer' }).id);

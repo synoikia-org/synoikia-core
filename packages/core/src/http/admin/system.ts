@@ -194,6 +194,9 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
       z.object({ disabled: z.boolean().optional(), password: z.string().optional(), roleId: z.string().optional() }),
     );
     const id = c.req.param('id');
+    // Only the start-up admin sets the owner's password (ADR-0025); the owner uses the profile.
+    if (body.password !== undefined && ctx.users.get(id).owner)
+      throw new ConflictError('owner_password', "Only the start-up admin sets the primary owner's password");
     if (body.roleId !== undefined) ctx.users.setRole(id, body.roleId, actor(c));
     if (body.disabled !== undefined) {
       if (id === c.get('user').id && body.disabled)
@@ -228,6 +231,8 @@ export function registerSystemRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     return c.body(null, 204);
   });
   app.post('/api/users/:id/reset-totp', (c) => {
+    if (ctx.users.get(c.req.param('id')).owner)
+      throw new ConflictError('owner_totp', "Only the start-up admin resets the primary owner's two-factor sign-in");
     ctx.users.resetTotp(c.req.param('id'), actor(c));
     // An approval browser's sign-in must not outlive the authenticator it was made with.
     ctx.sessions.revokeKind(c.req.param('id'), 'approval_ui');
