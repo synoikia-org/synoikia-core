@@ -1,6 +1,6 @@
 {
   "name": "@synoikia/core",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "description": "Core process: MCP endpoints, Admin API, plugin host, permission gate",
   "license": "MIT",
   "repository": {
@@ -44,6 +44,7 @@
     "isolated-vm": "~6.2.0",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",
+    "prom-client": "^15.1.3",
     "semver": "^7.8.5",
     "tar": "^7.5.22",
     "zod": "^4.6.7"

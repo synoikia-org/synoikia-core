@@ -12,6 +12,11 @@ const bool = z
   .transform((v) => v === 'true' || v === '1');
 
 const port = z.coerce.number().int().min(0).max(65535);
+const optionalPort = z.preprocess((v) => (v === '' ? undefined : v), port.optional());
+const optionalString = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v : undefined));
 const optionalUrl = z
   .string()
   .optional()
@@ -26,6 +31,10 @@ const EnvSchema = z
     MCP_PORT: port.default(8080),
     ADMIN_HOST: z.string().default('0.0.0.0'),
     ADMIN_PORT: port.default(8081),
+    /** The metrics listener runs only when this is set (ADR-0023). */
+    METRICS_HOST: z.string().default('0.0.0.0'),
+    METRICS_PORT: optionalPort,
+    METRICS_TOKEN: optionalString,
     PUBLIC_MCP_URL: optionalUrl,
     PUBLIC_ADMIN_URL: optionalUrl,
     /** How many reverse proxies to trust (`true`/`1`, `2`, …); X-Forwarded-For is read from the right. */
@@ -60,6 +69,10 @@ const EnvSchema = z
   .refine((e) => e.MCP_PORT === 0 || e.MCP_PORT !== e.ADMIN_PORT, {
     message: 'MCP_PORT and ADMIN_PORT must differ',
     path: ['ADMIN_PORT'],
+  })
+  .refine((e) => !e.METRICS_PORT || (e.METRICS_PORT !== e.MCP_PORT && e.METRICS_PORT !== e.ADMIN_PORT), {
+    message: 'METRICS_PORT must differ from MCP_PORT and ADMIN_PORT',
+    path: ['METRICS_PORT'],
   });
 
 export type Config = z.infer<typeof EnvSchema>;

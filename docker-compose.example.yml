@@ -9,6 +9,7 @@ services:
     ports:
       - '127.0.0.1:8080:8080' # MCP endpoints → reverse proxy
       - '192.168.1.10:8081:8081' # Admin portal → dedicated port (adjust the bind address to your host)
+      # - '192.168.1.10:9464:9464' # Metrics for Prometheus, when METRICS_PORT=9464 is set
     volumes:
       - synoikia-data:/data
 

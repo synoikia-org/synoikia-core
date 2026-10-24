@@ -1,6 +1,6 @@
 {
   "name": "@synoikia/create-plugin",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Create Synoikia plugin repositories and plugins, then build, check and publish them",
   "license": "MIT",
   "repository": {

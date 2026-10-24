@@ -50,6 +50,7 @@ import '../deployment/steps/host-origin.steps.js';
 import '../deployment/steps/proxies.steps.js';
 import '../deployment/steps/shutdown.steps.js';
 import '../deployment/steps/server-log.steps.js';
+import '../deployment/steps/metrics.steps.js';
 import '../plugins/steps/plugin-repositories.steps.js';
 import '../plugins/steps/plugin-install-and-update.steps.js';
 import '../plugins/steps/manual-plugins.steps.js';

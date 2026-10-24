@@ -157,6 +157,8 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     warnings.push(
       'PUBLIC_MCP_URL is not set: OAuth is off (bearer tokens still work). Set it to the public address of the MCP port.',
     );
+  if (config.METRICS_PORT !== undefined && !config.METRICS_TOKEN)
+    warnings.push('METRICS_TOKEN is not set: anyone who reaches the metrics port can read the metrics.');
   const links = new ApprovalLinkService(db, now);
   const approvals = new ApprovalService(db, links, now, opts.formFallbackMs);
   const grants = new SessionGrantService(db, now);
