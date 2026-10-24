@@ -275,9 +275,11 @@ export class OidcService {
     const bound = users.byOidc(identity.issuer, identity.subject);
     if (bound) return bound.kind === 'sso' && !bound.disabled ? bound : null;
     const waiting = identity.email ? users.byPendingOidcEmail(identity.email) : undefined;
+    // A disabled account takes no identity, so nobody can claim it while the admin keeps it off.
+    if (waiting?.disabled) return null;
     if (waiting && !waiting.oidcSubject) {
       users.bindOidc(waiting.id, identity.issuer, identity.subject);
-      return waiting.disabled ? null : users.get(waiting.id);
+      return users.get(waiting.id);
     }
     const settings = this.getSettings();
     // Auto-provisioning is self-registration: it needs a default role too (ADR-0010).

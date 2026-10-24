@@ -67,6 +67,12 @@ describe('setup, login and sessions', () => {
     // Once bound, only the subject counts: another identity with the old address gets nothing.
     expect(await signIn('sub-99', 'user21@acme.example')).toBe('/login?error=oidc_not_allowed');
     expect(await signIn('sub-21', 'u21@acme.example')).toBe('/');
+
+    // A disabled SSO account that waits for its address takes no identity, so nobody claims it meanwhile.
+    const off = await t.ctx.users.create({ username: 'user22', kind: 'sso', oidcEmail: 'user22@acme.example' });
+    t.ctx.users.setDisabled(off.id, true);
+    expect(await signIn('sub-22', 'user22@acme.example')).toBe('/login?error=oidc_not_allowed');
+    expect(t.ctx.users.get(off.id)).toMatchObject({ oidcSubject: null, oidcEmail: 'user22@acme.example' });
   });
 
   it('gives an SSO account no password and no app', async () => {
