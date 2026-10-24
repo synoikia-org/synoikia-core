@@ -16,6 +16,8 @@ ignoredBuiltDependencies:
 overrides:
   '@tanstack/match-sorter-utils': 9.1.2
   '@esbuild-kit/core-utils>esbuild': ^0.25.12
+  body-parser: ^2.4.0
+  fast-uri: ^3.1.9
   ip-address: ^10.7.4
   likec4>vite: ^8.3.5
   source-map-js: ^1.2.2
