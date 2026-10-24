@@ -111,7 +111,7 @@ The child can also send the notifications `log`, `catalogChanged` and `heartbeat
 }
 ```
 
-**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.3.0`. Version `0.3.0` moved the messages from the Node IPC channel to the pipe. A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
+**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.3.1`. Version `0.3.0` moved the messages from the Node IPC channel to the pipe, and `0.3.1` adds the heartbeat (ADR-0023). A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
 
 - Core masks `sensitiveResult` from contract `0.2.2`. A plugin that declares `sensitiveResult` must require `^0.2.2` or later.
 - `checkManifest`, `checkConformance`, `synoikia-plugin check` and `synoikia-plugin repo pack` refuse a plugin that does not.
