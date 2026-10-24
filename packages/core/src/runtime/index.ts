@@ -365,7 +365,11 @@ function guideBindings(deps: GateDeps, rt: InstanceRuntime, caller: CallerContex
           and(eq(operations.instanceId, rt.instanceId), eq(operations.key, String(key)), eq(operations.stale, false)),
         )
         .get();
-      if (!op) throw new BindingError('UNKNOWN_OPERATION', `${String(key)} is not in the catalog`);
+      const caps = op && loadCaps(deps.db, rt.instanceId, caller.principal);
+      const group = op && deps.db.select().from(operationGroups).where(eq(operationGroups.id, op.groupId)).get();
+      // A role never learns of an operation it keeps from the caller, nor gets its key (ADR-0003, ADR-0010).
+      if (!op || (caps && !effectiveAccess(accessInput(op), group, caller.principal, caps(op)).reachable))
+        throw new BindingError('UNKNOWN_OPERATION', `${String(key)} is not in the catalog`);
       if (!op.attestationRequired) return { key: op.key, required: false };
       let guide;
       try {
