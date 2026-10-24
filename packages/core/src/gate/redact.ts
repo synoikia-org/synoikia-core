@@ -111,15 +111,19 @@ const sameSegments = (prefix: readonly string[], segments: readonly string[]) =>
 
 const escapeSegment = (part: string) => part.replace(/~/g, '~0').replace(/\//g, '~1');
 
-function hideAt(node: unknown, parts: readonly string[]): void {
+/** Hides the values at `paths` (folded segments) under `node`, folding each key once. */
+function hideAt(node: unknown, paths: readonly (readonly string[])[]): void {
   if (node === null || typeof node !== 'object') return;
-  const [part, ...rest] = parts;
+  const byFirst = new Map<string, (readonly string[])[]>();
+  for (const [first, ...rest] of paths)
+    if (first !== undefined) byFirst.set(first, [...(byFirst.get(first) ?? []), rest]);
   const container = node as Record<string, unknown>;
   for (const key of Object.keys(container)) {
-    if (part === undefined || fold(key) !== fold(part)) continue;
-    if (rest.length) hideAt(container[key], rest);
-    else if (container[key] !== undefined && container[key] !== null && container[key] !== '')
-      container[key] = REDACTED;
+    const rests = byFirst.get(fold(key));
+    if (!rests) continue;
+    if (rests.some((rest) => rest.length === 0)) {
+      if (container[key] !== undefined && container[key] !== null && container[key] !== '') container[key] = REDACTED;
+    } else hideAt(container[key], rests);
   }
 }
 
@@ -127,10 +131,10 @@ function hideAt(node: unknown, parts: readonly string[]): void {
 export function redactPaths<T>(value: T, paths: readonly string[] | null | undefined): T {
   if (!paths?.length || value === null || typeof value !== 'object') return value;
   const out = structuredClone(value) as unknown;
-  for (const path of paths) {
-    const parts = pointerSegments(path);
-    if (parts.length) hideAt(out, parts);
-  }
+  hideAt(
+    out,
+    paths.map((path) => pointerSegments(path).map(fold)).filter((parts) => parts.length > 0),
+  );
   return out as T;
 }
 

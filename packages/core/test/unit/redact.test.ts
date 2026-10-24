@@ -95,6 +95,21 @@ describe('redactPaths', () => {
   });
 });
 
+describe('redactPaths on a wide object', () => {
+  it('folds each key once, however many paths there are', () => {
+    const wide = { ...Object.fromEntries(Array.from({ length: 200_000 }, (_, i) => [`k${i}`, i])), PIN: 'x' };
+    const paths = Array.from({ length: 32 }, (_, i) => `/K${i}/deep`);
+    const time = (p: string[]) => {
+      const start = performance.now();
+      expect(redactPaths(wide, p).PIN).toBe(REDACTED);
+      return performance.now() - start;
+    };
+    const one = time(['/pin']);
+    // The copy costs the same either way; 32 more paths must not multiply the walk.
+    expect(time([...paths, '/pin'])).toBeLessThan(one * 3 + 50);
+  });
+});
+
 describe('redactDiff in any case', () => {
   const redact = createRedactor(GLOBAL_SENSITIVE_KEYS, []);
   it('hides an entry at or above a declared path written in another case', () => {
