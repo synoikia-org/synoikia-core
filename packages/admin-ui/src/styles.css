@@ -273,6 +273,20 @@ a.btn:not(.btn-primary) {
   color: var(--ink-muted);
   margin-bottom: 6px;
 }
+/* A group of radios or checkboxes: a fieldset that reads like one field, its legend like a field label. */
+fieldset.field {
+  border: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+fieldset.field legend {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+  padding: 0;
+}
 /* A checkbox or radio line inside a field: label beside the box, normal weight. */
 .field label.row {
   display: flex;
