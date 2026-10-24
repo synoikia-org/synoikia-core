@@ -9,7 +9,7 @@ import { registerInstanceRoutes } from './admin/instances.js';
 import { registerMeRoutes } from './admin/me.js';
 import { registerRoleRoutes } from './admin/roles.js';
 import { registerSystemRoutes } from './admin/system.js';
-import { errorResponse } from './common.js';
+import { errorResponse, hostAllowed, originAllowed } from './common.js';
 
 export interface AdminAppOptions {
   /** Built admin-ui assets. The SPA is optional so the API can run without a UI build (tests, dev). */
@@ -38,6 +38,16 @@ export function createAdminApp(ctx: AppContext, { uiDir }: AdminAppOptions = {})
     c.header('X-Frame-Options', 'DENY');
     c.header('X-Content-Type-Options', 'nosniff');
     if (!c.res.headers.has('Referrer-Policy')) c.header('Referrer-Policy', 'same-origin');
+  });
+
+  // A rebinding page must not reach the portal, nor claim the first account, by another name (ADR-0015).
+  const names = { publicUrl: ctx.config.PUBLIC_ADMIN_URL, allowed: ctx.config.ADMIN_ALLOWED_HOSTS };
+  app.use('*', async (c, next) => {
+    if (hostAllowed(names, c.req.header('host')) && originAllowed(names, c.req.header('origin'))) return next();
+    return c.json(
+      { error: 'host_not_allowed', message: 'Host or Origin not allowed; set PUBLIC_ADMIN_URL or ADMIN_ALLOWED_HOSTS' },
+      403,
+    );
   });
 
   app.get('/healthz', (c) => c.json({ status: 'ok' }));

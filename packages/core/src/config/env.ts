@@ -16,6 +16,16 @@ const port = z.coerce.number().int().min(0).max(65535);
 const blank = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 const optionalPort = z.preprocess(blank, port.optional());
 const optionalString = z.preprocess(blank, z.string().optional());
+const hostList = z
+  .string()
+  .optional()
+  .transform((v) =>
+    (v ?? '')
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
 const optionalUrl = z
   .string()
   .optional()
@@ -49,15 +59,9 @@ const EnvSchema = z
       }),
     /** Extra host names the MCP listener answers to, besides PUBLIC_MCP_URL's host, localhost and IPs
      * (DNS-rebinding defence). */
-    MCP_ALLOWED_HOSTS: z
-      .string()
-      .optional()
-      .transform((v) =>
-        (v ?? '')
-          .split(',')
-          .map((h) => h.trim().toLowerCase())
-          .filter(Boolean),
-      ),
+    MCP_ALLOWED_HOSTS: hostList,
+    /** The same for the admin listener, besides PUBLIC_ADMIN_URL's host (ADR-0015). */
+    ADMIN_ALLOWED_HOSTS: hostList,
     ADMIN_UI_DIR: z.string().default(path.join(workspaceRoot, 'packages/admin-ui/dist')),
     ADMIN_BOOTSTRAP_USERNAME: z.string().optional(),
     ADMIN_BOOTSTRAP_PASSWORD: z.string().optional(),
