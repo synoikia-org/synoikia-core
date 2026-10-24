@@ -142,7 +142,7 @@ scrape_configs:
 | `synoikia_sessions_open`                | `instance`            | Open agent sessions                                               |
 | `synoikia_sessions_by_app`              | `app`                 | Open agent sessions by the app that the client names              |
 
-Counters start at zero when core starts. The app name comes from the client, so any client can claim any name.
+Counters start at zero when core starts. A call that waits for approval counts once as `awaiting_approval`, and again when it ends. Its duration then includes the wait. The app name comes from the client, so any client can claim any name.
 
 ### Network egress
 

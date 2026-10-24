@@ -200,7 +200,6 @@ export function createGateBindings(
       });
     const finish = (decision: string, extra: { resultStatus?: string; detail?: Record<string, unknown> } = {}) => {
       audited = true;
-      report(extra.resultStatus === 'ok' ? 'done' : extra.resultStatus === 'error' ? 'failed' : 'denied');
       writeAudit(
         deps.db,
         {
@@ -212,6 +211,7 @@ export function createGateBindings(
         },
         now(),
       );
+      report(extra.resultStatus === 'ok' ? 'done' : extra.resultStatus === 'error' ? 'failed' : 'denied');
     };
     const reject = (decision: string, err: BindingError): never => {
       finish(decision, { resultStatus: 'rejected', detail: { error: err.code } });
@@ -394,7 +394,6 @@ export function createGateBindings(
             reserve: () => opts.park!.reserve(),
             offer: (a, info) => {
               parked = true;
-              report('awaiting_approval');
               writeAudit(
                 deps.db,
                 {
@@ -411,6 +410,7 @@ export function createGateBindings(
                 now(),
               );
               opts.park!.offer(a);
+              report('awaiting_approval');
             },
           };
           const paramsHash = sha256Hex(

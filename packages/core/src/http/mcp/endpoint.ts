@@ -265,7 +265,7 @@ export class McpEndpoints {
     this.sweeper = setInterval(() => this.sweep(), 60_000);
     this.sweeper.unref();
     ctx.metrics.readSessionsFrom(() => {
-      const slugs = new Map(ctx.instances.list().map((i) => [i.id, i.slug]));
+      const slugs = new Map(ctx.instances.slugs().map((i) => [i.id, i.slug]));
       return [...this.sessions.values()].map((s) => ({
         slug: slugs.get(s.instanceId) ?? 'unknown',
         app: s.clientName,

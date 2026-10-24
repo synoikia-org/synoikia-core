@@ -1,5 +1,5 @@
 import { Counter, Gauge, Histogram, Registry } from '@prometheus-io/client';
-import type { CoreEvents } from './events.js';
+import type { CoreEventMap, CoreEvents } from './events.js';
 import type { InstanceManager } from './instances/manager.js';
 import { CORE_VERSION } from './version.js';
 
@@ -15,7 +15,9 @@ const ACTIVE_MS = 60 * 60 * 1000;
 
 /** ADR-0024: the client names its app, so its label is normalized, and only the first 32 names keep their own. */
 export function appLabel(name: string | undefined, known: Set<string>): string {
+  // Cut first: the client sets the name, at any length.
   const label = (name ?? '')
+    .slice(0, 4 * MAX_APP_LENGTH)
     .toLowerCase()
     .replace(/[^a-z0-9._-]/g, '')
     .slice(0, MAX_APP_LENGTH);
@@ -35,6 +37,18 @@ export class Metrics {
 
   constructor(events: CoreEvents, instances: InstanceManager, now: () => Date) {
     const registers = [this.registry];
+    // A listener runs inside emit: a metric must never fail the call, approval or request that emitted it.
+    const on = <K extends 'call.finished' | 'approval.ended' | 'credential.refused'>(
+      name: K,
+      handle: (...args: CoreEventMap[K]) => void,
+    ) =>
+      events.on(name, ((...args: CoreEventMap[K]) => {
+        try {
+          handle(...args);
+        } catch {
+          // A lost count is the cost. The emitter goes on.
+        }
+      }) as never);
     new Gauge({ name: 'synoikia_build_info', help: 'The version of core.', labelNames: ['version'], registers })
       .labels(CORE_VERSION)
       .set(1);
@@ -51,9 +65,9 @@ export class Metrics {
       labelNames: ['instance'],
       registers,
     });
-    events.on('call.finished', ({ slug, outcome, durationMs, userId }) => {
+    on('call.finished', ({ slug, outcome, durationMs, userId }) => {
       calls.labels(slug, outcome).inc();
-      if (outcome !== 'awaiting_approval') durations.labels(slug).observe(durationMs / 1000);
+      if (outcome !== 'awaiting_approval') durations.labels(slug).observe(Math.max(0, durationMs) / 1000);
       if (userId) this.lastCall.set(userId, now().getTime());
     });
 
@@ -63,8 +77,8 @@ export class Metrics {
       labelNames: ['instance', 'outcome'],
       registers,
     });
-    events.on('approval.ended', ({ instanceId, outcome }) => {
-      const slug = instances.list().find((i) => i.id === instanceId)?.slug;
+    on('approval.ended', ({ instanceId, outcome }) => {
+      const slug = instances.slugs().find((i) => i.id === instanceId)?.slug;
       if (slug) approvals.labels(slug, outcome).inc();
     });
 
@@ -73,7 +87,7 @@ export class Metrics {
       help: 'Agent requests refused for their credential.',
       registers,
     });
-    events.on('credential.refused', () => refused.inc());
+    on('credential.refused', () => refused.inc());
 
     const lastCall = this.lastCall;
     new Gauge({
@@ -91,7 +105,7 @@ export class Metrics {
       help: 'Installed plugins.',
       registers,
       collect() {
-        this.set(instances.listPlugins().length);
+        this.set(instances.pluginCount());
       },
     });
     new Gauge({
@@ -99,7 +113,7 @@ export class Metrics {
       help: 'Configured instances.',
       registers,
       collect() {
-        this.set(instances.list().length);
+        this.set(instances.slugs().length);
       },
     });
     new Gauge({
@@ -109,7 +123,7 @@ export class Metrics {
       registers,
       collect() {
         this.reset();
-        for (const i of instances.list()) this.labels(i.slug, instances.status(i.id)).set(1);
+        for (const i of instances.slugs()) this.labels(i.slug, instances.status(i.id)).set(1);
       },
     });
 

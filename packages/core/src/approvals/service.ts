@@ -235,10 +235,10 @@ export class ApprovalService {
           .where(and(eq(pendingApprovals.id, id), eq(pendingApprovals.status, 'pending')))
           .run();
         this.links.consumeAll(id);
-        if (d.outcome !== 'cancelled')
-          this.events?.emit('approval.ended', { instanceId: row.instanceId, outcome: d.outcome });
         if (channel === 'url') prompts.urlComplete?.(id);
         resolve({ ...d, channel: d.channel ?? channel! });
+        if (d.outcome !== 'cancelled')
+          this.events?.emit('approval.ended', { instanceId: row.instanceId, outcome: d.outcome });
       };
       this.live.set(id, { row, formApprovals: input.formApprovals, settle });
     });
