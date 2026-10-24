@@ -123,6 +123,16 @@ Feature: Plugin runtime
       When the plugin waits 20 milliseconds for "lists.watch" on a live channel that does not answer
       Then the plugin gets the upstream error "lists.watch: timed out"
 
+  Rule: A plugin sends a heartbeat only when core asks for one
+
+    Scenario: A plugin sends a heartbeat at the interval that core asks for
+      When core starts Acme Tasks and asks for a heartbeat every 200 milliseconds
+      Then core gets at least 3 heartbeats from Acme Tasks within a second
+
+    Scenario: A plugin sends no heartbeat to a core that asks for none
+      When core 0.3.0 starts Acme Tasks
+      Then core gets no heartbeat from Acme Tasks within a second
+
   Rule: Group names are valid, and twin keys split and join
 
     Scenario Outline: A tag of Acme Tasks becomes a valid group name
