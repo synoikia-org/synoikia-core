@@ -1,0 +1,16 @@
+---
+config:
+  flowchart:
+    nodeSpacing: 24
+    rankSpacing: 28
+    diagramPadding: 4
+    padding: 8
+---
+flowchart LR
+  agent["AI agent"] --> endpoint["Endpoint<br/>search · execute · resume"]
+  subgraph core["Synoikia core"]
+    sandbox["Sandbox"] --> gate["Permission gate"] --> approval["Human approval"]
+  end
+  endpoint --> sandbox
+  approver(["Approver"]) <--> approval
+  approval --> plugin["Isolated plugin"] --> service["Your service"]

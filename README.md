@@ -58,16 +58,10 @@ Most MCP servers hard-code their tools, so a new upstream version waits for a ne
 
 ## How it works
 
-```mermaid
-flowchart LR
-  agent["AI agent"] --> endpoint["Endpoint<br/>search · execute · resume"]
-  subgraph core["Synoikia core"]
-    sandbox["Sandbox"] --> gate["Permission gate"] --> approval["Human approval"]
-  end
-  endpoint --> sandbox
-  approver(["Approver"]) <--> approval
-  approval --> plugin["Isolated plugin"] --> service["Your service"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/call-path-dark.svg" />
+  <img src="docs/assets/call-path-light.svg" alt="The path of a call: AI agent, endpoint, then Synoikia core with the sandbox, the permission gate and human approval, then the isolated plugin and your service. The approver decides at human approval." />
+</picture>
 
 Each service gets its own endpoint, such as `https://mcp.example.com/nas`. Every call takes the same path, whatever the service. Core redacts secrets and audits the call at each step. The admin portal runs on its own port.
 
