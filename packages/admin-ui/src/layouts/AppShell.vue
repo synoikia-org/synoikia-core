@@ -196,6 +196,10 @@ async function logout() {
     </aside>
 
     <main id="main" ref="main" class="content" tabindex="-1">
+      <p v-if="session.bootstrapAdminSet" class="alert warn" role="status">
+        The start-up admin is set. Remove <code>ADMIN_BOOTSTRAP_USERNAME</code> and
+        <code>ADMIN_BOOTSTRAP_PASSWORD</code> from the server settings, then restart the server.
+      </p>
       <RouterView />
     </main>
     <HelpDrawer />

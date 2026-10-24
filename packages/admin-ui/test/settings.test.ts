@@ -30,7 +30,6 @@ const settings: Settings = {
   mcp: mcpSettings,
   audit: { retentionDays: null },
   oidc: null,
-  forceLocalLogin: false,
   publicMcpUrl: null,
   publicAdminUrl: null,
 };

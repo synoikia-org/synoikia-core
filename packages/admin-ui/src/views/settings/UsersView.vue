@@ -130,6 +130,7 @@ function confirmDelete() {
           <tr v-for="u in users" :key="u.id" :class="{ off: u.disabled }">
             <td :id="`${uid}-${u.id}`">
               {{ u.username }} <span v-if="u.id === session.user?.id" class="pill info">you</span>
+              <span v-if="u.owner" class="pill">primary owner</span>
               <span v-if="u.disabled" class="pill">disabled</span>
             </td>
             <td>

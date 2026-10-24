@@ -39,6 +39,8 @@ export interface PublicUser {
   username: string;
   /** `local` signs in with a password, `sso` only with single sign-on (ADR-0025). */
   kind: 'local' | 'sso';
+  /** The primary owner, which keeps the password sign-in (ADR-0025). */
+  owner: boolean;
   /** The address an SSO account waits for until its first sign-in. */
   oidcEmail: string | null;
   totpEnabled: boolean;
@@ -77,6 +79,8 @@ export interface SessionInfo {
   oidc: { enabled: boolean; label: string };
   user?: PublicUser;
   mustEnrollTotp?: boolean;
+  /** The primary owner only: the start-up admin is set and owns the password (ADR-0025). */
+  bootstrapAdminSet?: boolean;
 }
 
 export interface InstanceSettings {
@@ -463,7 +467,6 @@ export interface Settings {
     autoProvision: boolean;
     clientSecretSet: boolean;
   } | null;
-  forceLocalLogin: boolean;
   publicMcpUrl: string | null;
   publicAdminUrl: string | null;
 }
