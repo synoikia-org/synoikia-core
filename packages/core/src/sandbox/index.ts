@@ -125,8 +125,11 @@ const prelude = (spec: Record<string, string[]>) => `(() => {
   delete globalThis.__syn;
   const stringify = JSON.stringify;
   const parse = JSON.parse;
+  let full = false;
   globalThis.console = Object.freeze({
-    log: (...a) => log.applySync(undefined, [stringify(a.map((x) => x === undefined ? null : x))]),
+    log: (...a) => {
+      if (!full) full = log.applySync(undefined, [stringify(a.map((x) => x === undefined ? null : x))]);
+    },
   });
   const bind = (ns, fn) => async (...args) => {
     const raw = await call.apply(undefined, [ns, fn, stringify(args)], { result: { promise: true } });
@@ -188,8 +191,10 @@ export async function runInSandbox(run: SandboxRun): Promise<SandboxResult> {
         return toJson({ ok: false, error: { code, message } });
       }
     };
-    const hostLog = (argsJson: string) => {
-      if (logBytes >= limits.maxLogBytes) return;
+    // Returns whether the cap is reached, so the script stops calling into core: CPU spent in core while a
+    // binding waits would escape the guard of the paused budget (ADR-0005).
+    const hostLog = (argsJson: string): boolean => {
+      if (logBytes >= limits.maxLogBytes) return true;
       let args: unknown[];
       try {
         args = JSON.parse(argsJson) as unknown[];
@@ -210,6 +215,7 @@ export async function runInSandbox(run: SandboxRun): Promise<SandboxResult> {
           : line;
       logBytes += Math.max(1, Buffer.byteLength(text));
       logs.push(text);
+      return logBytes >= limits.maxLogBytes;
     };
     await jail.set('__syn', new ivm.ExternalCopy({}).copyInto());
     const syn = (await jail.get('__syn')) as ivm.Reference<Record<string, unknown>>;

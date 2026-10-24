@@ -69,3 +69,30 @@ describe('redaction of everything leaving the sandbox', () => {
     expect(JSON.stringify(thrown)).not.toContain(SECRET);
   });
 });
+
+describe('limits while a binding waits (ADR-0005)', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const waits: Binding = async (_args, budget) => {
+    budget.pause();
+    await sleep(5000);
+    budget.resume();
+    return 'approved';
+  };
+  const bindings = { t: { wait: waits, quick: echo } };
+
+  it('ends a run that logs in a loop while a binding waits', async () => {
+    const start = performance.now();
+    const r = await run(`const p = t.wait(); await t.quick(); for (;;) console.log(''); await p;`, bindings, {
+      timeoutMs: 500,
+    });
+    expect(r).toMatchObject({ ok: false, error: { code: 'TIMEOUT' } });
+    expect(performance.now() - start).toBeLessThan(2500);
+  });
+
+  it('cuts a log line at a whole character and keeps to the byte cap', async () => {
+    const r = await run(`console.log('a' + '\u{1F600}'.repeat(300)); return 1;`, undefined, { maxLogBytes: 1002 });
+    const text = r.logs.join('');
+    expect(text).toBe(`a${'\u{1F600}'.repeat(250)}`);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1002);
+  });
+});
