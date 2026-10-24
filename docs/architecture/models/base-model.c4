@@ -63,6 +63,10 @@ model {
   notificationReceiver = external 'Notification receiver' {
     description 'An ntfy topic or a webhook that receives informational events.'
   }
+  sourceRepository = external 'Source repository' {
+    technology 'GitHub, synoikia-org/synoikia-core'
+    description 'The public repository of Synoikia core, where anyone proposes a change as a pull request.'
+  }
 
   synoikia = system 'Synoikia' {
     description 'One MCP server for many self-hosted services, with one sandbox, permission gate, approval flow and audit log.'
@@ -101,17 +105,14 @@ model {
     }
   }
 
-  admin -> synoikia.adminPortal 'configures instances, roles, plugins and settings'
-  user -> synoikia.adminPortal 'sets personal levels and grants'
+  admin -> sourceRepository 'suggests edits to the portal help on'
+  user -> sourceRepository 'suggests edits to the portal help on'
   user -> mcpClient 'asks for work'
   user -> synoikia.core 'decides approvals on the approval page'
   mcpClient -> synoikia.core 'calls search, execute and resume' {
     technology 'MCP Streamable HTTP'
   }
   externalProvider -> synoikia.core 'identifies the user of a request'
-  synoikia.adminPortal -> synoikia.core 'reads and changes configuration' {
-    technology 'Admin API, HTTPS'
-  }
   synoikia.core -> synoikia.sandbox 'runs model code in'
   synoikia.core -> synoikia.instance 'sends operation calls to' {
     technology 'JSON-RPC 2.0, one JSON line each, on a pipe'

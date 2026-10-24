@@ -16,29 +16,31 @@ graph TB
   Admin@{ icon: "fa:user", shape: rounded, label: "Admin" }
   User@{ icon: "fa:user", shape: rounded, label: "User" }
   PluginAuthor@{ icon: "fa:user", shape: rounded, label: "Plugin author" }
-  PluginSource@{ shape: rectangle, label: "Plugin source" }
   ExternalProvider@{ shape: rectangle, label: "External provider" }
   Prometheus@{ shape: rectangle, label: "Prometheus" }
   McpClient@{ shape: rectangle, label: "MCP client" }
+  SourceRepository@{ shape: rectangle, label: "Source repository" }
   Synoikia@{ shape: rectangle, label: "Synoikia" }
   Upstream@{ shape: rectangle, label: "Upstream" }
+  PluginSource@{ shape: rectangle, label: "Plugin source" }
   PluginRepository@{ shape: rectangle, label: "Plugin repository" }
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
   NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
-  Admin -. "`configures instances, roles, plugins and 
-settings`" .-> Synoikia
-  User -. "`asks for work`" .-> McpClient
-  User -. "`[...]`" .-> Synoikia
-  PluginAuthor -. "`adds to the vitest config of a plugin`" .-> Synoikia
-  McpClient -. "`calls search, execute and resume`" .-> Synoikia
   Synoikia -. "`calls the upstream API`" .-> Upstream
-  PluginSource -. "`builds its fake upstream with`" .-> Synoikia
   Synoikia -. "`[...]`" .-> PluginSource
   Synoikia -. "`[...]`" .-> PluginRepository
   Synoikia -. "`signs users in with`" .-> IdentityProvider
+  Synoikia -. "`sends events to`" .-> NotificationReceiver
+  Admin -. "`[...]`" .-> Synoikia
+  User -. "`[...]`" .-> Synoikia
+  PluginAuthor -. "`adds to the vitest config of a plugin`" .-> Synoikia
+  McpClient -. "`calls search, execute and resume`" .-> Synoikia
+  PluginSource -. "`builds its fake upstream with`" .-> Synoikia
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia
   Prometheus -. "`scrapes metrics from`" .-> Synoikia
-  Synoikia -. "`sends events to`" .-> NotificationReceiver
+  Admin -. "`suggests edits to the portal help on`" .-> SourceRepository
+  User -. "`asks for work`" .-> McpClient
+  User -. "`suggests edits to the portal help on`" .-> SourceRepository
 ```
 
 ### Containers
@@ -71,15 +73,15 @@ graph TB
   IdentityProvider@{ shape: rectangle, label: "Identity provider" }
   NotificationReceiver@{ shape: rectangle, label: "Notification receiver" }
   Upstream@{ shape: rectangle, label: "Upstream" }
-  Admin -. "`configures instances, roles, plugins and 
-settings`" .-> Synoikia.AdminPortal
+  Admin -. "`[...]`" .-> Synoikia.AdminPortal
+  User -. "`[...]`" .-> Synoikia.AdminPortal
   User -. "`decides approvals on the approval page`" .-> Synoikia.Core
-  User -. "`sets personal levels and grants`" .-> Synoikia.AdminPortal
   PluginAuthor -. "`adds to the vitest config of a plugin`" .-> Synoikia.CoreTesting
   McpClient -. "`calls search, execute and resume`" .-> Synoikia.Core
   PluginSource -. "`builds its fake upstream with`" .-> Synoikia.CoreTesting
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia.Core
   Prometheus -. "`scrapes metrics from`" .-> Synoikia.Core
+  Synoikia.AdminPortal -. "`[...]`" .-> Synoikia.Core
   Synoikia.Core -. "`runs model code in`" .-> Synoikia.Sandbox
   Synoikia.Core -. "`sends operation calls to`" .-> Synoikia.Instance
   Synoikia.Core -. "`reads and writes`" .-> Synoikia.Database
@@ -87,7 +89,6 @@ settings`" .-> Synoikia.AdminPortal
   Synoikia.Sandbox -. "`sends binding calls to`" .-> Synoikia.Core
   Synoikia.Instance -. "`answers calls and sends log and catalog 
 notices to`" .-> Synoikia.Core
-  Synoikia.AdminPortal -. "`reads and changes configuration`" .-> Synoikia.Core
   Synoikia.CoreTesting -. "`boots in process, with the gate, 
 approvals, redaction and audit log`" .-> Synoikia.Core
   Synoikia.Instance -. "`loads its own bundle, read only`" .-> Synoikia.Bundles
@@ -192,6 +193,34 @@ the contract to`" .-> SynoikiaCore.Instances
   SynoikiaCore.PluginHost -. "`installs bundles into`" .-> SynoikiaBundles
   SynoikiaCore.Notify -. "`sends events to`" .-> NotificationReceiver
   SynoikiaCore.DbAccess -. "`reads and writes`" .-> SynoikiaDatabase
+```
+
+### Admin portal components
+
+The parts of the admin portal and what each one talks to.
+
+```mermaid
+---
+title: "Admin portal components"
+---
+graph TB
+  Admin@{ icon: "fa:user", shape: rounded, label: "Admin" }
+  User@{ icon: "fa:user", shape: rounded, label: "User" }
+  subgraph SynoikiaAdminPortal["`Admin portal`"]
+    SynoikiaAdminPortal.Pages@{ shape: rectangle, label: "Pages" }
+    SynoikiaAdminPortal.Help@{ shape: rectangle, label: "Help" }
+  end
+  SynoikiaCore@{ shape: rectangle, label: "Core" }
+  Admin -. "`configures instances, roles, plugins and 
+settings`" .-> SynoikiaAdminPortal.Pages
+  Admin -. "`reads the help of a page in`" .-> SynoikiaAdminPortal.Help
+  User -. "`sets personal levels and grants`" .-> SynoikiaAdminPortal.Pages
+  User -. "`reads the help of a page in`" .-> SynoikiaAdminPortal.Help
+  SynoikiaAdminPortal.Pages -. "`opens the topic of the current page, or 
+one heading of it, in`" .-> SynoikiaAdminPortal.Help
+  SynoikiaAdminPortal.Pages -. "`reads and changes configuration`" .-> SynoikiaCore
+  SynoikiaAdminPortal.Help -. "`reads the server version from the 
+overview`" .-> SynoikiaCore
 ```
 
 ### Core testing components

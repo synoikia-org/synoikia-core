@@ -17,6 +17,12 @@ views {
     include *
   }
 
+  view adminPortalComponents of synoikia.adminPortal {
+    title 'Admin portal components'
+    description 'The parts of the admin portal and what each one talks to.'
+    include *
+  }
+
   view coreTestingComponents of synoikia.coreTesting {
     title 'Core testing components'
     description 'The parts of the core testing package that a plugin author uses.'
