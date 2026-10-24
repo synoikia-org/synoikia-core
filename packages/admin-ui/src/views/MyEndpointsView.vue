@@ -19,10 +19,7 @@ const uid = useId();
 
 <template>
   <div class="page">
-    <PageHeader
-      title="My endpoints"
-      :subtitle="`What your role (${session.role?.name ?? '—'}) lets you reach. Create a token under My profile to connect a client.`"
-    />
+    <PageHeader title="My endpoints" :subtitle="`What your role (${session.role?.name ?? '—'}) lets you reach.`" />
     <div class="stack">
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <h2 :id="`${uid}-assigned`">Assigned endpoints</h2>

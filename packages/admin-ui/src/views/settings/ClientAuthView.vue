@@ -79,10 +79,8 @@ const { copied, copy } = useCopy();
 
 const METHOD_HELP: Record<AuthMethod, string> = {
   bearer: "Clients send a token created under Clients & Tokens or on a user's profile.",
-  oauth:
-    'Clients sign in through this server with a portal account (OAuth 2.1 with PKCE). This is what claude.ai connectors expect.',
-  external:
-    'An identity provider in front of the MCP port signs clients in. Synoikia checks its signed assertion on each request.',
+  oauth: 'Clients sign in through this server with a portal account.',
+  external: 'An identity provider in front of the MCP port signs clients in.',
 };
 const PROVIDERS = Object.keys(EXTERNAL_PROVIDER_LABELS) as ExternalProvider[];
 </script>

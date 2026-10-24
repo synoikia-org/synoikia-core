@@ -164,9 +164,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
           />
         </div>
       </div>
-      <p id="s-approval-help" class="help">
-        How long a sign-in on the approval page lasts. Locked operations also need a typed confirmation on each call.
-      </p>
+      <p id="s-approval-help" class="help">How long a sign-in on the approval page lasts.</p>
       <p
         v-if="messages.security"
         class="alert"
@@ -190,10 +188,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
           <option :value="null">None: nobody can register</option>
           <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
-        <p id="s-role-help" class="help">
-          With a role set, unknown users named by the MCP proxy (External sign-in) and, with auto-provisioning on, new
-          single sign-on users get an account with this role.
-        </p>
+        <p id="s-role-help" class="help">New accounts that Synoikia makes by itself get this role.</p>
         <p v-if="security.defaultRoleId === 'admin'" id="s-role-warn" class="alert warn" role="status">
           Every new account will be an administrator.
         </p>
@@ -284,10 +279,7 @@ const callbackUrl = () => `${adminUrl.value ?? window.location.origin}/auth/oidc
             ><input v-model="oidc.autoProvision" type="checkbox" aria-describedby="o-auto-help" /> Provision an account
             on first sign-in for anyone the policy allows</label
           >
-          <p id="o-auto-help" class="help">
-            Otherwise each user must link single sign-on from their profile first. Provisioned accounts get the default
-            role of new accounts, so this works only while one is set.
-          </p>
+          <p id="o-auto-help" class="help">Needs a default role for new accounts.</p>
         </div>
       </template>
       <p v-if="messages.oidc" class="alert" :class="messages.oidc.kind" :role="messageRole(messages.oidc.kind)">

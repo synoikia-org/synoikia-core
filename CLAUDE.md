@@ -6,14 +6,15 @@ One MCP server for many self-hosted services. Each plugin instance gets its own 
 
 ## Layout
 
-| Path                        | What                                                                                                                                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/core`             | Server: MCP endpoints, admin API, gate, sandbox, plugin host, SQLite (Drizzle)                                                                                                                                     |
-| `packages/plugin-sdk`       | Manifest schema, core ⇄ plugin RPC contract, `runPlugin()`, and what plugins are built from: `definePlugin`, the `plugin.yaml` rules engine, HTTP/socket transports, OpenAPI and static catalogs. Published to npm |
-| `packages/create-plugin`    | `@synoikia/create-plugin`: `pnpm create`/`pnpm new` scaffolding, plugin build/check, signed repository release. Published to npm                                                                                   |
-| `packages/admin-ui`         | Admin portal: Vue 3, Pinia, Vite                                                                                                                                                                                   |
-| `.github/actions/prose`     | The writing rule checker: a GitHub Action for CI here and in plugin repos, and the `prose` git hook                                                                                                                |
-| `packages/core/src/testing` | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
+| Path                         | What                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/core`              | Server: MCP endpoints, admin API, gate, sandbox, plugin host, SQLite (Drizzle)                                                                                                                                     |
+| `packages/plugin-sdk`        | Manifest schema, core ⇄ plugin RPC contract, `runPlugin()`, and what plugins are built from: `definePlugin`, the `plugin.yaml` rules engine, HTTP/socket transports, OpenAPI and static catalogs. Published to npm |
+| `packages/create-plugin`     | `@synoikia/create-plugin`: `pnpm create`/`pnpm new` scaffolding, plugin build/check, signed repository release. Published to npm                                                                                   |
+| `packages/admin-ui`          | Admin portal: Vue 3, Pinia, Vite                                                                                                                                                                                   |
+| `packages/admin-ui/src/help` | In-app help topics, one Markdown file for each page of the portal. A new page or setting comes with its topic, and page text stays one short line                                                                  |
+| `.github/actions/prose`      | The writing rule checker: a GitHub Action for CI here and in plugin repos, and the `prose` git hook                                                                                                                |
+| `packages/core/src/testing`  | `@synoikia/core/testing`: the plugin harness, `startFakeHttp` and the compliance suite plugin repos test against. Published API                                                                                    |
 
 Local setup, checks and releases: `DEVELOPMENT.md`. Plugin authoring: `docs/plugin-authoring.md`. The design: `docs/adrs/`, `docs/architecture/` and `docs/reference.md`. The plugins live in `synoikia-org/synoikia-core-plugins`.
 
