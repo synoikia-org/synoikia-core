@@ -34,6 +34,9 @@ Chosen option: "A third Hono app on its own port". Prometheus can reach it witho
 - **Token.** When `METRICS_TOKEN` is set, `/metrics` needs `Authorization: Bearer <token>`. Core compares the SHA-256 digests in constant time. A missing or wrong token gets 401 and no metric. When `METRICS_TOKEN` is not set, `/metrics` is open, and core logs a warning at start. `/healthz` needs no token.
 - **Format.** `@prometheus-io/client` writes the Prometheus text format. Every metric name starts with `synoikia_`.
 - **Content.** Metrics count and measure. A label holds a value of core, such as an instance slug, a plugin id, an outcome or a state. A label never holds a parameter, a result, a secret, a token or a user name.
+- **Counters.** The gate, the approvals and the MCP endpoints emit events on the event bus of ADR-0019. The metrics listener counts them in memory. The counters start at zero when core starts. These events go to no notification channel and to no portal stream.
+- **Gauges.** At each scrape, the metrics listener reads the current numbers from the caches of the modules that own them.
+- **App names.** The app name comes from the client, so core bounds it before it becomes a label. Core makes it lower case, keeps only `a-z`, `0-9`, `.`, `_` and `-`, and cuts it at 64 characters. The first 32 names keep their own label until core stops. Other names count as `other`, and an empty name counts as `unknown`.
 
 ### Consequences
 
@@ -42,5 +45,7 @@ Chosen option: "A third Hono app on its own port". Prometheus can reach it witho
 - Bad, because metrics without a token are open to anyone who reaches the port.
 - Bad, because the listener has no Host check. Without a token, a web page can make a browser on the LAN read the metrics through DNS rebinding. Set `METRICS_TOKEN` where browsers share the network.
 - Bad, because the token is one shared secret in the environment, with no rotation in the portal.
+- Bad, because a restart sets the counters and the active users back to zero.
+- Bad, because a client can claim the name of another app.
 
 The model views `index` and `coreComponents` show the metrics listener. The feature file `@id:134` specifies its behavior.
