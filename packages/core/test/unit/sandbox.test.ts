@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../../src/gate/redact.js';
-import { BindingError, runInSandbox } from '../../src/sandbox/index.js';
+import { BindingError, Budget, runInSandbox } from '../../src/sandbox/index.js';
 import type { Binding } from '../../src/sandbox/index.js';
 
 const echo: Binding = async (args) => ({ echoed: args });
@@ -67,5 +67,68 @@ describe('redaction of everything leaving the sandbox', () => {
       redact: byCode,
     });
     expect(JSON.stringify(thrown)).not.toContain(SECRET);
+  });
+});
+
+describe('limits while a binding waits (ADR-0005)', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const waits: Binding = async (_args, budget) => {
+    budget.pause();
+    await sleep(5000);
+    budget.resume();
+    return 'approved';
+  };
+  const bindings = { t: { wait: waits, quick: echo } };
+
+  it('ends a run that logs in a loop while a binding waits', async () => {
+    const start = performance.now();
+    const r = await run(`const p = t.wait(); await t.quick(); for (;;) console.log(''); await p;`, bindings, {
+      timeoutMs: 500,
+    });
+    expect(r).toMatchObject({ ok: false, error: { code: 'TIMEOUT' } });
+    expect(performance.now() - start).toBeLessThan(2500);
+  });
+
+  it('cuts a log line at a whole character and keeps to the byte cap', async () => {
+    const r = await run(`console.log('a' + '\u{1F600}'.repeat(300)); return 1;`, undefined, { maxLogBytes: 1002 });
+    const text = r.logs.join('');
+    expect(text).toBe(`a${'\u{1F600}'.repeat(250)}`);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1002);
+  });
+});
+
+describe('Budget (ADR-0005)', () => {
+  it('ends the run on resume when the CPU used while paused took the time that was left', () => {
+    let cpu = 0;
+    let expired = 0;
+    const budget = new Budget(
+      1000,
+      () => expired++,
+      () => cpu,
+    );
+    budget.start();
+    budget.pause();
+    cpu += 1000;
+    budget.resume();
+    expect(budget.expired).toBe(true);
+    expect(budget.remainingMs()).toBe(0);
+    expect(expired).toBe(1);
+    budget.stop();
+  });
+
+  it('keeps the run going on resume when CPU is left, and charges it', () => {
+    let cpu = 0;
+    const budget = new Budget(
+      1000,
+      () => undefined,
+      () => cpu,
+    );
+    budget.start();
+    budget.pause();
+    cpu += 400;
+    budget.resume();
+    expect(budget.expired).toBe(false);
+    expect(budget.remainingMs()).toBeLessThanOrEqual(600);
+    budget.stop();
   });
 });

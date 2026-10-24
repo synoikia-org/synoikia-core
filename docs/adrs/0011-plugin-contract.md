@@ -84,7 +84,7 @@ Core calls `invoke` only after the gate lets the call through. The admin accepts
 | `getGuide(key)` → `{ version, content }`                        | With `attestation`     | The best-practice guide of an operation.                                                             |
 | `shutdown()`                                                    | Yes                    | Stops the child.                                                                                     |
 
-The child can also send the notifications `log` and `catalogChanged`.
+The child can also send the notifications `log`, `catalogChanged` and `heartbeat` (ADR-0023). After a `catalogChanged`, core syncs the catalog within seconds, and at most once a minute for each instance.
 
 `InvokeContext` holds `callId` (unique for each call), `expectedHash` (from `prepareWrite`), `deadlineMs` and `targets`. `targets` are the targets that the approver saw. The plugin acts on these targets and does not resolve them again.
 
@@ -111,7 +111,7 @@ The child can also send the notifications `log` and `catalogChanged`.
 }
 ```
 
-**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.3.0`. Version `0.3.0` moved the messages from the Node IPC channel to the pipe. A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
+**Contract version.** `SDK_VERSION` in the SDK is the version of this contract. The current version is `0.3.1`. Version `0.3.0` moved the messages from the Node IPC channel to the pipe, and `0.3.1` adds the heartbeat (ADR-0023). A manifest gives the range it accepts in `sdk`. Core does not load a plugin if its own contract version is outside that range.
 
 - Core masks `sensitiveResult` from contract `0.2.2`. A plugin that declares `sensitiveResult` must require `^0.2.2` or later.
 - `checkManifest`, `checkConformance`, `synoikia-plugin check` and `synoikia-plugin repo pack` refuse a plugin that does not.

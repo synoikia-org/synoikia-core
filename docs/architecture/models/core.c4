@@ -70,7 +70,7 @@ model {
   synoikia.core.pluginHost -> synoikia.bundles 'installs bundles into'
   synoikia.core.pluginHost -> synoikia.core.audit 'warns of each refused debugger signal in'
   synoikia.core.pluginHost -> synoikia.core.instances 'reports each plugin message that breaks the contract to'
-  synoikia.instance -> synoikia.core.pluginHost 'answers calls and sends log and catalog notices to'
+  synoikia.instance -> synoikia.core.pluginHost 'answers calls and sends log, catalog and heartbeat notices to'
   synoikia.core.instances -> synoikia.core.crypto 'encrypts connection secrets with'
   synoikia.core.instances -> synoikia.core.pluginHost 'starts and stops instances with'
   synoikia.core.gate -> synoikia.core.pluginHost 'starts an idle instance on a call through'

@@ -13,6 +13,25 @@ Feature: Instance supervision
       When the plugin of "tasks" crashes
       Then the admin got the notification "Plugin for /tasks crashed" because the plugin exited unexpectedly, and "tasks" is ready again
 
+  Rule: A plugin that stops answering is started again
+
+    Scenario: A plugin that stops answering is started again, and the admin is told
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 belongs to the admin and may read and write
+      And the admin gets a notification when a plugin crashes
+      And the plugin of "tasks" stops answering, and a run there may take 2 seconds
+      When agent 7 asks for the open tasks of "Groceries"
+      Then agent 7 is told that the plugin of "tasks" did not answer in time
+      And the admin got the notification "Plugin for /tasks crashed" because the plugin stopped answering, and "tasks" is ready again
+
+    Scenario: A plugin that waits for a slow Acme is not started again
+      Given the instance "tasks" has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
+      And agent 7 belongs to the admin and may read and write
+      And a run on "tasks" may take 3 seconds, and Acme takes 5 seconds to answer
+      When agent 7 asks for the open tasks of "Groceries"
+      Then agent 7 is told that Acme did not answer in time
+      And the plugin of "tasks" was not started again
+
   Rule: A failing start is retried with back-off
 
     Scenario: A start that cannot reach Acme is tried again until the admin fixes the address

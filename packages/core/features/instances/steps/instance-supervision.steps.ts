@@ -393,3 +393,41 @@ Then(
     expect((await instance(world, slug)).settings).toMatchObject({ idleStopMs: 10 * 60_000 });
   },
 );
+
+Given(
+  'the plugin of {string} stops answering, and a run there may take {int} seconds',
+  async (world: SynoikiaWorld, slug: string, seconds: number) => {
+    // ADR-0023: a short heartbeat, so core stops the frozen child before the call runs out of time.
+    await world.instanceSettings(slug, { sandbox: { timeoutMs: seconds * 1000 } });
+    world.supervision = { ...world.supervision, heartbeatMs: 300 };
+    await world.restartCore();
+    await eventually(async () => (await instance(world, slug)).status === 'ready', 'the plugin to be ready');
+    // Core watches a child from its first heartbeat, so the child freezes only after a few.
+    await new Promise((r) => setTimeout(r, 1000));
+    world.pluginFlag('freeze', String(Date.now()));
+  },
+);
+
+Then('agent {word} is told that the plugin of {string} did not answer in time', (world: SynoikiaWorld) => {
+  expect(world.answer).toEqual({
+    error: 'PLUGIN_UNAVAILABLE',
+    message: 'The plugin stopped answering; core starts it again',
+  });
+});
+
+Then(
+  'the admin got the notification {string} because the plugin stopped answering, and {string} is ready again',
+  async (world: SynoikiaWorld, title: string, slug: string) => {
+    const inbox = of(world).inbox!;
+    await eventually(() => inbox.length > 0, 'the crash notification');
+    expect(inbox[0]).toMatchObject({ title, message: expect.stringContaining('plugin stopped answering') as string });
+    await eventually(async () => (await instance(world, slug)).status === 'ready', 'the plugin to be ready');
+  },
+);
+
+Then('the plugin of {string} was not started again', async (world: SynoikiaWorld, slug: string) => {
+  // Three heartbeats of the World pass with Acme still slow, and the child keeps running.
+  await new Promise((r) => setTimeout(r, 3500));
+  expect(await world.audit({ kind: 'plugin', decision: 'plugin_error' })).toEqual([]);
+  expect((await instance(world, slug)).status).toBe('ready');
+});

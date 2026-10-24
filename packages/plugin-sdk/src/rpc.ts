@@ -20,6 +20,8 @@ export interface InitParams {
   /** Decrypted `writeOnly` connection fields for this instance only. Never logged. */
   secrets: Record<string, string>;
   sdkVersion: string;
+  /** From contract 0.3.1: the child sends a `heartbeat` notice at this interval (ADR-0023). */
+  heartbeatMs?: number;
 }
 
 export interface InvokeContext {
@@ -93,7 +95,8 @@ export type RpcResponse = RpcSuccess | RpcFailure;
 /** Plugin → core messages that need no reply. */
 export type RpcNotification =
   | { jsonrpc: '2.0'; method: 'log'; params: { level: 'debug' | 'info' | 'warn' | 'error'; message: string } }
-  | { jsonrpc: '2.0'; method: 'catalogChanged'; params?: { reason?: string } };
+  | { jsonrpc: '2.0'; method: 'catalogChanged'; params?: { reason?: string } }
+  | { jsonrpc: '2.0'; method: 'heartbeat' };
 
 export function isRpcRequest(msg: unknown): msg is RpcRequest {
   return (

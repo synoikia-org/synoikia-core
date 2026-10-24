@@ -77,6 +77,10 @@ export interface ManagerOptions {
     rpcTimeoutMs?: number;
     /** How often core looks for idle instances (ADR-0022). */
     idleSweepMs?: number;
+    /** The interval of the plugin heartbeat (ADR-0023); 5 s by default. */
+    heartbeatMs?: number;
+    /** The least time between two syncs that change reports trigger (ADR-0011); a minute by default. */
+    changeSyncIntervalMs?: number;
   };
   /** The total of sandbox runs at once (ADR-0003); without it, 16. */
   runTotal?: () => number;
@@ -95,6 +99,8 @@ interface Live {
   /** The cold start of an idle instance that every caller waits for. */
   waking?: Promise<void>;
   catalogChangedTimer?: NodeJS.Timeout;
+  /** When a change report last started a sync, on the monotonic clock. */
+  lastChangeSync?: number;
   /** The running child's bundle version, read from its manifest.json just before each fork; the catalog
    * must have been synced from it (`ensureFresh`). */
   version?: string;
@@ -771,6 +777,7 @@ export class InstanceManager {
       defaultTimeoutMs: this.opts.supervisor?.rpcTimeoutMs ?? 30_000,
       initTimeoutMs: this.opts.supervisor?.initTimeoutMs,
       backoff: this.opts.supervisor?.backoff,
+      heartbeatMs: this.opts.supervisor?.heartbeatMs,
       // Re-read on every (re)start so connection changes and key rotation are picked up.
       loadInit: () => {
         live.version = bundleVersion(plugin.path);
@@ -852,12 +859,16 @@ export class InstanceManager {
 
   // ── sync scheduling (@id:catalog-sync-schedule) ───────────────────────────────────────────────────────────────
 
-  private scheduleSync(instanceId: string, delayMs = 2000) {
+  /** A change report syncs within 2 s, but at most once a minute for each instance (ADR-0011). Later reports
+   * join the sync that is planned, so a plugin can neither flood core with syncs nor hold one off. */
+  private scheduleSync(instanceId: string) {
     const live = this.live.get(instanceId);
-    if (!live) return;
-    clearTimeout(live.catalogChangedTimer);
+    if (!live || live.catalogChangedTimer) return;
+    const interval = this.opts.supervisor?.changeSyncIntervalMs ?? 60_000;
+    const delayMs = Math.max(2000, (live.lastChangeSync ?? -Infinity) + interval - performance.now());
     live.catalogChangedTimer = setTimeout(() => {
       live.catalogChangedTimer = undefined;
+      live.lastChangeSync = performance.now();
       void this.syncNow(instanceId).catch(() => undefined);
     }, delayMs);
   }
@@ -933,7 +944,9 @@ export class InstanceManager {
     }
     await live?.waking;
     if (!live || this.live.get(instanceId) !== live || live.supervisor.status !== 'ready')
-      throw new PluginUnavailableError('The endpoint is not ready');
+      throw live
+        ? live.supervisor.notReady('The endpoint is not ready')
+        : new PluginUnavailableError('The endpoint is not ready');
     live.lastCall = this.now().getTime();
     if (!row.lastSyncedAt || !live.version || row.catalogPluginVersion !== live.version) {
       await this.syncNow(instanceId);

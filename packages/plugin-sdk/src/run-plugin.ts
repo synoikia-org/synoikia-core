@@ -90,8 +90,10 @@ function openChannel(): Socket {
   return new Socket({ fd: CHANNEL_FD, readable: true, writable: true });
 }
 
+type Notice = RpcNotification extends infer N ? (N extends unknown ? Omit<N, 'jsonrpc'> : never) : never;
+
 /** Sends a notification (log line, catalogChanged) to core. No-op when not running under core. */
-export function notify(notification: Omit<RpcNotification, 'jsonrpc'>): void {
+export function notify(notification: Notice): void {
   channel?.write(encodeFrame({ jsonrpc: '2.0', ...notification }));
 }
 
@@ -100,17 +102,26 @@ export function runPlugin(handlers: PluginHandlers): void {
   const pipe = (channel = openChannel());
   const read = createFrameReader();
   const dispatch = createDispatcher(handlers);
+  let heartbeat: NodeJS.Timeout | undefined;
+  // ADR-0023: only a running event loop sends it, and only to a core that asks for it in `init`.
+  const beat = (params: unknown) => {
+    const ms = (params as { heartbeatMs?: unknown } | null)?.heartbeatMs;
+    clearInterval(heartbeat);
+    if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0)
+      heartbeat = setInterval(() => notify({ method: 'heartbeat' }), Math.min(60_000, Math.max(100, ms)));
+  };
   pipe.on('data', (chunk: Buffer) => {
     const frames = read(chunk);
     if (!frames) process.exit(1);
     for (const frame of frames) {
       if (!frame.ok || !isRpcRequest(frame.value)) continue;
       const req = frame.value;
-      void dispatch(req).then((res) =>
+      void dispatch(req).then((res) => {
+        if (req.method === 'init' && !('error' in res && res.error)) beat(req.params);
         pipe.write(encodeFrame(res), () => {
           if (req.method === 'shutdown') process.exit(0);
-        }),
-      );
+        });
+      });
     }
   });
   // Core closed the pipe: it stopped, or it stopped this instance.

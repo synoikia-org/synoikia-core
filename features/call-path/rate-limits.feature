@@ -73,6 +73,13 @@ Feature: Rate limits
       When agent 7 cancels a run that waits for a place
       Then the cancelled run never reaches Acme, and agent 7 is not kept waiting
 
+    Scenario: A run is told that core is busy when the server is full, though its instance has a place
+      Given Acme Tasks also runs as the instance "chores"
+      And the admin lets 4 runs go at once in total on the server
+      And agent 7 started three reads of "Groceries" on "tasks" and one on "chores" that wait for Acme
+      When agent 7 runs code on "chores" that returns 1
+      Then agent 7 is told after 2 seconds that core is busy
+
     Scenario: A run that waits for approval gives its place back
       Given agent 7b belongs to the admin and may read and write
       And agents 7 and 7b each wait for the admin to approve two adds

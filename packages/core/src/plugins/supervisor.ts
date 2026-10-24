@@ -1,6 +1,6 @@
 import type { InitParams } from '@synoikia/plugin-sdk';
 import { SDK_VERSION } from '@synoikia/plugin-sdk';
-import { PluginProcess, PluginUnavailableError } from './process.js';
+import { PluginProcess, PluginUnavailableError, PluginUnresponsiveError } from './process.js';
 import type { SpawnOptions } from './process.js';
 
 /** Keeps one instance's child alive (ADR-0014): spawn → init → ready, restarting with backoff after
@@ -18,6 +18,8 @@ export interface SupervisorOptions extends SpawnOptions {
   onHandlerFault?: (error: unknown) => void;
   initTimeoutMs?: number;
   backoff?: { initialMs: number; maxMs: number };
+  /** ADR-0023: the interval core asks the child to send heartbeats at; three missed ones restart it. */
+  heartbeatMs?: number;
 }
 
 export class PluginSupervisor {
@@ -29,6 +31,7 @@ export class PluginSupervisor {
   private generation = 0;
   private idleGeneration = -1;
   private queue: Promise<void> = Promise.resolve();
+  private watch?: NodeJS.Timeout;
 
   constructor(private readonly opts: SupervisorOptions) {}
 
@@ -38,9 +41,16 @@ export class PluginSupervisor {
 
   /** The live process for RPC calls. Throws unless the instance is ready. */
   get client(): PluginProcess {
-    if (this._status !== 'ready' || !this.proc?.running) throw new PluginUnavailableError();
+    if (this._status !== 'ready' || !this.proc?.running) throw this.notReady();
     return this.proc;
   }
+
+  /** The error for a call while the child is down: it tells the caller when the child stopped answering. */
+  notReady(message?: string): PluginUnavailableError {
+    return this.stoppedAnswering ? new PluginUnresponsiveError() : new PluginUnavailableError(message);
+  }
+
+  private stoppedAnswering = false;
 
   async start(): Promise<void> {
     return this.serial(async () => {
@@ -108,6 +118,8 @@ export class PluginSupervisor {
 
   private async shutdown() {
     this.stopping = true;
+    this.stoppedAnswering = false;
+    this.unwatch();
     this.generation++;
     clearTimeout(this.restartTimer);
     const proc = this.proc;
@@ -128,6 +140,11 @@ export class PluginSupervisor {
     this.proc = proc;
     proc.on('log', (level, message) => this.opts.onLog?.(level, message));
     proc.on('catalogChanged', (reason) => this.opts.onCatalogChanged?.(reason));
+    const beat = { at: 0 };
+    proc.on('heartbeat', () => {
+      beat.at = performance.now();
+      this.watchHeartbeats(proc, generation, beat);
+    });
     proc.on('invalidMessage', () => this.opts.onInvalidMessage?.());
     proc.on('handlerFault', (err) => this.opts.onHandlerFault?.(err));
     proc.on('exit', (code, signal) => {
@@ -141,7 +158,7 @@ export class PluginSupervisor {
       proc.start();
       await proc.call(
         'init',
-        { ...init, instanceId: this.opts.instanceId, sdkVersion: SDK_VERSION },
+        { ...init, instanceId: this.opts.instanceId, sdkVersion: SDK_VERSION, heartbeatMs: this.heartbeatMs },
         this.opts.initTimeoutMs ?? 30_000,
       );
     } catch (err) {
@@ -156,11 +173,48 @@ export class PluginSupervisor {
       return;
     }
     this.attempt = 0;
+    this.stoppedAnswering = false;
     this.setStatus('ready');
+  }
+
+  /** Bounded, so neither a tiny interval nor one past the timer limit of Node reaches the child. */
+  private get heartbeatMs() {
+    return Math.min(60_000, Math.max(100, this.opts.heartbeatMs ?? 5000));
+  }
+
+  /** ADR-0023: watches a child from its first heartbeat, so a child that sends none is never watched. Times are
+   * monotonic, so a step of the wall clock restarts no child. */
+  private watchHeartbeats(proc: PluginProcess, generation: number, beat: { at: number }) {
+    if (this.watched === proc) return;
+    this.unwatch();
+    this.watched = proc;
+    let tickedAt = performance.now();
+    this.watch = setInterval(() => {
+      if (generation !== this.generation || this.proc !== proc) return this.unwatch();
+      const now = performance.now();
+      // A late tick means core itself was busy, and the heartbeats may still wait to be read: check next time.
+      const late = now - tickedAt > 2 * this.heartbeatMs;
+      tickedAt = now;
+      if (late || now - beat.at < 3 * this.heartbeatMs) return;
+      this.unwatch();
+      this.stoppedAnswering = true;
+      this.scheduleRestart('plugin stopped answering');
+      proc.killUnresponsive();
+    }, this.heartbeatMs);
+    this.watch.unref();
+  }
+
+  private watched?: PluginProcess;
+
+  private unwatch() {
+    clearInterval(this.watch);
+    this.watch = undefined;
+    this.watched = undefined;
   }
 
   private scheduleRestart(reason: string) {
     if (this.stopping) return;
+    this.unwatch();
     this.generation++;
     this.proc = undefined;
     this.setStatus('error', reason);

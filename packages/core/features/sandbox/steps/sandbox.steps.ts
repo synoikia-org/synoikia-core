@@ -7,6 +7,8 @@ const KB = 1024;
 const run = (world: SynoikiaWorld, agent: string, code: string) => world.execute(agent, world.lastInstance, code);
 const openTasks = (list: string) => `await tasks.call('lists.tasks', ${JSON.stringify({ list })})`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The approval page of a call that waited, kept after the agent got another answer. */
+const waitingLinks = new WeakMap<SynoikiaWorld, string>();
 
 Given('a run on {string} may take {int} second(s)', async (world: SynoikiaWorld, slug: string, seconds: number) => {
   await world.instanceSettings(slug, { sandbox: { timeoutMs: seconds * 1000 } });
@@ -240,8 +242,7 @@ Then(
 );
 
 Then('the logs of agent {word} stop at {int} KB', (world: SynoikiaWorld, _agent: string, size: number) => {
-  expect(world.answer.result).toBe('logged');
-  expect((world.answer.logs as string[]).join('').length).toBe(size * KB);
+  expect(Buffer.byteLength((world.answer.logs as string[]).join(''))).toBe(size * KB);
 });
 
 Then('the preview of agent {word} shows [REDACTED] in place of the API token', (world: SynoikiaWorld) => {
@@ -281,4 +282,45 @@ Then(
 
 Then('agent {word} does not find {string}', (world: SynoikiaWorld) => {
   expect(world.answer).toEqual({ result: 'undefined' });
+});
+
+When(
+  'the code of agent {word} asks to add {string} to {string} and loops forever while the add waits for approval',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string) => {
+    // The read answers first, so the loop runs after the first run, while the add waits for approval.
+    const read = `tasks.call('lists.tasks', ${JSON.stringify({ list })})`;
+    const add = `tasks.call('tasks.add', ${JSON.stringify({ list, title })})`;
+    await run(world, agent, `const read = ${read}; const add = ${add}; await read; while (true) {} await add;`);
+    const { status, executionId } = world.answer as { status?: string; executionId?: string };
+    if (status === 'awaiting_approval' && executionId) {
+      waitingLinks.set(world, world.approvalLink());
+      await sleep(2000);
+      await world.resume(agent, executionId);
+    }
+  },
+);
+
+Then('the add of {string} no longer waits for the admin', async (world: SynoikiaWorld) => {
+  expect((await world.pageBrowser().send(waitingLinks.get(world)!)).status).not.toBe(200);
+  expect(world.upstreamRequests('POST', '/lists/Groceries/tasks')).toEqual([]);
+});
+
+When(
+  'the code of agent {word} logs {int} KB of the letter {string}',
+  async (world: SynoikiaWorld, agent: string, size: number, letter: string) => {
+    const perLine = KB / Buffer.byteLength(letter);
+    await run(
+      world,
+      agent,
+      `for (let i = 0; i < ${size}; i++) console.log(${JSON.stringify(letter)}.repeat(${perLine})); return 'logged';`,
+    );
+  },
+);
+
+When('the code of agent {word} logs 100,000 empty lines', async (world: SynoikiaWorld, agent: string) => {
+  await run(world, agent, `for (let i = 0; i < 100000; i++) console.log(); return 'logged';`);
+});
+
+Then('agent {word} gets at most 16,384 log lines', (world: SynoikiaWorld) => {
+  expect((world.answer.logs as string[]).length).toBeLessThanOrEqual(16 * KB);
 });

@@ -135,3 +135,49 @@ Then('core holds at most {int} MB more memory than before the first sync', async
   expect((await world.operations(world.lastInstance)).length).toBeGreaterThan(3000);
   expect((await coreMemoryMb()) - memoryBefore.get(world)!).toBeLessThanOrEqual(mb);
 });
+
+// In the World a minute between change syncs lasts 15 seconds, so the scenario fits in its time limit.
+const CHANGE_SYNC_MINUTE_MS = 15_000;
+const changeSyncs = new WeakMap<SynoikiaWorld, { firstAt: number; count: number }>();
+const syncsOf = async (world: SynoikiaWorld, slug: string) => {
+  const id = await world.tasksInstance(slug);
+  return (await world.audit({ kind: 'plugin', decision: 'catalog_synced' })).filter(
+    (r) => (r as { instanceId?: string }).instanceId === id,
+  ).length;
+};
+
+Given(
+  'the plugin of {string} reported that its catalog changed, and core synced it',
+  async (world: SynoikiaWorld, slug: string) => {
+    world.supervision = { ...world.supervision, changeSyncIntervalMs: CHANGE_SYNC_MINUTE_MS };
+    await world.restartCore();
+    const before = await syncsOf(world, slug);
+    world.pluginFlag('catalog-changed', String(Date.now()));
+    await eventually(async () => (await syncsOf(world, slug)) > before, 'the sync after the change', 8000);
+    changeSyncs.set(world, { firstAt: Date.now(), count: await syncsOf(world, slug) });
+  },
+);
+
+When(
+  'the plugin of {string} reports a change of its catalog each second for 10 seconds',
+  async (world: SynoikiaWorld) => {
+    for (let i = 0; i < 10; i++) {
+      world.pluginFlag('catalog-changed', `${Date.now()}-${i}`);
+      // Ten reports with nine pauses fit in the time limit of a step.
+      if (i < 9) await new Promise((r) => setTimeout(r, 950));
+    }
+  },
+);
+
+Then(
+  'core did not sync {string} again in those 10 seconds, and syncs it once the minute is over',
+  async (world: SynoikiaWorld, slug: string) => {
+    const { firstAt, count } = changeSyncs.get(world)!;
+    expect(await syncsOf(world, slug)).toBe(count);
+    while (Date.now() < firstAt + CHANGE_SYNC_MINUTE_MS - 500) {
+      expect(await syncsOf(world, slug)).toBe(count);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    await eventually(async () => (await syncsOf(world, slug)) > count, 'the sync once the minute is over', 4000);
+  },
+);

@@ -82,8 +82,8 @@ Core throws these errors into the sandbox as `Error` objects with a `code` prope
 | `RATE_LIMITED`             | The principal used its write budget.                                                                                                                                                            |
 | `UPSTREAM_DENIED`          | The upstream refused the call for lack of permission.                                                                                                                                           |
 | `UPSTREAM_ERROR`           | The upstream call failed.                                                                                                                                                                       |
-| `UPSTREAM_TIMEOUT`         | `invoke` did not answer before its deadline. The result is unknown.                                                                                                                             |
-| `PLUGIN_UNAVAILABLE`       | The plugin child is down, or the bundle changed while the call waited.                                                                                                                          |
+| `UPSTREAM_TIMEOUT`         | `invoke` did not answer before its deadline, or the child of a write stopped during it. The result is unknown.                                                                                  |
+| `PLUGIN_UNAVAILABLE`       | The plugin child is down, stopped sending heartbeats (ADR-0023), or the bundle changed while the call waited.                                                                                   |
 | `PLUGIN_ERROR`             | The plugin answer is not valid, or the plugin gave an error code that core does not pass on.                                                                                                    |
 | `EXECUTION_ENDED`          | The `execute` run ended before the call, or core stopped its parked execution.                                                                                                                  |
 | `NOT_A_BINDING`            | The sandbox asked the host for a function that is not a binding.                                                                                                                                |
@@ -431,7 +431,7 @@ The core scheduler keeps the catalog of each instance current. An in-process loc
 | Open sessions               | Each 30 minutes, a fast version check. If the version changed, the sync runs before the next call.                                                                          |
 | Each day                    | A sync for each instance, at a different time for each.                                                                                                                     |
 | Admin                       | "Sync now", or `POST /api/instances/:id/sync`.                                                                                                                              |
-| Plugin                      | The `catalogChanged` notification starts a sync after a short delay.                                                                                                        |
+| Plugin                      | The `catalogChanged` notification starts a sync after a short delay, and at most once a minute for each instance.                                                           |
 
 **Bundle version.** Core records on the instance the bundle version that the catalog came from (`catalog_plugin_version`). Core reads this version from the `manifest.json` of the bundle just before each fork (ADR-0014).
 

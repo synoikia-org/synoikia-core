@@ -129,8 +129,8 @@ graph TB
   SynoikiaBundles@{ shape: disk, label: "Plugin bundles" }
   SynoikiaDatabase@{ shape: disk, label: "Database" }
   SynoikiaSandbox -. "`sends binding calls to`" .-> SynoikiaCore.Gate
-  SynoikiaInstance -. "`answers calls and sends log and catalog 
-notices to`" .-> SynoikiaCore.PluginHost
+  SynoikiaInstance -. "`answers calls and sends log, catalog and 
+heartbeat notices to`" .-> SynoikiaCore.PluginHost
   SynoikiaCore.McpEndpoints -. "`authenticates the client and the 
 approver with`" .-> SynoikiaCore.Auth
   SynoikiaCore.McpEndpoints -. "`starts search, execute and resume in`" .-> SynoikiaCore.Runtime
