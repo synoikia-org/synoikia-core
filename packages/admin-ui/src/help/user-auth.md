@@ -59,7 +59,7 @@ The group only decides who may sign in. Synoikia sets no role from an OIDC group
 
 Select **Provision an account on first sign-in for anyone the policy allows**. This needs an entry under **Who may sign in**, and a **Default role of new accounts**. Without a default role, Synoikia makes no account.
 
-The new username comes from the username or the e-mail address at the provider. If that name is taken, Synoikia adds a number, such as `-2`.
+The new username comes from the username or the e-mail address at the provider. If that name is taken, also in other letter case, Synoikia adds a number, such as `-2`.
 
 A deleted automatic user comes back as a new user at the next sign-in. To keep a person out, disable the user instead, or change the policy.
 
@@ -89,3 +89,4 @@ Before you do this, sign in once with single sign-on yourself. While password si
 - If single sign-on fails while password sign-in is off, restart the server with `ADMIN_FORCE_LOCAL_LOGIN=true`. Password sign-in then works again.
 - A linked user without a password cannot unlink. Set a password for them on the Users page first.
 - A refused single sign-on is in the audit log. Check the policy under **Who may sign in**.
+- The portal answers only to `localhost`, IP addresses, the host of `PUBLIC_ADMIN_URL` and the names in `ADMIN_ALLOWED_HOSTS`. Another host name is refused, so add it there.
