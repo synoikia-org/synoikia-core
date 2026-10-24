@@ -8,6 +8,10 @@ model {
       technology 'http/admin'
       description 'The admin listener: the Admin API and the static portal, with session cookies and CSRF checks.'
     }
+    metrics = component 'Metrics listener' {
+      technology 'http/metrics, prom-client'
+      description 'The metrics listener: the metrics of core in the Prometheus text format, with an optional bearer token.'
+    }
     auth = component 'Auth' {
       technology 'auth/'
       description 'Users, sessions, TOTP, OIDC, MCP tokens, OAuth grants and external providers, with an in-memory cache of the credentials that calls present.'
@@ -94,4 +98,7 @@ model {
   synoikia.core.instances -> synoikia.core.dbAccess 'stores instances through'
   synoikia.core.instances -> synoikia.core.dbAccess 'checks the write counters of its cached tables in'
   synoikia.core.dbAccess -> synoikia.database 'reads and writes'
+  prometheus -> synoikia.core.metrics 'scrapes metrics from' {
+    technology 'Prometheus text format, HTTP'
+  }
 }

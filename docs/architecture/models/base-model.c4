@@ -57,6 +57,9 @@ model {
   externalProvider = external 'External provider' {
     description 'A service in front of the MCP listener that identifies the user of a request, for example Cloudflare Access.'
   }
+  prometheus = external 'Prometheus' {
+    description 'A monitoring server that the operator runs and that reads the metrics of core.'
+  }
   notificationReceiver = external 'Notification receiver' {
     description 'An ntfy topic or a webhook that receives informational events.'
   }
@@ -120,6 +123,9 @@ model {
     technology 'OIDC code flow with PKCE'
   }
   synoikia.core -> notificationReceiver 'sends events to'
+  prometheus -> synoikia.core 'scrapes metrics from' {
+    technology 'Prometheus text format, HTTP'
+  }
   synoikia.instance -> synoikia.core 'answers calls and sends log and catalog notices to' {
     technology 'JSON-RPC 2.0, one JSON line each, on a pipe'
   }

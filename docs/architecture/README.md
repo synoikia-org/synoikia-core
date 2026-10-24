@@ -18,6 +18,7 @@ graph TB
   PluginAuthor@{ icon: "fa:user", shape: rounded, label: "Plugin author" }
   PluginSource@{ shape: rectangle, label: "Plugin source" }
   ExternalProvider@{ shape: rectangle, label: "External provider" }
+  Prometheus@{ shape: rectangle, label: "Prometheus" }
   McpClient@{ shape: rectangle, label: "MCP client" }
   Synoikia@{ shape: rectangle, label: "Synoikia" }
   Upstream@{ shape: rectangle, label: "Upstream" }
@@ -36,6 +37,7 @@ settings`" .-> Synoikia
   Synoikia -. "`[...]`" .-> PluginRepository
   Synoikia -. "`signs users in with`" .-> IdentityProvider
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia
+  Prometheus -. "`scrapes metrics from`" .-> Synoikia
   Synoikia -. "`sends events to`" .-> NotificationReceiver
 ```
 
@@ -54,6 +56,7 @@ graph TB
   McpClient@{ shape: rectangle, label: "MCP client" }
   PluginSource@{ shape: rectangle, label: "Plugin source" }
   ExternalProvider@{ shape: rectangle, label: "External provider" }
+  Prometheus@{ shape: rectangle, label: "Prometheus" }
   subgraph Synoikia["`Synoikia`"]
     Synoikia.AdminPortal@{ shape: rectangle, label: "Admin portal" }
     Synoikia.CoreTesting@{ shape: rectangle, label: "Core testing" }
@@ -76,6 +79,7 @@ settings`" .-> Synoikia.AdminPortal
   McpClient -. "`calls search, execute and resume`" .-> Synoikia.Core
   PluginSource -. "`builds its fake upstream with`" .-> Synoikia.CoreTesting
   ExternalProvider -. "`identifies the user of a request`" .-> Synoikia.Core
+  Prometheus -. "`scrapes metrics from`" .-> Synoikia.Core
   Synoikia.Core -. "`runs model code in`" .-> Synoikia.Sandbox
   Synoikia.Core -. "`sends operation calls to`" .-> Synoikia.Instance
   Synoikia.Core -. "`reads and writes`" .-> Synoikia.Database
@@ -106,9 +110,11 @@ The modules of the core process.
 title: "Core components"
 ---
 graph TB
+  Prometheus@{ shape: rectangle, label: "Prometheus" }
   SynoikiaSandbox@{ shape: rectangle, label: "Sandbox" }
   SynoikiaInstance@{ shape: rectangle, label: "Instance" }
   subgraph SynoikiaCore["`Core`"]
+    SynoikiaCore.Metrics@{ shape: rectangle, label: "Metrics listener" }
     SynoikiaCore.Gate@{ shape: rectangle, label: "Gate" }
     SynoikiaCore.McpEndpoints@{ shape: rectangle, label: "MCP endpoints" }
     SynoikiaCore.AdminApi@{ shape: rectangle, label: "Admin API" }
@@ -128,6 +134,7 @@ graph TB
   PluginRepository@{ shape: rectangle, label: "Plugin repository" }
   SynoikiaBundles@{ shape: disk, label: "Plugin bundles" }
   SynoikiaDatabase@{ shape: disk, label: "Database" }
+  Prometheus -. "`scrapes metrics from`" .-> SynoikiaCore.Metrics
   SynoikiaSandbox -. "`sends binding calls to`" .-> SynoikiaCore.Gate
   SynoikiaInstance -. "`answers calls and sends log and catalog 
 notices to`" .-> SynoikiaCore.PluginHost
@@ -307,7 +314,7 @@ token`" .-> SynoikiaCoreMcpEndpoints
 
 ### Deployment
 
-One container, two listeners and one data volume.
+One container, its listeners and one data volume.
 
 ```mermaid
 ---
