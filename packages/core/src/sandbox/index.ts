@@ -58,7 +58,7 @@ const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /** Wall-clock budget that can be paused; fires `onExpire` once when it runs out. While paused, the CPU that
  * the isolate uses still counts (ADR-0005). */
-class Budget implements BudgetControl {
+export class Budget implements BudgetControl {
   private remaining: number;
   private startedAt = 0;
   private paused = 0;

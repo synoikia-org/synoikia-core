@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInstanceRedactor, GLOBAL_SENSITIVE_KEYS } from '../../src/gate/redact.js';
-import { BindingError, runInSandbox } from '../../src/sandbox/index.js';
+import { BindingError, Budget, runInSandbox } from '../../src/sandbox/index.js';
 import type { Binding } from '../../src/sandbox/index.js';
 
 const echo: Binding = async (args) => ({ echoed: args });
@@ -94,5 +94,41 @@ describe('limits while a binding waits (ADR-0005)', () => {
     const text = r.logs.join('');
     expect(text).toBe(`a${'\u{1F600}'.repeat(250)}`);
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1002);
+  });
+});
+
+describe('Budget (ADR-0005)', () => {
+  it('ends the run on resume when the CPU used while paused took the time that was left', () => {
+    let cpu = 0;
+    let expired = 0;
+    const budget = new Budget(
+      1000,
+      () => expired++,
+      () => cpu,
+    );
+    budget.start();
+    budget.pause();
+    cpu += 1000;
+    budget.resume();
+    expect(budget.expired).toBe(true);
+    expect(budget.remainingMs()).toBe(0);
+    expect(expired).toBe(1);
+    budget.stop();
+  });
+
+  it('keeps the run going on resume when CPU is left, and charges it', () => {
+    let cpu = 0;
+    const budget = new Budget(
+      1000,
+      () => undefined,
+      () => cpu,
+    );
+    budget.start();
+    budget.pause();
+    cpu += 400;
+    budget.resume();
+    expect(budget.expired).toBe(false);
+    expect(budget.remainingMs()).toBeLessThanOrEqual(600);
+    budget.stop();
   });
 });
