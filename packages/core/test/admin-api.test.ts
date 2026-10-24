@@ -75,6 +75,15 @@ describe('setup, login and sessions', () => {
     expect(t.ctx.users.get(off.id)).toMatchObject({ oidcSubject: null, oidcEmail: 'user22@acme.example' });
   });
 
+  it('counts only an SSO account that signed in as a way in once local login is off', async () => {
+    const t = await setup();
+    await signedIn(t);
+    const sso = await t.ctx.users.create({ username: 'user21', kind: 'sso', oidcEmail: 'user21@acme.example' });
+    expect(t.ctx.users.hasSsoAccount()).toBe(false);
+    t.ctx.users.bindOidc(sso.id, 'https://idp.example.com', 'sub-21');
+    expect(t.ctx.users.hasSsoAccount()).toBe(true);
+  });
+
   it('gives an SSO account no password and no app', async () => {
     const t = await setup();
     await signedIn(t);

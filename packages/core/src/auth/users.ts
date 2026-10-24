@@ -589,7 +589,8 @@ export class UserService {
       .select()
       .from(users)
       .all()
-      .some((u) => u.kind === 'sso' && !u.disabled && u.id !== except);
+      // An account that waits for its first sign-in is no way in yet: its address may never arrive.
+      .some((u) => u.kind === 'sso' && !!u.oidcSubject && !u.disabled && u.id !== except);
   }
 
   // ── the user's own endpoints (ADR-0010) ──
