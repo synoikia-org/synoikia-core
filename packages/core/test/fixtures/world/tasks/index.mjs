@@ -331,6 +331,9 @@ const handlers = {
 };
 
 const restartSeen = flagValue('restart');
+// `freeze`: a new value blocks the event loop at the next call, so the child stops answering and sends no
+// heartbeat (ADR-0023). A child started after the change does not freeze.
+const freezeSeen = flagValue('freeze');
 let catalogChangedSeen = flagValue('catalog-changed');
 globalThis.setInterval(() => {
   if (flagValue('restart') !== restartSeen) process.exit(1);
@@ -348,6 +351,9 @@ globalThis.setInterval(() => {
 
 onMessage((msg) => {
   if (flag('down') || flagValue('crash') === msg.method) process.exit(1);
+  if (msg.method !== 'init' && flagValue('freeze') !== freezeSeen) for (;;);
+  if (msg.method === 'init' && msg.params?.heartbeatMs > 0)
+    globalThis.setInterval(() => send({ jsonrpc: '2.0', method: 'heartbeat' }), msg.params.heartbeatMs);
   if (flagValue('hang') === msg.method) return;
   if (flag('broken-answer') && msg.method !== 'shutdown') return send({ jsonrpc: '2.0', id: msg.id, error: null });
   const handler = flagValue('forget') === msg.method ? undefined : handlers[msg.method];

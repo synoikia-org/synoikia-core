@@ -51,6 +51,14 @@ export class PluginTimeoutError extends Error {
   }
 }
 
+/** ADR-0023: core stopped the child because it sent no heartbeat; the calls that waited on it fail with this. */
+export class PluginUnresponsiveError extends PluginUnavailableError {
+  constructor(message = 'The plugin stopped answering; core starts it again') {
+    super(message);
+    this.name = 'PluginUnresponsiveError';
+  }
+}
+
 /** The plugin answered with something that violates the contract. */
 export class PluginProtocolError extends Error {
   constructor(method: string, detail: string) {
@@ -96,6 +104,7 @@ const RpcNotificationSchema = z.discriminatedUnion('method', [
     method: z.literal('catalogChanged'),
     params: z.object({ reason: z.string().optional() }).optional(),
   }),
+  z.object({ jsonrpc: z.literal('2.0'), method: z.literal('heartbeat') }),
 ]) satisfies z.ZodType<RpcNotification>;
 
 type Params<M extends RpcMethod> = Parameters<NonNullable<PluginHandlers[M]>>[0];
@@ -121,6 +130,7 @@ export interface PluginProcessEvents {
   exit: [code: number | null, signal: NodeJS.Signals | null];
   log: [level: string, message: string];
   catalogChanged: [reason?: string];
+  heartbeat: [];
   /** A message that breaks the contract and answers no call; never with its content. */
   invalidMessage: [];
   /** A listener of core threw while it handled a plugin message: core's fault, not the plugin's. */
@@ -251,6 +261,16 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     this.child?.kill('SIGKILL');
   }
 
+  /** ADR-0023: fails each waiting call as unresponsive, then kills the child. */
+  killUnresponsive(): void {
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new PluginUnresponsiveError());
+    }
+    this.pending.clear();
+    this.kill();
+  }
+
   /** Settles or relays one message; false when it breaks the contract and answers no call. */
   /** Handles one frame; false when the plugin broke the contract. */
   private receive(frame: Frame): boolean {
@@ -285,6 +305,7 @@ export class PluginProcess extends EventEmitter<PluginProcessEvents> {
     const note = RpcNotificationSchema.safeParse(msg);
     if (!note.success) return false;
     if (note.data.method === 'log') this.emit('log', note.data.params.level, note.data.params.message);
+    else if (note.data.method === 'heartbeat') this.emit('heartbeat');
     else this.emit('catalogChanged', note.data.params?.reason);
     return true;
   }

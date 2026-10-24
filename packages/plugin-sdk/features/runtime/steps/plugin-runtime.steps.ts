@@ -316,3 +316,27 @@ Then(
     expect(world.lists.map((l) => l.name)).not.toContain(list);
   },
 );
+
+When(
+  'core starts Acme Tasks and asks for a heartbeat every {int} milliseconds',
+  async (world: PluginAuthorWorld, heartbeatMs: number) => {
+    await connect(world, { heartbeatMs });
+  },
+);
+
+When('core {word} starts Acme Tasks', async (world: PluginAuthorWorld, sdkVersion: string) => {
+  await connect(world, { sdkVersion });
+});
+
+Then(
+  'core gets at least {int} heartbeats from Acme Tasks within a second',
+  async (world: PluginAuthorWorld, count: number) => {
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(world.heartbeats).toBeGreaterThanOrEqual(count);
+  },
+);
+
+Then('core gets no heartbeat from Acme Tasks within a second', async (world: PluginAuthorWorld) => {
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(world.heartbeats).toBe(0);
+});

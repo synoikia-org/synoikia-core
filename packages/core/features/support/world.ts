@@ -456,7 +456,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
           externalKeys: (domain) => (domain === GATEWAY.teamDomain ? gatewayKeySet : undefined),
           repoFetch: (url) => this.repositoryHost(url),
           log: createLogger('debug', (line) => this.serverLog.push(line)),
-          supervisor: { idleSweepMs: 50, ...this.supervision },
+          // A heartbeat each second: three missed ones restart a child (ADR-0023).
+          supervisor: { idleSweepMs: 50, heartbeatMs: 1000, ...this.supervision },
           ...(this.cpus ? { cpus: this.cpus } : {}),
           ...opts,
         },
@@ -789,7 +790,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
       | 'debugger'
       | 'broken-answer'
       | 'broken-log'
-      | 'prepare-moves',
+      | 'prepare-moves'
+      | 'freeze',
     value = '',
   ) {
     writeFileSync(this.pluginFile(name), value);

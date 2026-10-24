@@ -142,6 +142,8 @@ export class PluginAuthorWorld extends QuickPickleWorld {
   openapi?: OpenApiCatalog;
   /** What the plugin process sent: log lines, and closed connections among them. */
   pluginLog: string[] = [];
+  /** Heartbeat notices the plugin sent (ADR-0023). */
+  heartbeats = 0;
   replies: RpcResponse[] = [];
   private plugin?: ChildProcess;
   private channel?: Socket;
@@ -542,6 +544,7 @@ export class PluginAuthorWorld extends QuickPickleWorld {
         const msg = frame.value as RpcResponse | RpcNotification;
         if ('id' in msg) this.waiting.get(msg.id)?.(msg);
         else if (msg.method === 'log') this.pluginLog.push(msg.params.message);
+        else if (msg.method === 'heartbeat') this.heartbeats++;
       }
     });
     this.plugin = child;

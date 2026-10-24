@@ -11,7 +11,13 @@ import type { Db } from '../db/index.js';
 import type { AccessPrincipal } from './access.js';
 import { operations } from '../db/schema.js';
 import type { InstanceSettings } from '../instances/settings.js';
-import { PluginProtocolError, PluginRpcError, PluginTimeoutError, PluginUnavailableError } from '../plugins/process.js';
+import {
+  PluginProtocolError,
+  PluginRpcError,
+  PluginTimeoutError,
+  PluginUnavailableError,
+  PluginUnresponsiveError,
+} from '../plugins/process.js';
 import type { PluginProcess } from '../plugins/process.js';
 import { BindingError } from '../sandbox/index.js';
 import type { Binding, BudgetControl } from '../sandbox/index.js';
@@ -111,6 +117,7 @@ function toBindingError(err: unknown): BindingError {
     const code = PASSTHROUGH_PLUGIN_CODES.has(err.code) ? err.code : 'PLUGIN_ERROR';
     return new BindingError(code, err.message.slice(0, MAX_ERROR_MESSAGE));
   }
+  if (err instanceof PluginUnresponsiveError) return new BindingError('PLUGIN_UNAVAILABLE', err.message);
   if (err instanceof PluginUnavailableError)
     return new BindingError('PLUGIN_UNAVAILABLE', 'The plugin is not running; try again shortly');
   if (err instanceof PluginTimeoutError) return new BindingError('UPSTREAM_TIMEOUT', err.message);

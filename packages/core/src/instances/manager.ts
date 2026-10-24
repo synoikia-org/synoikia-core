@@ -77,6 +77,8 @@ export interface ManagerOptions {
     rpcTimeoutMs?: number;
     /** How often core looks for idle instances (ADR-0022). */
     idleSweepMs?: number;
+    /** The interval of the plugin heartbeat (ADR-0023); 5 s by default. */
+    heartbeatMs?: number;
     /** The least time between two syncs that change reports trigger (ADR-0011); a minute by default. */
     changeSyncIntervalMs?: number;
   };
@@ -775,6 +777,7 @@ export class InstanceManager {
       defaultTimeoutMs: this.opts.supervisor?.rpcTimeoutMs ?? 30_000,
       initTimeoutMs: this.opts.supervisor?.initTimeoutMs,
       backoff: this.opts.supervisor?.backoff,
+      heartbeatMs: this.opts.supervisor?.heartbeatMs,
       // Re-read on every (re)start so connection changes and key rotation are picked up.
       loadInit: () => {
         live.version = bundleVersion(plugin.path);
@@ -941,7 +944,9 @@ export class InstanceManager {
     }
     await live?.waking;
     if (!live || this.live.get(instanceId) !== live || live.supervisor.status !== 'ready')
-      throw new PluginUnavailableError('The endpoint is not ready');
+      throw live
+        ? live.supervisor.notReady('The endpoint is not ready')
+        : new PluginUnavailableError('The endpoint is not ready');
     live.lastCall = this.now().getTime();
     if (!row.lastSyncedAt || !live.version || row.catalogPluginVersion !== live.version) {
       await this.syncNow(instanceId);
