@@ -1,6 +1,5 @@
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
-import { CORE_VERSION } from '../../../src/version.js';
 import { API_TOKEN, eventually } from '../../support/world.js';
 import type { SynoikiaWorld } from '../../support/world.js';
 import { rawRequest } from './requests.js';
@@ -83,17 +82,14 @@ Then(
   },
 );
 
-Given('the operator started core 0.25.0 with metrics on the port 9464', async (world: SynoikiaWorld) => {
-  expect(CORE_VERSION).toBe('0.25.0');
-  await world.restartCore(METRICS);
-});
-
 When('Prometheus reads the metrics', async (world: SynoikiaWorld) => {
   await readMetrics(world);
 });
 
-Then('Prometheus reads the version {string}', (world: SynoikiaWorld, version: string) => {
-  expect(lastRead(world).text).toContain(`synoikia_build_info{version="${version}"} 1`);
+Then('Prometheus reads the version of core that the portal overview shows', async (world: SynoikiaWorld) => {
+  const { version } = await world.expectOk(world.admin.get('/api/overview'), 'read overview');
+  expect(version).toMatch(/^\d+\.\d+\.\d+/);
+  expect(lastRead(world).text).toContain(`synoikia_build_info{version="${version as string}"} 1`);
 });
 
 /** The value of one metric line, matched by name and labels in any order; undefined when Prometheus reads none. */
