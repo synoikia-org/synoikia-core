@@ -97,32 +97,60 @@ Plugins live in their own repositories, such as [synoikia-core-plugins][core-plu
 
 ## Releases
 
-### Publishing the npm packages
+A release publishes the npm packages and the Docker image together. This keeps the plugin SDK and the test harness in step with the image that supports them. A merge to `main` publishes nothing.
 
-This repository publishes three npm packages: `@synoikia/plugin-sdk`, `@synoikia/core` (for its plugin test harness) and `@synoikia/create-plugin`. Plugin repositories, [synoikia-core-plugins][core-plugins] included, build against them. To release one, bump its `version` and merge to `main`. The Release workflow (`.github/workflows/release.yml`) publishes every package whose version isn't on npm yet: the SDK first, then core, then create-plugin. It adds provenance only while this repository is public, because npm rejects provenance from private repositories.
+| Artifact                  | Where it publishes                                                       |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `@synoikia/plugin-sdk`    | npm                                                                      |
+| `@synoikia/core`          | npm, for its plugin test harness                                         |
+| `@synoikia/create-plugin` | npm                                                                      |
+| The Docker image          | `ghcr.io/synoikia-org/synoikia:<version>`, and `latest` for a stable one |
 
-It publishes through npm trusted publishing, so no token is stored: each package's settings on npmjs.com trust `synoikia-org/synoikia-core` and `release.yml`, with **Direct publishing** allowed. If the repository or the workflow file is renamed, update those settings too; trusted publishing doesn't follow renames. npm can only trust a publisher for a package that already exists, so a new package's first release has to be published once with a token (or by hand) before its trusted publisher can be set.
+Plugin repositories, [synoikia-core-plugins][core-plugins] included, build against the npm packages.
 
-Prerelease versions (`0.3.0-rc.0`) are never published by a merge. Publish them by hand with **Actions → Release → Run workflow**; they go to the `next` dist-tag, so `latest` stays on the last release. A prerelease run is also the way to check trusted publishing after changing its settings: npm's verbose log (on for every release run) says why a publish was refused.
+### The draft release
 
-### Publishing the Docker image
+Each merge to `main` runs the Release draft workflow (`.github/workflows/release-draft.yml`). It creates or updates one draft release on GitHub:
 
-The Docker image ships as one unit (core + admin UI, with the SDK only as a build dependency), so it carries its own version in the root `package.json`, separate from the package versions above. To release a new image, bump that `version` and merge to `main`; the same `release.yml` builds and pushes `ghcr.io/synoikia-org/synoikia:<version>` (and moves `latest` to it, for stable versions) whenever that tag isn't already published. Prereleases follow the same manual-dispatch rule as the npm packages.
+- It finds the pull requests merged since the last published release, and the artifacts that each one changes.
+- It computes the next version of each changed artifact from the pull request labels.
+- It writes one section for each changed artifact, with its pull requests, and a block of the npm versions.
 
-### Which versions a change bumps
+The release tag is `v<image version>`. The image version is the release version, so each release bumps it.
 
-A pull request bumps the version of each published package, and of the image, whose shipped content it changes, in the same pull request. Docs-, test- and CI-only changes bump nothing.
+Before the first release, the last version change in each `package.json` marks what npm and GHCR already have. After it, the last published release marks it.
 
-| Version                         | Bump when the pull request changes                                                                                                               |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@synoikia/core`                | `packages/core/src`, including `testing/`, or its runtime dependencies                                                                           |
-| `@synoikia/plugin-sdk`          | `packages/plugin-sdk/src` or its dependencies                                                                                                    |
-| `@synoikia/create-plugin`       | its own files. Also a patch whenever core or the SDK takes a minor bump, because its `workspace:^` ranges are packed with the minor pinned       |
-| Root `package.json` (the image) | anything that the image ships: core, the admin UI, the `Dockerfile` and image dependencies. Bump it by the same step as the largest package bump |
+### Publish a release
 
-- While at 0.x, a breaking change or a new feature bumps the minor, and a fix bumps the patch.
-- Name the new versions in the pull request title, for example "(core 0.7.0, image 0.5.0)".
-- A breaking change to the SDK or to `@synoikia/core/testing` breaks every plugin repository, so call it out in the pull request.
+1. Open the draft release on GitHub.
+2. Read the sections. Edit the versions block or the tag if a version is wrong.
+3. To publish a prerelease, set a tag such as `v0.24.0-rc.0`. Then select **Set as a pre-release**.
+4. Select **Publish release**.
+
+The Release workflow (`.github/workflows/release.yml`) then writes the versions into each `package.json` for the build. It does not commit them. It publishes each npm package whose version is not on npm yet. The order is the SDK, core, then create-plugin. It builds and pushes the image at the tag. A prerelease version goes to the `next` dist-tag on npm and does not move the `latest` image tag. The workflow adds npm provenance only while this repository is public, because npm rejects provenance from private repositories.
+
+The workflow publishes through npm trusted publishing, so no token is stored. Each package's settings on npmjs.com trust `synoikia-org/synoikia-core` and `release.yml`, with **Direct publishing** allowed. If you rename the repository or the workflow file, update those settings too. Trusted publishing does not follow renames. npm can only trust a publisher for a package that already exists. So publish the first release of a new package once with a token or by hand, and then set its trusted publisher. npm's verbose log, on for each release run, says why npm refused a publish.
+
+### Which versions a release bumps
+
+Do not bump a `version` in a pull request. Label the pull request instead. The draft reads the labels when the pull request merges.
+
+| Label      | Bump while at 0.x | Bump from 1.0 |
+| ---------- | ----------------- | ------------- |
+| `breaking` | minor             | major         |
+| `feature`  | minor             | minor         |
+| none       | patch             | patch         |
+
+An artifact takes the largest bump of the pull requests that change it:
+
+| Artifact                  | Changed by                                                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@synoikia/plugin-sdk`    | `packages/plugin-sdk/src` and its `package.json`                                                                                                                   |
+| `@synoikia/core`          | `packages/core/src`, including `testing/`, `packages/core/drizzle` and its `package.json`                                                                          |
+| `@synoikia/create-plugin` | its `src`, `templates` and `package.json`. Also a patch when core or the SDK takes a minor bump, because its `workspace:^` ranges are packed with the minor pinned |
+| The Docker image          | the release: it takes the largest bump of all the artifacts                                                                                                        |
+
+`scripts/release/plan.mjs` holds these rules. Docs-, test- and CI-only changes bump nothing. A breaking change to the SDK or to `@synoikia/core/testing` breaks every plugin repository, so call it out in the pull request.
 
 <!-- External links -->
 

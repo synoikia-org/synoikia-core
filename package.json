@@ -10,8 +10,8 @@
   "scripts": {
     "preinstall": "node scripts/check-node.mjs",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck && tsc -p .github/actions/prose",
-    "test": "node scripts/check-node.mjs && pnpm -r test && node --test .github/actions/prose/prose.test.mjs",
+    "typecheck": "pnpm -r typecheck && tsc -p .github/actions/prose && tsc -p scripts/release",
+    "test": "node scripts/check-node.mjs && pnpm -r test && node --test .github/actions/prose/prose.test.mjs scripts/release/plan.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
