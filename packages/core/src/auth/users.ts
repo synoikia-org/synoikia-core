@@ -585,12 +585,14 @@ export class UserService {
   }
 
   hasSsoAccount(except?: string): boolean {
-    return this.db
-      .select()
-      .from(users)
-      .all()
-      // An account that waits for its first sign-in is no way in yet: its address may never arrive.
-      .some((u) => u.kind === 'sso' && !!u.oidcSubject && !u.disabled && u.id !== except);
+    return (
+      this.db
+        .select()
+        .from(users)
+        .all()
+        // An account that waits for its first sign-in is no way in yet: its address may never arrive.
+        .some((u) => u.kind === 'sso' && !!u.oidcSubject && !u.disabled && u.id !== except)
+    );
   }
 
   // ── the user's own endpoints (ADR-0010) ──
