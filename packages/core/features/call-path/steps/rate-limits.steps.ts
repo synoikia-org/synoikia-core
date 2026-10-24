@@ -281,3 +281,32 @@ Then(
     expect((server.runtime as { runsAtOnce: unknown }).runsAtOnce).toBeNull();
   },
 );
+
+Given(
+  'agent {word} started three reads of {string} on {string} and one on {string} that wait for Acme',
+  async (world: SynoikiaWorld, agent: string, list: string, first: string, second: string) => {
+    // Acme answers slowly, so the four runs hold their places until the scenario ends.
+    world.upstreamDelayMs ||= 3000;
+    const code = `return (await tasks.call('lists.tasks', ${JSON.stringify({ list })})).length;`;
+    const reads = () => world.upstreamRequests('GET', `/lists/${list}/tasks`).filter((r) => !r.query.has('with'));
+    const before = reads().length;
+    const runs: Promise<unknown>[] = [];
+    // The World keeps one session for each agent: the last one opened, on the second instance, stays.
+    const onFirst = await world.connect(agent, first);
+    for (let i = 0; i < 3; i++)
+      runs.push(onFirst.callTool({ name: 'execute', arguments: { code } }).catch(() => undefined));
+    const onSecond = await world.connect(agent, second);
+    runs.push(onSecond.callTool({ name: 'execute', arguments: { code } }).catch(() => undefined));
+    started.set(world, runs);
+    await eventually(() => reads().length >= before + 4, 'four reads at Acme');
+  },
+);
+
+When(
+  'agent {word} runs code on {string} that returns {int}',
+  async (world: SynoikiaWorld, agent: string, slug: string, value: number) => {
+    const start = performance.now();
+    await world.execute(agent, slug, `return ${value};`);
+    took.set(world, { ms: performance.now() - start, endedBefore: 0 });
+  },
+);
