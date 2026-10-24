@@ -30,6 +30,7 @@ Chosen option: "Counters of writes for each table", because no service has to re
 - A value that depends on the time is cached without the decision. For example, a cached credential keeps its expiry, and core compares the expiry with the clock at each call.
 - Each component caches the data that it owns: Auth the credentials, the instance manager the instances and their settings, and catalog sync the catalogs with their access levels. The server settings are cached in the same way, and core freezes them because callers share them.
 - Hot queries that stay on the call path, such as the audit insert, use prepared Drizzle queries.
+- The database layer keeps up to 256 prepared statements by their SQL text, and reuses one that is not busy. Each statement holds native SQLite memory until the garbage collector frees it. A catalog sync would otherwise prepare thousands of copies of a dozen statements.
 - A statement that may write but names no table that the layer knows counts as a write to every table, so the counters fail closed.
 - The cached runtime of an instance keeps its redactor, which holds the decrypted secret values of the instance until the instance is written. ADR-0016 already accepts secrets in the memory of core.
 

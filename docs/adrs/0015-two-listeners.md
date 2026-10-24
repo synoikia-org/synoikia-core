@@ -60,7 +60,7 @@ For example, `GET :8080/api/instances` and `GET :8081/{slug}` both return 404.
 - A disabled instance, or an instance of a disabled plugin, returns 503 with the JSON-RPC error "This instance is unavailable".
 - Each instance has its own `McpServer` with `search`, `execute` and `resume`, and the approval card (ADR-0006). The tool descriptions come from the plugin manifest, for example `acme.call(...)`.
 - Core keys MCP sessions by instance and `Mcp-Session-Id`. A session records the principal and whether the client supports elicitation. A parked execution does not belong to a session.
-- A principal can have 16 open MCP sessions. A new session closes the least recently used one.
+- A principal can have 16 open MCP sessions on each endpoint. A new session closes the least recently used one of that principal on that endpoint.
 
 **Agent instructions.** The server `instructions` start with a fixed core text: the plugin name, and how to use `search`, `execute` and `resume`.
 

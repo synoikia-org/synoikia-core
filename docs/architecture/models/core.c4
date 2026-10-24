@@ -46,7 +46,7 @@ model {
     }
     dbAccess = component 'Database access' {
       technology 'db/, Drizzle, better-sqlite3'
-      description 'Opens the database, runs its migrations and counts the writes to each table.'
+      description 'Opens the database, runs its migrations, counts the writes to each table and reuses prepared statements.'
     }
     crypto = component 'Secret box' {
       technology 'crypto/'

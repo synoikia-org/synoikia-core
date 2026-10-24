@@ -55,3 +55,11 @@ Feature: Catalog sync
       And the plugin of "tasks" sends the new read "show the done tasks", and result secrets of "count the tasks" that name no field
       When the admin syncs "tasks", which fails
       Then the admin sees the 9 operations of "tasks" as before, without "show the done tasks"
+
+  Rule: A large sync gives its memory back
+
+    @exclusive
+    Scenario: A sync of 3,000 operations leaves the memory of core about where it was
+      Given Acme Tasks runs as the instance "tasks", and its plugin lists 3,000 operations
+      When the admin syncs "tasks" twice
+      Then core holds at most 25 MB more memory than before the first sync

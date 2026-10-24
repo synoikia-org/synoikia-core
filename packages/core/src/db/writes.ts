@@ -8,6 +8,8 @@ import type { Db, DbLike } from './index.js';
 const WRITE = /^\s*(?:insert|replace|update|delete)\b(?:\s+or\s+\w+)?(?:\s+into|\s+from)?\s+(?:\w+\.)?["`[]?(\w+)/i;
 const ROLLBACK = /^\s*rollback\b/i;
 const RUNS = ['run', 'get', 'all', 'iterate'] as const;
+const MAX_PREPARED = 256;
+const MAX_KEPT_SQL = 4096;
 
 /** The table a statement writes, `*` for a write it cannot name (it fails closed), or nothing for a read. */
 export function writeTarget(source: string, readonly: boolean): string | undefined {
@@ -73,8 +75,23 @@ export function countWrites(sqlite: Database.Database): TableWrites {
   const writes = new TableWrites(sqlite);
   registry.set(sqlite, writes);
   const prepare = sqlite.prepare.bind(sqlite);
+  // Each statement holds native SQLite memory until it is collected: reuse it rather than prepare it again.
+  const prepared = new Map<string, Database.Statement>();
   sqlite.prepare = ((source: string) => {
+    const kept = prepared.get(source);
+    if (kept && !kept.busy) {
+      prepared.delete(source);
+      prepared.set(source, kept);
+      // Drizzle turns raw mode on and expects a fresh statement to have it off.
+      if (kept.reader) kept.pluck(false).expand(false).raw(false);
+      return kept;
+    }
     const stmt = prepare(source);
+    // A long statement, such as an `in` list with thousands of values, is used once: keep only short ones.
+    if (!kept && source.length <= MAX_KEPT_SQL) {
+      prepared.set(source, stmt);
+      if (prepared.size > MAX_PREPARED) prepared.delete(prepared.keys().next().value!);
+    }
     const table = writeTarget(source, stmt.readonly);
     if (table)
       for (const m of RUNS) {

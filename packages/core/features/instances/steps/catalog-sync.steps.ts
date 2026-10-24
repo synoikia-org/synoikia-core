@@ -1,4 +1,6 @@
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { Given, Then, When } from 'quickpickle';
 import { expect } from 'vitest';
 import { eventually, opKey } from '../../support/world.js';
@@ -95,3 +97,41 @@ Then(
     expect(ops.map((o) => o.key)).not.toContain(opKey(name));
   },
 );
+
+// ── memory of a large sync ──
+
+/** The anonymous memory of this process, where the World runs core, after a full collection. */
+async function coreMemoryMb() {
+  setFlagsFromString('--expose-gc');
+  (runInNewContext('gc') as () => void)();
+  await new Promise((r) => setTimeout(r, 200));
+  const rollup = readFileSync('/proc/self/smaps_rollup', 'utf8');
+  return Number(/Anonymous:\s+(\d+)/.exec(rollup)![1]) / 1024;
+}
+
+const memoryBefore = new WeakMap<SynoikiaWorld, number>();
+
+Given(
+  'Acme Tasks runs as the instance {string}, and its plugin lists 3,000 operations',
+  async (world: SynoikiaWorld, slug: string) => {
+    await world.tasksInstance(slug);
+    const add = Array.from({ length: 3000 }, (_, i) => ({
+      key: `reports.r${i}`,
+      displayName: `show report ${i}`,
+      group: 'reports',
+      classification: 'read',
+    }));
+    world.pluginFlag('catalog-changes', JSON.stringify({ add }));
+    memoryBefore.set(world, await coreMemoryMb());
+  },
+);
+
+When('the admin syncs {string} twice', async (world: SynoikiaWorld, slug: string) => {
+  await world.sync(slug);
+  await world.sync(slug);
+});
+
+Then('core holds at most {int} MB more memory than before the first sync', async (world: SynoikiaWorld, mb: number) => {
+  expect((await world.operations(world.lastInstance)).length).toBeGreaterThan(3000);
+  expect((await coreMemoryMb()) - memoryBefore.get(world)!).toBeLessThanOrEqual(mb);
+});

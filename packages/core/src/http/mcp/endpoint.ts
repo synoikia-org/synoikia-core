@@ -36,8 +36,8 @@ import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION
  * and principal, exposing `search`, `execute` and `resume`, plus the approval card's app-only tools. */
 
 const SESSION_IDLE_MS = 30 * 60_000;
-/** Open MCP sessions per authenticated principal; a new one past the cap closes that principal's oldest. */
-export const MAX_SESSIONS_PER_PRINCIPAL = 16;
+/** Open MCP sessions of a principal on one endpoint (ADR-0015); a new one past the cap closes its oldest there. */
+export const MAX_SESSIONS_PER_ENDPOINT = 16;
 const SERVER_VERSION = '0.1.0';
 
 interface Session {
@@ -280,6 +280,16 @@ export class McpEndpoints {
     s.closed.abort();
     await s.transport.close().catch(() => undefined);
     await s.server.close().catch(() => undefined);
+  }
+
+  /** One principal can't pile up servers on an endpoint: past the cap, its least recently used sessions there go.
+   * Runs as the new session is kept, with no await, so opens that resume together cannot pass it (ADR-0015). */
+  private capSessions(principal: string, instanceId: string, kept: string) {
+    const mine = [...this.sessions]
+      .filter(([id, s]) => id !== kept && s.principal === principal && s.instanceId === instanceId)
+      .sort(([, a], [, b]) => a.lastSeen - b.lastSeen);
+    for (const [id] of mine.slice(0, Math.max(0, mine.length - (MAX_SESSIONS_PER_ENDPOINT - 1))))
+      void this.closeSession(id);
   }
 
   async closeAll() {
@@ -650,12 +660,6 @@ export class McpEndpoints {
       return c.json(jsonRpcError(-32002, `Endpoint unavailable: ${message}`), 503);
     }
 
-    // One principal can't pile up servers: past the cap, its least recently used session goes.
-    const mine = [...this.sessions].filter(([, s]) => s.principal === auth.identity.principal);
-    if (mine.length >= MAX_SESSIONS_PER_PRINCIPAL) {
-      const [oldest] = mine.sort(([, a], [, b]) => a.lastSeen - b.lastSeen)[0]!;
-      await this.closeSession(oldest);
-    }
     const closed = new AbortController();
     const server = this.buildServer(instance.id, auth.identity, publicMcpBase(this.ctx, c), closed.signal);
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -670,6 +674,7 @@ export class McpEndpoints {
           clientName,
           lastSeen: this.ctx.now().getTime(),
         });
+        this.capSessions(auth.identity.principal, instance.id, id);
       },
       onsessionclosed: (id) => void this.closeSession(id),
     });

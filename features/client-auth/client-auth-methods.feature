@@ -100,7 +100,14 @@ Feature: Agent sign-in methods
       When agent 7 continues the session that agent 9 opened on "tasks"
       Then agent 7 is told that the session does not exist
 
-    Scenario: A 17th session of one credential closes its least recent one
+    Scenario: A 17th session of one credential on one instance closes its least recent one there
       Given agent 7 belongs to the admin and may read and write
       When agent 7 opens 17 sessions on "tasks"
       Then the first session of agent 7 no longer exists, and the second one still works
+
+    Scenario: Sessions on other instances do not count against the 16 on an instance
+      Given agent 7 belongs to the admin and may read and write
+      And Acme Tasks also runs as the instance "shopping"
+      And agent 7 has 16 sessions open on "tasks"
+      When agent 7 opens a session on "shopping"
+      Then all 16 sessions of agent 7 on "tasks" still work

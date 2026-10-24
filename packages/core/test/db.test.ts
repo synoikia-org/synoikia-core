@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../src/db/index.js';
+import { tableCache } from '../src/db/writes.js';
 import { settings } from '../src/db/schema.js';
 
 const dirs: string[] = [];
@@ -37,5 +38,57 @@ describe('openDatabase', () => {
     expect(second.select().from(settings).all()).toEqual([{ key: 'k', value: { a: 1 } }]);
     expect(second.$client.pragma('journal_mode', { simple: true })).toBe('wal');
     second.$client.close();
+  });
+});
+
+// ADR-0021: the database layer reuses a prepared statement for the same SQL.
+describe('prepared statements', () => {
+  it('reuses one statement for the same SQL, in the mode a fresh one has', () => {
+    const db = openDatabase(':memory:');
+    db.insert(settings)
+      .values({ key: 'k', value: { a: 1 } })
+      .run();
+    const sql = 'select key from settings';
+    const first = db.$client.prepare(sql);
+    expect(first.raw().get()).toEqual(['k']);
+    const again = db.$client.prepare(sql);
+    expect(again).toBe(first);
+    expect(again.get()).toEqual({ key: 'k' });
+    expect(db.select().from(settings).get()).toEqual({ key: 'k', value: { a: 1 } });
+  });
+
+  it('prepares a new statement while the kept one is still iterating', () => {
+    const db = openDatabase(':memory:');
+    db.insert(settings)
+      .values([
+        { key: 'a', value: {} },
+        { key: 'b', value: {} },
+      ])
+      .run();
+    const sql = 'select key from settings order by key';
+    const rows = db.$client.prepare(sql).pluck().iterate();
+    expect(rows.next().value).toBe('a');
+    expect(db.$client.prepare(sql).pluck().all()).toEqual(['a', 'b']);
+    rows.return?.();
+  });
+
+  it('counts each write of a reused statement, and does not keep a long one', () => {
+    const db = openDatabase(':memory:');
+    const keys = tableCache([settings], (d) =>
+      d
+        .select()
+        .from(settings)
+        .all()
+        .map((r) => r.key),
+    );
+    const sql = 'insert into settings (key, value) values (?, ?)';
+    expect(keys(db, 'all')).toEqual([]);
+    db.$client.prepare(sql).run('a', '{}');
+    expect(keys(db, 'all')).toEqual(['a']);
+    db.$client.prepare(sql).run('b', '{}');
+    expect(keys(db, 'all')).toEqual(['a', 'b']);
+    expect(db.$client.prepare(sql)).toBe(db.$client.prepare(sql));
+    const long = `select key from settings where key in (${Array.from({ length: 2000 }, () => '?').join(', ')})`;
+    expect(db.$client.prepare(long)).not.toBe(db.$client.prepare(long));
   });
 });
