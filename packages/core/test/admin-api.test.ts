@@ -483,3 +483,67 @@ describe('instances and access', () => {
     ).toBe(400);
   });
 });
+
+describe('the primary owner (ADR-0025)', () => {
+  const START_UP = { ADMIN_BOOTSTRAP_USERNAME: 'admin', ADMIN_BOOTSTRAP_PASSWORD: PASSWORD };
+
+  it('gives every refused password sign-in the same answer while password sign-in is off', async () => {
+    const t = await setup();
+    const owner = await signedIn(t);
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    expect((await owner.put('/api/settings/security', { disableLocalLogin: true })).status).toBe(200);
+    const signIn = async (username: string, password: string) => {
+      const res = await (await t.client()).post('/auth/login', { username, password });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    };
+    const refused = { status: 403, body: { error: 'local_login_disabled', message: 'Use single sign-on' } };
+    expect(await signIn('user15', PASSWORD)).toEqual(refused);
+    expect(await signIn('admin', 'not the password')).toEqual(refused);
+    expect(await signIn('nobody', PASSWORD)).toEqual(refused);
+    expect(await signIn('admin', PASSWORD)).toMatchObject({ status: 200, body: { status: 'ok' } });
+  });
+
+  it('turns password sign-in off only while the server has an owner', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    t.ctx.db.update(users).set({ owner: false }).run();
+    expect(await (await b.put('/api/settings/security', { disableLocalLogin: true })).json()).toMatchObject({
+      error: 'owner_required',
+    });
+  });
+
+  it('keeps the password of the owner for the start-up admin, and tells only the owner', async () => {
+    const t = await setup(START_UP);
+    const owner = await t.client();
+    expect((await owner.post('/auth/login', { username: 'admin', password: PASSWORD })).status).toBe(200);
+    expect(await (await owner.get('/api/session')).json()).toMatchObject({ bootstrapAdminSet: true });
+    expect(
+      await (
+        await owner.post('/api/profile/password', { currentPassword: PASSWORD, newPassword: `${PASSWORD} 2` })
+      ).json(),
+    ).toMatchObject({ error: 'bootstrap_admin_set' });
+
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    const other = await t.client();
+    await other.post('/auth/login', { username: 'user15', password: PASSWORD });
+    expect(await (await other.get('/api/session')).json()).not.toHaveProperty('bootstrapAdminSet');
+  });
+
+  it('ends the sessions of the owner when a start sets a new password', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'synoikia-owner-'));
+    cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
+    const first = await createTestApp({ DATA_DIR: dataDir, ...START_UP });
+    const owner = browser(createAdminApp(first));
+    await owner.init();
+    expect((await owner.post('/auth/login', { username: 'admin', password: PASSWORD })).status).toBe(200);
+    const cookies = [...owner.jar];
+    await first.stop();
+
+    const second = await createTestApp({ DATA_DIR: dataDir, ...START_UP, ADMIN_BOOTSTRAP_PASSWORD: `${PASSWORD} new` });
+    cleanup.push(() => second.stop());
+    const again = browser(createAdminApp(second));
+    for (const [name, value] of cookies) again.jar.set(name, value);
+    expect(await (await again.get('/api/session')).json()).toMatchObject({ authenticated: false });
+    expect(second.users.owner()).toMatchObject({ username: 'admin' });
+  });
+});

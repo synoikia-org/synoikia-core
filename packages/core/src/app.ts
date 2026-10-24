@@ -136,10 +136,17 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
 
   const events = new CoreEvents();
   const users = new UserService(db, secrets, opts.passwordHashCost, now);
+  const sessions = new SessionService(db, secrets.deriveKey('session-pepper'), now);
+  const oauth = new OAuthService(db, now);
   // The start-up admin is the way back in for the primary owner (ADR-0025); a name of another account stops the start.
   const boot = await users.bootstrap(config.ADMIN_BOOTSTRAP_USERNAME, config.ADMIN_BOOTSTRAP_PASSWORD, {
     resetTwoFactor: config.ADMIN_BOOTSTRAP_RESET_2FA,
   });
+  // A new owner password or two-factor ends what the old one opened, before anything else can stop the start.
+  if (boot.ownerId && (boot.changed.includes('password') || boot.changed.includes('two-factor'))) {
+    sessions.revokeUser(boot.ownerId);
+    oauth.revokeUserGrants(boot.ownerId, 'password_changed', {});
+  }
   if (boot.status === 'created')
     warnings.push(`Created admin user "${config.ADMIN_BOOTSTRAP_USERNAME}" from ADMIN_BOOTSTRAP_*`);
   if (boot.status === 'owner_made')
@@ -240,11 +247,11 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
     metrics,
     users,
     roles: new RoleService(db),
-    sessions: new SessionService(db, secrets.deriveKey('session-pepper'), now),
+    sessions,
     throttle: new LoginThrottle({}, nowMs),
     oidc: new OidcService(db, secrets, keys.state, opts.oidcAllowInsecure ?? false, now),
     tokens: new McpTokenService(db, now),
-    oauth: new OAuthService(db, now),
+    oauth,
     seenClients: new SeenClients(now),
     version: opts.version ?? CORE_VERSION,
     instances,
@@ -333,7 +340,5 @@ export async function createAppContext(config: Config, opts: AppOptions = {}): P
   };
   // Grants from before instance binding (ADR-0009) get the ids their slugs name today.
   ctx.oauth.backfillInstanceIds(instances.list());
-  // A new owner password from the start-up settings ends the sessions that the old one opened.
-  if (boot.ownerId && boot.changed.includes('password')) ctx.sessions.revokeUser(boot.ownerId);
   return ctx;
 }

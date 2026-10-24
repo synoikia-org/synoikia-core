@@ -519,14 +519,16 @@ describe('0020 account kinds migration', () => {
 });
 
 describe('0021 primary owner migration', () => {
-  it('makes the oldest local admin with a password the owner, and nobody without one', () => {
+  it('makes the oldest enabled local admin with a password the owner, and nobody without one', () => {
     const { dir, sqlite } = databaseAt('0020_account_kinds');
     sqlite.exec(`
       INSERT INTO users (id, username, password_hash, kind, role_id, created_at) VALUES
         ('sso', 'user12', NULL, 'sso', 'admin', 500),
+        ('off', 'user9', 'hash', 'local', 'admin', 700),
         ('old', 'admin', 'hash', 'local', 'admin', 1000),
         ('new', 'user15', 'hash', 'local', 'admin', 2000);
     `);
+    sqlite.exec(`UPDATE users SET disabled = 1 WHERE id = 'off'`);
     sqlite.close();
 
     const db = openDatabase({ dataDir: dir });

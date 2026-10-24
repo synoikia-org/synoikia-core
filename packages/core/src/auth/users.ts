@@ -319,6 +319,9 @@ export class UserService {
     ownerId?: string;
   }> {
     if (!username || !password) return { status: 'not_configured', changed: [] };
+    // `:` names Cloudflare service tokens (ADR-0009), so the owner never takes such a name.
+    if (username.includes(':'))
+      throw new ValidationError('invalid_username', 'ADMIN_BOOTSTRAP_USERNAME is not a valid username');
     if (this.count() === 0) {
       const created = await this.create({ username, password }, {}, { onlyIfFirst: true });
       return { status: 'created', changed: [], ownerId: created.id };
@@ -336,8 +339,7 @@ export class UserService {
           'owner_name_taken',
           `ADMIN_BOOTSTRAP_USERNAME "${username}" belongs to another account`,
         );
-      // `:` names Cloudflare service tokens (ADR-0009), so the owner never takes such a name.
-      if (!USERNAME.test(username) || username.includes(':'))
+      if (!USERNAME.test(username))
         throw new ValidationError('invalid_username', 'ADMIN_BOOTSTRAP_USERNAME is not a valid username');
       this.db.transaction((tx) => {
         tx.update(users).set({ username }).where(eq(users.id, owner.id)).run();

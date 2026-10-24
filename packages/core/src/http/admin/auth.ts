@@ -52,9 +52,10 @@ export function localLoginEnabled(ctx: AppContext): boolean {
   return !getSettings(ctx.db, 'security').disableLocalLogin;
 }
 
-/** While local sign-in is off, only the primary owner signs in with a password (ADR-0025). */
-export function passwordSignInAllowed(ctx: AppContext, username: string): boolean {
-  return localLoginEnabled(ctx) || ctx.users.byUsername(username)?.owner === true;
+/** While local sign-in is off, only the primary owner signs in with a password (ADR-0025). The check runs after the
+ * password, and every refusal reads the same, so the answer never tells which name is the owner. */
+export function passwordSignInAllowed(ctx: AppContext, user: UserRow | null): user is UserRow {
+  return !!user && (localLoginEnabled(ctx) || user.owner);
 }
 
 /** The start-up admin is set, so it owns the owner's password (ADR-0025). */
@@ -228,12 +229,10 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
     if (!ctx.throttle.allowIp(ip))
       return c.json({ error: 'rate_limited', message: 'Too many attempts; try again later' }, 429);
     const body = await readJson(c, LoginBody);
-    if (!passwordSignInAllowed(ctx, body.username))
-      return c.json({ error: 'local_login_disabled', message: 'Use single sign-on' }, 403);
     const lockedFor = ctx.throttle.lockedFor(body.username);
     if (lockedFor > 0) return c.json(lockedAnswer(lockedFor), 429);
     const user = await ctx.users.verifyPassword(body.username, body.password);
-    if (!user) {
+    if (!passwordSignInAllowed(ctx, user)) {
       const locked = ctx.throttle.fail(body.username);
       writeAudit(ctx.db, {
         kind: 'auth',
@@ -242,6 +241,7 @@ export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
         detail: { username: body.username, ip },
       });
       if (locked) ctx.events.emit('auth.lockout', { username: body.username, ip });
+      if (!localLoginEnabled(ctx)) return c.json({ error: 'local_login_disabled', message: 'Use single sign-on' }, 403);
       return c.json({ error: 'invalid_credentials', message: 'Invalid username or password' }, 401);
     }
     if (user.totpEnabled) {
