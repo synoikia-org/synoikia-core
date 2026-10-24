@@ -19,7 +19,7 @@
 - [ ] Commits follow NoVibe's phases: `spec:` for `features/`, `arch:` for the model and the ADRs, any other prefix for the rest
 - [ ] `pnpm lint`, `pnpm format:check`, `pnpm typecheck` and `pnpm test` pass
 - [ ] The git hooks pass on push
-- [ ] Docs updated (README, DEVELOPMENT, CONTRIBUTING, SECURITY, `docs/adrs/`, `docs/reference.md`), where applicable
+- [ ] Docs updated (README, DEVELOPMENT, CONTRIBUTING, SECURITY, `docs/deployment.md`, `docs/security-model.md`, `docs/adrs/`, `docs/reference.md`), where applicable
 - [ ] No `version` bumped, and the `feature` or `breaking` label set where it applies (DEVELOPMENT.md › Which versions a release bumps)
 
 <!-- Every ready pull request needs a line of its own here. The line starts with "Security audit:", then names the boundary and what the review found. Write "Security audit: none." and the reason when the change crosses no boundary. -->
