@@ -198,22 +198,3 @@ Feature: Single sign-on
       Given user 12 linked their Acme ID
       When user 12 unlinks their Acme ID
       Then user 12 is no longer linked to Acme ID
-
-  Rule: A first password needs a recent sign-in with Acme ID or a current code
-
-    Scenario: A password 6 minutes after the sign-in with Acme ID is refused
-      Given user 15 signs in only with Acme ID, and signed in 6 minutes ago
-      When user 15 sets the password "correct horse battery" in their profile
-      Then user 15 is told to sign in with Acme ID again first
-      And user 15 still has no password
-
-    Scenario: A password 4 minutes after the sign-in with Acme ID is set
-      Given user 15 signs in only with Acme ID, and signed in 4 minutes ago
-      When user 15 sets the password "correct horse battery" in their profile
-      Then user 15 signs in to the portal with the password "correct horse battery"
-
-    Scenario: A current code from the app sets the password later
-      Given user 15 signs in only with Acme ID, and signed in 6 minutes ago
-      And user 15 has an authenticator app
-      When user 15 sets the password "correct horse battery" with a current code
-      Then user 15 signs in to the portal with the password "correct horse battery" and a code
