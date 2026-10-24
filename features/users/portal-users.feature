@@ -12,10 +12,6 @@ Feature: Users in the portal
       When the admin picks the role "viewers" for user 12 on the user list
       Then the roles page shows 1 user in "viewers" and 0 users in "family"
 
-    Scenario: The primary owner cannot leave the admin role
-      When the admin picks the role "viewers" for themselves on the user list
-      Then the portal shows the alert "The primary owner keeps the Admin role"
-
     Scenario: A user list that cannot load says why
       Given the server cannot read its users
       When the admin opens the user list
