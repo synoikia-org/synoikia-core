@@ -232,9 +232,9 @@ Feature: Instances in the portal
       When the admin makes a rule for "add a task" on /groceries for lists that start with "Groc" and any tags
       Then the rules of /groceries show that the list starts with "Groc" and that any tags are accepted
 
-    Scenario: Every setting in the rule editor explains itself
+    Scenario: Every setting in the rule editor is explained in the help
       When the admin starts a rule for "add a task" on /groceries
-      Then every setting in the rule editor has a tip, and the tip of the operation mentions "Ask"
+      Then the help of the rules explains every setting of the rule editor, and its part on the operation mentions "Ask"
 
   Rule: Rules are deleted after a question, and drafts stay
 

@@ -40,12 +40,6 @@ Feature: Keyboard and screen reader use of the portal
       Then the focus is on "Username"
       And Tab from the last control goes to "Close", and the page behind the dialog is inert
 
-    Scenario: Escape closes a tip first and keeps the draft, then closes the dialog
-      Given the admin typed "household" in a new rule's reason on /groceries and opened a tip in it
-      When the admin hits Escape twice
-      Then the first Escape closed only the tip, with "household" kept
-      And the second Escape closed the dialog
-
     Scenario: A question puts the focus on Cancel first
       Given the role "family"
       When the admin starts to delete "family" on the roles page
