@@ -38,7 +38,7 @@ A plugin built on the SDK declares its operation rules in `plugin.yaml`. The SDK
 
 The classification fails closed, in this order:
 
-1. An excluded operation does not exist. A request to an excluded path is refused, also when a path template has the same form.
+1. An excluded operation does not exist. A request to an excluded path is refused, also when a path template has the same form. The SDK also refuses a request in three cases. A literal path matches it only without case. A template that the catalog leaves out matches it. Or no matching template is the most specific.
 2. A locked operation, or a split twin, is a write with typed confirmation. An operation with typed confirmation is locked.
 3. A classification from a rule.
 4. The plugin heuristic, for example `GET` reads and other HTTP methods write.
