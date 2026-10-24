@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import type { Context } from 'hono';
 import { ZodError } from 'zod';
@@ -42,6 +43,36 @@ export function requestOrigin(c: Context, trustProxy: number | boolean): string 
     c.req.header('host') ||
     url.host;
   return `${proto}://${host}`;
+}
+
+/** The names a listener answers to: the host of its public URL, the listed names, localhost and IPs. */
+export interface ListenerNames {
+  publicUrl?: string;
+  allowed: string[];
+}
+
+/** DNS-rebinding defence (ADR-0015): Host must be one of the listener's names. */
+export function hostAllowed(names: ListenerNames, hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false;
+  let host: string;
+  try {
+    host = new URL(`http://${hostHeader}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || isIP(host.replace(/^\[|\]$/g, ''))) return true;
+  if (names.publicUrl && new URL(names.publicUrl).hostname.toLowerCase() === host) return true;
+  return names.allowed.includes(host);
+}
+
+/** A browser Origin, when sent, must be one of the listener's names too. */
+export function originAllowed(names: ListenerNames, origin: string | undefined): boolean {
+  if (!origin) return true; // not a browser request
+  try {
+    return hostAllowed(names, new URL(origin).host);
+  } catch {
+    return false;
+  }
 }
 
 export async function readJson<S extends z.ZodType>(c: Context, schema: S): Promise<z.infer<S>> {

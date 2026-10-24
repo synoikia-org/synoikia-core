@@ -156,7 +156,11 @@ async function withProfileCode<T>(
   return done(result);
 }
 
-const safeReturnTo = (v: string | undefined) => (v && v.startsWith('/') && !v.startsWith('//') ? v : '/');
+// A browser reads `\` as `/` and drops tabs and line ends, so only a plain path stays on the portal (ADR-0008).
+const safeReturnTo = (v: string | undefined) =>
+  v && v.startsWith('/') && !v.startsWith('//') && ![...v].some((ch) => ch <= ' ' || ch === '\\' || ch === '\x7f')
+    ? v
+    : '/';
 
 export function registerAuthRoutes(app: Hono<AdminEnv>, ctx: AppContext) {
   const LoginBody = z.object({ username: z.string().min(1).max(64), password: z.string().min(1).max(1024) });

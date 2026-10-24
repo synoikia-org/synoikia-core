@@ -117,6 +117,13 @@ Feature: Single sign-on
       When "new.person" signs in with Acme ID in the group "family-members"
       Then "new.person-2" lands in the portal with the role "family"
 
+    Scenario: A name taken in other letter case gets a number
+      Given the admin turns on automatic users for the Acme ID group "family-members"
+      And the default role for new users is "family"
+      And the admin made the user "New.Person"
+      When "new.person" signs in with Acme ID in the group "family-members"
+      Then "new.person-2" lands in the portal with the role "family"
+
   Rule: A tampered sign-in with Acme ID fails
 
     Scenario: A forged or expired sign-in state is refused
@@ -138,6 +145,18 @@ Feature: Single sign-on
       And Acme ID gives an identity token that expired 10 minutes ago
       When user 12 signs in with Acme ID
       Then the sign-in with Acme ID fails, and user 12 is not signed in
+
+  Rule: Sign-in with Acme ID returns only to a page of the portal
+
+    Scenario: User 12 comes back to the page they started from
+      Given user 12 linked their Acme ID
+      When user 12 signs in with Acme ID from the page "/audit"
+      Then user 12 lands on "/audit"
+
+    Scenario: A return to another site lands on the portal home
+      Given user 12 linked their Acme ID
+      When user 12 signs in with Acme ID from links that return to "/\attacker.example" and to a tab and "/attacker.example"
+      Then user 12 lands on the portal home both times
 
   Rule: A user links an identity only for themselves
 

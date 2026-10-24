@@ -47,6 +47,7 @@ import '../maintenance/steps/catalog-sync-schedule.steps.js';
 import '../notifications/steps/notifications.steps.js';
 import '../deployment/steps/listeners.steps.js';
 import '../deployment/steps/host-origin.steps.js';
+import '../deployment/steps/portal-host-names.steps.js';
 import '../deployment/steps/proxies.steps.js';
 import '../deployment/steps/shutdown.steps.js';
 import '../deployment/steps/server-log.steps.js';

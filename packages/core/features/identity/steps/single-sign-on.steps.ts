@@ -23,10 +23,12 @@ const endsOf = (world: SynoikiaWorld) => {
 };
 
 /** `who` signs in at Acme ID from the sign-in page of the portal, in a fresh browser. */
-async function ssoSignIn(world: SynoikiaWorld, who: AcmeIdentity) {
+async function ssoSignIn(world: SynoikiaWorld, who: AcmeIdentity, returnTo?: string) {
   (await world.acmeId()).next = who;
   const browser = await newPortal(world);
-  const end = await world.follow(browser, '/auth/oidc/start');
+  const start =
+    returnTo === undefined ? '/auth/oidc/start' : `/auth/oidc/start?returnTo=${encodeURIComponent(returnTo)}`;
+  const end = await world.follow(browser, start, (at) => at.hostname === 'attacker.example');
   endsOf(world).push({ url: end.url, status: end.status, text: end.html, browser });
   return end;
 }
@@ -37,8 +39,8 @@ const lastEnd = (world: SynoikiaWorld) => {
   return end;
 };
 
-async function landsInPortal(world: SynoikiaWorld, end: ReturnType<typeof lastEnd>, username: string) {
-  expect(end.url.pathname + end.url.search).toBe('/');
+async function landsInPortal(world: SynoikiaWorld, end: ReturnType<typeof lastEnd>, username: string, path = '/') {
+  expect(end.url.href).toBe(new URL(path, world.adminBase).href);
   const session = await world.expectOk(end.browser.get('/api/session'), 'read session');
   expect(session).toMatchObject({ authenticated: true, user: { username } });
   return session.user as { role: { name: string } };
@@ -283,6 +285,30 @@ Then('user {int} is told that single sign-on is not enabled', (world: SynoikiaWo
 
 Then('user {int} lands in the portal', async (world: SynoikiaWorld, user: number) => {
   await landsInPortal(world, lastEnd(world), world.person(person(user)).username);
+});
+
+When(
+  'user {int} signs in with Acme ID from the page {string}',
+  async (world: SynoikiaWorld, user: number, page: string) => {
+    await ssoSignIn(world, world.acmeIdentityOf(person(user)), page);
+  },
+);
+
+When(
+  'user {int} signs in with Acme ID from links that return to {string} and to a tab and {string}',
+  async (world: SynoikiaWorld, user: number, a: string, b: string) => {
+    for (const returnTo of [a, `/\t${b}`]) await ssoSignIn(world, world.acmeIdentityOf(person(user)), returnTo);
+  },
+);
+
+Then('user {int} lands on {string}', async (world: SynoikiaWorld, user: number, page: string) => {
+  await landsInPortal(world, lastEnd(world), world.person(person(user)).username, page);
+});
+
+Then('user {int} lands on the portal home both times', async (world: SynoikiaWorld, user: number) => {
+  const all = endsOf(world);
+  expect(all).toHaveLength(2);
+  for (const end of all) await landsInPortal(world, end, world.person(person(user)).username);
 });
 
 Then('user {int} lands in the portal both times', async (world: SynoikiaWorld, user: number) => {

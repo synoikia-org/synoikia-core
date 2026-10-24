@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { isIP } from 'node:net';
 import { INSTRUCTIONS_TAG } from '@synoikia/plugin-sdk';
 import type { Manifest } from '@synoikia/plugin-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -29,7 +28,7 @@ import { LogThrottle } from '../../log.js';
 import type { LogFields } from '../../log.js';
 import { getSettings } from '../../settings.js';
 import { ServiceError } from '../../errors.js';
-import { clientIp } from '../common.js';
+import { clientIp, hostAllowed, originAllowed } from '../common.js';
 import { APPROVAL_CARD_HTML, APPROVAL_CARD_URI, MCP_APP_MIME, MCP_APPS_EXTENSION } from './approval-card.js';
 
 /** `/{slug}` Streamable HTTP endpoints (ADR-0015): one McpServer per session, bound to its instance
@@ -221,28 +220,7 @@ function describeExecute(manifest: Manifest): string {
   ].join('\n');
 }
 
-/** DNS-rebinding defence: Host (and Origin, when sent) must be a configured name, localhost or an IP. */
-export function hostAllowed(config: Config, hostHeader: string | undefined): boolean {
-  if (!hostHeader) return false;
-  let host: string;
-  try {
-    host = new URL(`http://${hostHeader}`).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
-  if (host === 'localhost' || isIP(host.replace(/^\[|\]$/g, ''))) return true;
-  if (config.PUBLIC_MCP_URL && new URL(config.PUBLIC_MCP_URL).hostname.toLowerCase() === host) return true;
-  return config.MCP_ALLOWED_HOSTS.includes(host);
-}
-
-function originAllowed(config: Config, origin: string | undefined): boolean {
-  if (!origin) return true; // not a browser request
-  try {
-    return hostAllowed(config, new URL(origin).host);
-  } catch {
-    return false;
-  }
-}
+const mcpNames = (config: Config) => ({ publicUrl: config.PUBLIC_MCP_URL, allowed: config.MCP_ALLOWED_HOSTS });
 
 /** A bearer token or Access assertion shaped like one this server could accept: a Synoikia token or a JWT. */
 const TOKEN_SHAPE = new RegExp(`^(${TOKEN_PREFIX}|${ACCESS_PREFIX})\\S+$|^[\\w-]+\\.[\\w-]+\\.[\\w-]*$`);
@@ -590,8 +568,8 @@ export class McpEndpoints {
 
   async handle(c: Context, slug: string): Promise<Response> {
     if (
-      !hostAllowed(this.ctx.config, c.req.header('host')) ||
-      !originAllowed(this.ctx.config, c.req.header('origin'))
+      !hostAllowed(mcpNames(this.ctx.config), c.req.header('host')) ||
+      !originAllowed(mcpNames(this.ctx.config), c.req.header('origin'))
     ) {
       this.refused(c, slug, 403, 'Host or Origin not allowed: add it to PUBLIC_MCP_URL or MCP_ALLOWED_HOSTS', {
         host: c.req.header('host'),

@@ -282,7 +282,7 @@ export class OidcService {
       (identity.username ?? identity.email?.split('@')[0] ?? 'user').replace(/[^a-zA-Z0-9._@-]/g, '').slice(0, 48) ||
       'user';
     let username = base.length >= 2 ? base : `${base}-sso`;
-    for (let i = 2; users.byUsername(username); i++) username = `${base}-${i}`;
+    for (let i = 2; users.byUsernameInsensitive(username); i++) username = `${base}-${i}`;
     const created = await users.register({ username }, 'oidc');
     users.linkOidc(created.id, identity.issuer, identity.subject);
     return users.get(created.id);

@@ -38,7 +38,8 @@ Given(
 );
 
 When('agent {word} reads the guide of {string}', async (world: SynoikiaWorld, agent: string, name: string) => {
-  await readGuide(world, agent, name);
+  const key = await world.readGuide(agent, name);
+  if (key) keys.set(world, [...keysOf(world), key]);
 });
 
 When(
@@ -110,5 +111,13 @@ Then(
       operationKey: opKey(name),
       detail: { guideVersion: version, mcpSessionId: world.sessionId(agent) },
     });
+  },
+);
+
+Then(
+  'agent {word} is told that {string} is unknown, and gets no key',
+  (world: SynoikiaWorld, _agent: string, name: string) => {
+    expect(world.answer).toMatchObject({ error: 'UNKNOWN_OPERATION', message: `${opKey(name)} is not in the catalog` });
+    expect(keysOf(world)).toEqual([]);
   },
 );
