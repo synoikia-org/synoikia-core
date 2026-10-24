@@ -44,7 +44,7 @@ Core starts each enabled instance with `child_process.spawn` of Node on its entr
 
 **Known limit: network access is not restricted.** The Node permission model does not control network access. A plugin can connect to any host that the container can reach. `network.hosts` is a declaration that the admin reviews.
 
-A container egress policy restricts network access (README › Deployment › Network egress). Issues #108 and #111 track network control in core.
+A container egress policy restricts network access (`docs/deployment.md` › Network egress). Issues #108 and #111 track network control in core.
 
 **Known limit: a child can stop core.** The child runs as the same user as core, so it can send `SIGTERM` or `SIGKILL` to core. Core then stops until a restart policy starts it again, as in `docker-compose.example.yml`. A separate user for each child would stop this.
 
