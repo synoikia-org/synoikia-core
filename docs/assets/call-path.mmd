@@ -9,8 +9,8 @@ config:
 flowchart LR
   agent["AI agent"] --> endpoint["Endpoint<br/>search · execute · resume"]
   subgraph core["Synoikia core"]
-    sandbox["Sandbox"] --> gate["Permission gate"] --> approval["Human approval"]
+    sandbox["Sandbox"] --> gate["Permission<br/>gate"] --> approval["Human<br/>approval"]
   end
   endpoint --> sandbox
   approver(["Approver"]) <--> approval
-  approval --> plugin["Isolated plugin"] --> service["Your service"]
+  approval --> plugin["Isolated<br/>plugin"] --> service["Your<br/>service"]
