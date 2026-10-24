@@ -547,6 +547,8 @@ export class PortalWorld extends QuickPickleWorld {
     );
     const p = { username, password: '', sso: true };
     this.people.set(name, p);
+    // The first sign-in binds the account to its identity, as the person's would.
+    await this.ssoApi(name);
     return p;
   }
 

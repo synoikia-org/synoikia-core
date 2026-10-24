@@ -197,15 +197,15 @@ function confirmDelete() {
     </div>
 
     <ModalDialog v-if="adding" title="Add user" @close="adding = undefined">
+      <div class="field">
+        <label for="u-name">Username</label>
+        <input id="u-name" v-model="adding.username" autocomplete="off" />
+      </div>
       <fieldset class="field">
         <legend>Sign-in</legend>
         <label><input v-model="adding.kind" type="radio" value="local" /> Local account</label>
         <label><input v-model="adding.kind" type="radio" value="sso" /> SSO account ({{ session.oidcLabel }})</label>
       </fieldset>
-      <div class="field">
-        <label for="u-name">Username</label>
-        <input id="u-name" v-model="adding.username" autocomplete="off" />
-      </div>
       <div v-if="adding.kind === 'sso'" class="field">
         <label for="u-email">Address at {{ session.oidcLabel }}</label>
         <input
