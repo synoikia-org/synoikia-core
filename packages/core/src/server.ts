@@ -9,7 +9,6 @@ import { createMetricsApp } from './http/metrics-app.js';
 export interface RunningServers {
   mcp: { server: Server; port: number };
   admin: { server: Server; port: number };
-  /** Only when METRICS_PORT is set (ADR-0024). */
   metrics?: { server: Server; port: number };
   /** Stops accepting, then waits up to `graceMs` for open requests before cutting their connections. */
   close(graceMs?: number): Promise<void>;

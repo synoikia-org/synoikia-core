@@ -5,7 +5,7 @@ import { safeEqual, sha256 } from '../auth/tokens.js';
 import { CORE_VERSION } from '../version.js';
 import { errorResponse } from './common.js';
 
-/** The metrics listener for Prometheus (ADR-0024): `/metrics`, behind the scrape token when one is set. */
+/** The metrics listener for Prometheus (ADR-0024): `/metrics`, behind the scrape token, compared as digests in constant time. */
 export function createMetricsApp(ctx: AppContext): Hono {
   const registry = new Registry();
   new Gauge({
@@ -17,7 +17,6 @@ export function createMetricsApp(ctx: AppContext): Hono {
     .labels(CORE_VERSION)
     .set(1);
 
-  // Digests of equal length, so the compare takes the same time for any token (ADR-0024).
   const token = ctx.config.METRICS_TOKEN;
   const expected = token ? sha256(token) : undefined;
   const app = new Hono();

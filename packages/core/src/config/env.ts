@@ -30,7 +30,6 @@ const EnvSchema = z
     MCP_PORT: port.default(8080),
     ADMIN_HOST: z.string().default('0.0.0.0'),
     ADMIN_PORT: port.default(8081),
-    /** The metrics listener runs only when this is set (ADR-0024). */
     METRICS_HOST: z.string().default('0.0.0.0'),
     METRICS_PORT: optionalPort,
     METRICS_TOKEN: optionalString,
