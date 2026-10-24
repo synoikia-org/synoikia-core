@@ -291,7 +291,8 @@ export function createGateBindings(
       if (isWrite && rt.manifest.capabilities.configTransform && operation.kind === 'config') {
         const prepared = await rt.plugin().call('prepareWrite', { key: operation.key, params });
         params = prepared.params;
-        audit.params = redactParams(params);
+        // The audit keeps what the agent sent, and apart what will run (ADR-0003).
+        audit.detail.preparedParams = redactParams(params);
         diff = prepared.diff;
         expectedHash = prepared.expectedHash;
       }
