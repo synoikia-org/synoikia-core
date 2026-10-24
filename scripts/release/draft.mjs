@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { ARTIFACTS, imageVersionOf, parseVersions, planRelease, renderBody } from './plan.mjs';
+import { ARTIFACTS, DRAFT_MARK, imageVersionOf, parseVersions, planRelease, renderBody } from './plan.mjs';
 
 // Creates or updates the draft release from the changes on main since the last release. Needs GH_TOKEN.
 
@@ -64,7 +64,7 @@ if (!release) {
   process.exit(0);
 }
 const tag = `v${plan.image?.version}`;
-const draft = releases.find((r) => r.draft);
+const draft = releases.find((r) => r.draft && (r.body ?? '').startsWith(DRAFT_MARK));
 const fields = {
   tag_name: tag,
   name: tag,
@@ -72,6 +72,9 @@ const fields = {
   body: renderBody(plan, current),
   draft: true,
 };
+// A maintainer may have published the draft since the list was read.
+if (draft && !api([`repos/${repo}/releases/${draft.id}`]).draft)
+  throw new Error(`release ${draft.id} is no longer a draft`);
 if (draft) api(['--method', 'PATCH', `repos/${repo}/releases/${draft.id}`], fields);
 else api(['--method', 'POST', `repos/${repo}/releases`], fields);
 console.log(`${draft ? 'Updated' : 'Created'} the draft release ${tag}`);

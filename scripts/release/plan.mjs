@@ -69,6 +69,38 @@ export function bumpVersion(version, bump) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+/** @param {string} a @param {string} b @returns {number} below 0 when a is the lower version */
+export function compareVersions(a, b) {
+  const [ma, mb] = [SEMVER.exec(a), SEMVER.exec(b)];
+  if (!ma || !mb) throw new Error(`not a version: ${ma ? b : a}`);
+  for (const i of [1, 2, 3]) {
+    const d = Number(ma[i]) - Number(mb[i]);
+    if (d !== 0) return d;
+  }
+  if (ma[4] === mb[4]) return 0;
+  if (ma[4] === undefined) return 1;
+  if (mb[4] === undefined) return -1;
+  return ma[4] < mb[4] ? -1 : 1;
+}
+
+/**
+ * The reasons not to publish a release. A new version must be above the published one, and only a
+ * pre-release may carry a prerelease version.
+ * @param {{ versions: Record<string, string>, prerelease: boolean, published: Record<string, string | undefined> }} release
+ */
+export function releaseErrors({ versions, prerelease, published }) {
+  const errors = [];
+  for (const a of ARTIFACTS) {
+    const version = versions[a.id];
+    const last = published[a.id];
+    if (!version || version === last) continue;
+    if (last && compareVersions(version, last) < 0) errors.push(`${a.name} ${version} is below ${last}`);
+    if (version.includes('-') !== prerelease)
+      errors.push(`${a.name} ${version} ${prerelease ? 'needs' : 'cannot have'} a prerelease part`);
+  }
+  return errors;
+}
+
 /** @param {string[]} labels @returns {Bump} */
 export function bumpOf(labels) {
   if (labels.includes('breaking')) return 'major';
@@ -118,13 +150,23 @@ export function planRelease(current, changes) {
 }
 
 const FENCE_START = '```text synoikia-versions';
+// Marks the draft that the Release draft workflow owns.
+export const DRAFT_MARK = '<!-- synoikia-release-draft -->';
+
+/** @param {string} title a pull request title, which an outside contributor writes */
+export function escapeTitle(title) {
+  return title
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/`/g, "'")
+    .replace(/@([\w-]+)/g, '`@$1`');
+}
 
 /**
  * @param {Record<string, { version: string, changes: Change[] }>} plan
  * @param {Record<string, string>} current
  */
 export function renderBody(plan, current) {
-  const out = [];
+  const out = [DRAFT_MARK, ''];
   for (const a of ARTIFACTS) {
     const p = plan[a.id];
     if (!p || p.version === current[a.id]) continue;
@@ -136,7 +178,7 @@ export function renderBody(plan, current) {
     for (const c of p.changes) {
       const labels = c.labels.filter((l) => l === 'breaking' || l === 'feature');
       const ref = c.number ? `#${c.number}` : c.sha.slice(0, 7);
-      out.push(`- ${c.title} (${ref})${labels.length ? ` [${labels.join(', ')}]` : ''}`);
+      out.push(`- ${escapeTitle(c.title)} (${ref})${labels.length ? ` [${labels.join(', ')}]` : ''}`);
     }
     out.push('');
   }
@@ -162,6 +204,7 @@ export function parseVersions(body) {
   const lines = body.replace(/\r/g, '').split('\n');
   const start = lines.findIndex((l) => l.trim() === FENCE_START);
   if (start < 0) return undefined;
+  if (lines.findIndex((l, i) => i > start && l.trim() === FENCE_START) >= 0) throw new Error('two versions blocks');
   /** @type {Record<string, string>} */
   const versions = {};
   for (const line of lines.slice(start + 1)) {

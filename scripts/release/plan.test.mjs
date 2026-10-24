@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { bumpVersion, imageVersionOf, parseVersions, planRelease, renderBody } from './plan.mjs';
+import {
+  bumpVersion,
+  compareVersions,
+  escapeTitle,
+  imageVersionOf,
+  parseVersions,
+  planRelease,
+  releaseErrors,
+  renderBody,
+} from './plan.mjs';
 
 const current = { sdk: '0.9.0', core: '0.25.0', 'create-plugin': '0.8.9', image: '0.23.0' };
 
@@ -71,11 +80,47 @@ describe('the versions block', () => {
     assert.throws(() => parseVersions(block('@synoikia/core 1.0')), /bad versions line/);
     assert.throws(() => parseVersions(block('@synoikia/core 1.0.0; rm -rf /')), /bad versions line/);
     assert.equal(parseVersions('no block'), undefined);
+    assert.throws(() => parseVersions(block('@synoikia/core 1.0.0') + block('@synoikia/core 9.0.0')), /two versions/);
+  });
+
+  it('keeps a pull request title from mentioning or opening a fence', () => {
+    assert.equal(escapeTitle("Fix @someone's `code`\n```text"), "Fix `@someone`'s 'code' '''text");
   });
 
   it('takes the image version from the tag', () => {
     assert.equal(imageVersionOf('v0.24.0'), '0.24.0');
     assert.equal(imageVersionOf('v0.24.0-rc.1'), '0.24.0-rc.1');
     assert.throws(() => imageVersionOf('0.24.0'), /v<version>/);
+  });
+});
+
+describe('releaseErrors', () => {
+  const published = { sdk: '0.9.0', core: '0.25.0', 'create-plugin': '0.8.9', image: '0.23.0' };
+
+  it('accepts new versions and versions already published', () => {
+    const versions = { ...published, core: '0.26.0', image: '0.24.0' };
+    assert.deepEqual(releaseErrors({ versions, prerelease: false, published }), []);
+  });
+
+  it('refuses a version below the published one', () => {
+    const versions = { ...published, core: '0.2.60', image: '0.22.0' };
+    assert.deepEqual(releaseErrors({ versions, prerelease: false, published }), [
+      '@synoikia/core 0.2.60 is below 0.25.0',
+      'image 0.22.0 is below 0.23.0',
+    ]);
+  });
+
+  it('refuses a pre-release setting that the versions do not follow', () => {
+    assert.deepEqual(releaseErrors({ versions: { ...published, image: '0.24.0' }, prerelease: true, published }), [
+      'image 0.24.0 needs a prerelease part',
+    ]);
+    assert.deepEqual(releaseErrors({ versions: { ...published, sdk: '0.10.0-rc.0' }, prerelease: false, published }), [
+      '@synoikia/plugin-sdk 0.10.0-rc.0 cannot have a prerelease part',
+    ]);
+  });
+
+  it('orders a prerelease below its release', () => {
+    assert.ok(compareVersions('0.24.0-rc.0', '0.24.0') < 0);
+    assert.ok(compareVersions('0.24.0', '0.23.9') > 0);
   });
 });

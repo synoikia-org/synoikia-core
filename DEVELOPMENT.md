@@ -124,12 +124,25 @@ Before the first release, the last version change in each `package.json` marks w
 
 1. Open the draft release on GitHub.
 2. Read the sections. Edit the versions block or the tag if a version is wrong.
-3. To publish a prerelease, set a tag such as `v0.24.0-rc.0`. Then select **Set as a pre-release**.
+3. For a prerelease, set a tag such as `v0.24.0-rc.0`. Add a prerelease part to each new npm version too. Then select **Set as a pre-release**.
 4. Select **Publish release**.
 
-The Release workflow (`.github/workflows/release.yml`) then writes the versions into each `package.json` for the build. It does not commit them. It publishes each npm package whose version is not on npm yet. The order is the SDK, core, then create-plugin. It builds and pushes the image at the tag. A prerelease version goes to the `next` dist-tag on npm and does not move the `latest` image tag. The workflow adds npm provenance only while this repository is public, because npm rejects provenance from private repositories.
+The Release workflow (`.github/workflows/release.yml`) then does these steps:
 
-The workflow publishes through npm trusted publishing, so no token is stored. Each package's settings on npmjs.com trust `synoikia-org/synoikia-core` and `release.yml`, with **Direct publishing** allowed. If you rename the repository or the workflow file, update those settings too. Trusted publishing does not follow renames. npm can only trust a publisher for a package that already exists. So publish the first release of a new package once with a token or by hand, and then set its trusted publisher. npm's verbose log, on for each release run, says why npm refused a publish.
+1. It stops if the tag is not on `main`.
+2. It stops if a new version is below the published one. It also stops if the **Set as a pre-release** setting and the prerelease parts of the new versions do not agree.
+3. It writes the versions into each `package.json` for the build. It does not commit them.
+4. It publishes each npm package whose version is not on npm yet, in this order: the SDK, core, create-plugin. A prerelease version goes to the `next` dist-tag.
+5. It builds and pushes the image at the tag. A prerelease does not move the `latest` image tag.
+
+The workflow adds npm provenance only while this repository is public, because npm rejects provenance from private repositories.
+
+The workflow publishes through npm trusted publishing, so no token is stored:
+
+- On npmjs.com, each package trusts `synoikia-org/synoikia-core` and `release.yml`, with **Direct publishing** allowed.
+- Trusted publishing does not follow renames. If you rename the repository or the workflow file, update those settings.
+- npm can only trust a publisher for a package that already exists. Publish the first version of a new package by hand, then set its trusted publisher.
+- npm's verbose log is on for each release run. It says why npm refused a publish.
 
 ### Which versions a release bumps
 
