@@ -35,7 +35,7 @@ Chosen option: "Two kinds of account". Any proof that a session can make for its
 - While local sign-in is off (ADR-0008), the owner still signs in with a password. So the server always has a way in.
 - **The way back in.** While an owner exists, `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` set its name and password at each start. A name that another account has stops the start. `ADMIN_BOOTSTRAP_RESET_2FA=true` also removes the owner's TOTP app and recovery codes. Each change has an audit row.
 - While the start-up admin is set, the owner cannot change the password in the portal, and the portal asks to remove the settings.
-- **Upgrade.** The oldest local admin with a password becomes the primary owner. Without one, the server has no owner until the operator sets the start-up admin.
+- **Upgrade.** The oldest enabled local admin with a password becomes the primary owner. Without one, the server has no owner until the operator sets the start-up admin.
 - A user whose identity still signs in becomes an SSO account: single sign-on is on, and the identity comes from the configured issuer. The migration removes the password, the TOTP app and the recovery codes of that user. When the identity cannot sign in and the user has a password, the migration removes the identity instead, and the user keeps the password. So the upgrade locks nobody out. Each change has an audit row.
 
 ### Consequences
