@@ -1,40 +1,17 @@
 @id:local-sign-in-off
 Feature: Password sign-in off
   The admin can turn off sign-in with a password, so that people sign in only with single sign-on.
-  Core keeps at least one way in. The operator can force password sign-in back on at start-up.
+  The primary owner always keeps the password sign-in, so the server always has a way in.
 
-  Background:
-    Given user 12 has an SSO account with the role "family"
+  Rule: Password sign-in off leaves a password only to the primary owner
 
-  Rule: Password sign-in turns off only while single sign-on works
+    Scenario: Without single sign-on, the admin turns password sign-in off and still signs in with a password
+      Given the admin turned off password sign-in, with no single sign-on set up
+      When the admin signs in to the portal with their password
+      Then the admin is in the portal
 
-    Scenario: Password sign-in stays on without single sign-on
-      When the admin turns off password sign-in
-      Then the admin is told "Enable OIDC and add at least one SSO account before disabling local login"
-
-    Scenario: With an SSO account, password sign-in turns off
-      Given the admin set up single sign-on with Acme ID
-      When the admin turns off password sign-in
-      Then a sign-in with a password is told "Use single sign-on" in the portal and on the consent page, which offers only Acme ID
-
-  Rule: While password sign-in is off, single sign-on stays usable
-
-    Scenario: Nothing may remove the last way in
-      Given the admin set up single sign-on with Acme ID
+    Scenario: User 15 is told to use single sign-on
+      Given user 15 has a local account with the role "family"
       And password sign-in is off
-      When the admin tries each change that would leave no SSO account that signs in
-      Then each change is refused, because password sign-in is off
-
-    Scenario: With password sign-in on again, the admin can disable user 12
-      Given the admin set up single sign-on with Acme ID
-      And password sign-in was off, and the admin turned it on again
-      When the admin disables user 12
-      Then the admin sees that user 12 is disabled
-
-  Rule: The operator can force password sign-in back on
-
-    Scenario: A restart with password sign-in forced on lets the admin in
-      Given the admin set up single sign-on with Acme ID
-      And password sign-in is off
-      When the operator restarts the server with password sign-in forced on
-      Then the admin can sign in to the portal with a password
+      When user 15 signs in to the portal with their password
+      Then user 15 is told "Use single sign-on" in the portal and on the consent page
