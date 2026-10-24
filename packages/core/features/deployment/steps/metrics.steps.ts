@@ -82,8 +82,8 @@ Then(
   },
 );
 
-Given('the operator started core 0.23.0 with metrics on the port 9464', async (world: SynoikiaWorld) => {
-  expect(CORE_VERSION).toBe('0.23.0');
+Given('the operator started core 0.24.0 with metrics on the port 9464', async (world: SynoikiaWorld) => {
+  expect(CORE_VERSION).toBe('0.24.0');
   await world.restartCore(METRICS);
 });
 

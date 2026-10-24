@@ -117,7 +117,7 @@ On first start, open the admin portal and create the first account (or set `ADMI
 
 ### Metrics
 
-Set `METRICS_PORT` to let Prometheus read the metrics of core at `/metrics` on that port. Set `METRICS_TOKEN` too, and give Prometheus the same value as its bearer token. Without `METRICS_TOKEN`, anyone who can reach the port can read the metrics, and core logs a warning at start. Keep the port on the LAN. The port has no Host check, so set `METRICS_TOKEN` where browsers share the network. See ADR-0023.
+Set `METRICS_PORT` to let Prometheus read the metrics of core at `/metrics` on that port. Set `METRICS_TOKEN` too, and give Prometheus the same value as its bearer token. Without `METRICS_TOKEN`, anyone who can reach the port can read the metrics, and core logs a warning at start. Keep the port on the LAN. The port has no Host check, so set `METRICS_TOKEN` where browsers share the network. See ADR-0024.
 
 ```yaml
 scrape_configs:
