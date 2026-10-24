@@ -10,7 +10,7 @@ The **Sign-in** column shows how a person signs in. A local account has **passwo
 
 The **primary owner** is the first account of the server. It keeps the password sign-in when password sign-in is off, so the server always has a way in.
 
-Nobody can delete or disable the primary owner, or change its role. Only the start-up settings set its password or reset its two-factor sign-in. So its row has no actions.
+Nobody can delete or disable the primary owner, or change its role. Only the start-up settings set its password or reset its two-factor sign-in. So its row has no actions. An older release could disable the owner or move it out of the Admin role. Then its row offers **Enable** and the role, so that you can repair it.
 
 ## Add a user
 

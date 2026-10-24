@@ -138,7 +138,7 @@ function confirmDelete() {
                 class="select"
                 :value="u.role.id"
                 :aria-label="`Role of ${u.username}`"
-                :disabled="u.owner"
+                :disabled="u.owner && u.role.isAdmin"
                 @change="changeRole(u, $event)"
               >
                 <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
@@ -173,7 +173,7 @@ function confirmDelete() {
                 Reset 2FA
               </button>
               <button
-                v-if="u.id !== session.user?.id && !u.owner"
+                v-if="u.id !== session.user?.id && (!u.owner || u.disabled)"
                 class="btn btn-sm"
                 :class="{ 'btn-danger': !u.disabled }"
                 type="button"

@@ -506,6 +506,19 @@ describe('the primary owner (ADR-0025)', () => {
     expect(await signIn('admin', PASSWORD)).toMatchObject({ status: 200, body: { status: 'ok' } });
   });
 
+  it('lets an admin repair an owner that an older release disabled or moved out of the Admin role', async () => {
+    const t = await setup();
+    await signedIn(t);
+    const owner = t.ctx.users.owner()!;
+    const viewer = t.ctx.roles.create({ name: 'Viewer' }).id;
+    const helper = await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: 'admin' });
+    t.ctx.db.update(users).set({ disabled: true, roleId: viewer }).where(eq(users.id, owner.id)).run();
+    expect(() => t.ctx.users.setRole(owner.id, 'admin', { userId: helper.id })).not.toThrow();
+    expect(() => t.ctx.users.setDisabled(owner.id, false, { userId: helper.id })).not.toThrow();
+    expect(() => t.ctx.users.setRole(owner.id, viewer)).toThrow(expect.objectContaining({ code: 'owner_admin' }));
+    expect(t.ctx.users.get(owner.id)).toMatchObject({ roleId: 'admin', disabled: false });
+  });
+
   it('turns password sign-in off only while the server has an owner', async () => {
     const t = await setup();
     const b = await signedIn(t);

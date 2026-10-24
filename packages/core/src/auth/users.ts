@@ -282,7 +282,9 @@ export class UserService {
     if (!this.db.select({ id: roles.id }).from(roles).where(eq(roles.id, roleId)).get())
       throw new ValidationError('unknown_role', 'No such role');
     if (user.roleId === roleId) return;
-    if (user.owner) throw new ConflictError('owner_admin', 'The primary owner keeps the Admin role');
+    // A move back into Admin repairs an owner that an older release demoted (ADR-0025).
+    if (user.owner && roleId !== ADMIN_ROLE_ID)
+      throw new ConflictError('owner_admin', 'The primary owner keeps the Admin role');
     if (user.roleId === ADMIN_ROLE_ID && !user.disabled && this.otherAdmins(userId) === 0)
       throw new ConflictError('last_admin', 'You cannot remove the last enabled admin');
     this.db.transaction((tx) => {
