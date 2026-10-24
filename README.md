@@ -59,24 +59,17 @@ Most MCP servers hard-code their tools, so a new upstream version waits for a ne
 ## How it works
 
 ```mermaid
-flowchart TB
-  agent["<b>AI agent</b><br/>Claude, ChatGPT or any MCP client"]
-  endpoint["<b>One endpoint per instance</b><br/>Three tools: search, execute, resume"]
+flowchart LR
+  agent["AI agent"] --> endpoint["Endpoint<br/>search · execute · resume"]
   subgraph core["Synoikia core"]
-    sandbox["<b>Sandbox</b><br/>Agent code runs with no network or file access"]
-    gate["<b>Permission gate</b><br/>None, Read, Ask or Write for each operation"]
-    approval["<b>Human approval</b><br/>Ask and locked calls wait for a person to decide"]
-    redaction["<b>Redaction + audit</b><br/>Secrets hidden from results, approvals and logs<br/>Every call, decision and change recorded"]
+    sandbox["Sandbox"] --> gate["Permission gate"] --> approval["Human approval"]
   end
-  approver["<b>Approver</b><br/>Credential owner, on the approval page or in a chat card"]
-  plugin["<b>Isolated plugin</b><br/>Own process, own folder, only its own secrets"]
-  service["<b>Your service</b><br/>Reached only through its plugin"]
-
-  agent --> endpoint --> sandbox --> gate --> approval --> plugin --> service
-  approver <--> approval
+  endpoint --> sandbox
+  approver(["Approver"]) <--> approval
+  approval --> plugin["Isolated plugin"] --> service["Your service"]
 ```
 
-Each service gets its own endpoint, such as `https://mcp.example.com/nas`. Every call takes the same path, whatever the service, and the admin portal runs on its own port.
+Each service gets its own endpoint, such as `https://mcp.example.com/nas`. Every call takes the same path, whatever the service. Core redacts secrets and audits the call at each step. The admin portal runs on its own port.
 
 ## Features
 
