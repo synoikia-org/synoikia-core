@@ -519,6 +519,19 @@ describe('the primary owner (ADR-0025)', () => {
     expect(t.ctx.users.get(owner.id)).toMatchObject({ roleId: 'admin', disabled: false });
   });
 
+  it('keeps the last enabled admin in the Admin role on a server without an owner', async () => {
+    const t = await setup();
+    const b = await signedIn(t);
+    const me = t.ctx.users.owner()!;
+    t.ctx.db.update(users).set({ owner: false }).run();
+    const viewer = t.ctx.roles.create({ name: 'Viewer' }).id;
+    await t.ctx.users.create({ username: 'user15', password: PASSWORD, roleId: viewer });
+    expect(await (await b.patch(`/api/users/${me.id}`, { roleId: viewer })).json()).toMatchObject({
+      error: 'last_admin',
+    });
+    expect(() => t.ctx.users.setDisabled(me.id, true)).toThrow(expect.objectContaining({ code: 'last_admin' }));
+  });
+
   it('turns password sign-in off only while the server has an owner', async () => {
     const t = await setup();
     const b = await signedIn(t);
