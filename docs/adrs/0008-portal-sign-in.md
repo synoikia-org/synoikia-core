@@ -64,11 +64,8 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 - The cookie is `__Host-syn_admin`: `HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure` behind TLS.
 - A session ends after 30 minutes without use, and after 12 hours in total. Both values are settings.
 - Sign-out deletes the session. A password change ends the other sessions of the user.
-- Each session records how the user signed in: with a password or with OIDC.
 
-**A first password.** A user without a password adds one only with proof. The proof is a session from an OIDC sign-in in the last 5 minutes, or a current TOTP code. A wrong code counts toward the lock. A stolen session alone cannot add a password and keep the account.
-
-**CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. A browser `Origin` must also be a host name of the admin listener (ADR-0015).
+**CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it. Before that, any browser `Origin` must be a host name of the admin listener (ADR-0015).
 
 **Brute-force protection.**
 
