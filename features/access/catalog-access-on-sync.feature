@@ -68,10 +68,10 @@ Feature: Catalog access on sync
       Then the admin sees that "delete a list" is at level none
 
     Scenario: An acknowledged write moved into a group at level write still asks
-      Given the admin acknowledges "archive a list"
+      Given the admin acknowledges "rename a list"
       And the group "tasks" of "tasks" is at level write
-      When the plugin of "tasks" moves "archive a list" to the group "tasks", and the admin syncs "tasks"
-      Then the admin sees that "archive a list" has its own level ask
+      When the plugin of "tasks" moves "rename a list" to the group "tasks", and the admin syncs "tasks"
+      Then the admin sees that "rename a list" has its own level ask
 
   Rule: Vanished operations go stale, and return without more access
 
@@ -96,7 +96,7 @@ Feature: Catalog access on sync
 
     Scenario: Setting every group to write acknowledges each write that is not locked
       When the admin sets every group of "tasks" to write
-      Then the admin sees the 5 writes that are not locked as acknowledged, and "delete a list" as off
+      Then the admin sees the 4 writes that are not locked as acknowledged, and "delete a list" and "archive a list" as off
 
     Scenario: A merge takes the lower level, and a sync keeps the merge
       Given the group "lists" of "tasks" is at level read

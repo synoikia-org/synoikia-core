@@ -25,5 +25,5 @@ Feature: A read that becomes a write during an approval
       Given agent 7 waits for the admin to approve the add of "butter" to "Groceries"
       And the plugin of "tasks" now asks to type a confirmation for "add a task", and the admin syncs "tasks"
       When the admin approves the call and agent 7 resumes it
-      Then agent 7 is told that "add a task" changed while it waited for approval
+      Then agent 7 is told that "add a task" was turned off while it waited
       And Acme never receives "butter"

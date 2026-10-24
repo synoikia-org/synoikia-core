@@ -78,6 +78,56 @@ describe('redactPaths', () => {
     expect(redactPaths('plain', ['/0'])).toBe('plain');
     expect(redactPaths({ a: 1 }, null)).toEqual({ a: 1 });
   });
+
+  it('matches a declared path in any case, also with folded letters (ADR-0007)', () => {
+    expect(redactPaths({ PIN: '1', pin: '2', Pin: '3' }, ['/pin'])).toEqual({
+      PIN: REDACTED,
+      pin: REDACTED,
+      Pin: REDACTED,
+    });
+    expect(redactPaths({ Settings: { URL: 'u', url: 'v' } }, ['/settings/url'])).toEqual({
+      Settings: { URL: REDACTED, url: REDACTED },
+    });
+    expect(redactPaths({ PİN: '1', ｐin: '2' }, ['/pin'])).toEqual({ PİN: REDACTED, ｐin: REDACTED });
+    expect(redactPaths({ ſecret: 's', Key: 'k' }, ['/secret', '/key'])).toEqual({
+      ſecret: REDACTED,
+      Key: REDACTED,
+    });
+  });
+});
+
+describe('redactPaths on a wide object', () => {
+  it('folds each key once, however many paths there are', () => {
+    const wide = { ...Object.fromEntries(Array.from({ length: 200_000 }, (_, i) => [`k${i}`, i])), PIN: 'x' };
+    const paths = Array.from({ length: 32 }, (_, i) => `/K${i}/deep`);
+    const time = (p: string[]) => {
+      const start = performance.now();
+      expect(redactPaths(wide, p).PIN).toBe(REDACTED);
+      return performance.now() - start;
+    };
+    const one = time(['/pin']);
+    // The copy costs the same either way; 32 more paths must not multiply the walk.
+    expect(time([...paths, '/pin'])).toBeLessThan(one * 3 + 50);
+  });
+});
+
+describe('redactDiff in any case', () => {
+  const redact = createRedactor(GLOBAL_SENSITIVE_KEYS, []);
+  it('hides an entry at or above a declared path written in another case', () => {
+    expect(
+      redactDiff(
+        [
+          { path: '/LockCode', after: '2468' },
+          { path: '/Settings', after: { URL: 'u', name: 'n' } },
+        ],
+        redact,
+        ['/lockCode', '/settings/url'],
+      ),
+    ).toEqual([
+      { path: '/LockCode', after: REDACTED },
+      { path: '/Settings', after: { URL: REDACTED, name: 'n' } },
+    ]);
+  });
 });
 
 describe('redactResult', () => {

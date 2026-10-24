@@ -150,14 +150,20 @@ Then(
   },
 );
 
-Given(
-  'Acme Tasks also describes {string} at {string}',
-  (world: PluginAuthorWorld, summary: string, template: string) => {
-    const paths = world.description.paths as Record<string, unknown>;
+Given('Acme Tasks also describes {string} at {string}', (world: PluginAuthorWorld, summary: string, at: string) => {
+  const paths = world.description.paths as Record<string, unknown>;
+  // "DELETE /lists/everything" adds a new operation; a bare path adds a lookalike of `summary`.
+  const [given, template] = at.includes(' ') ? (at.split(' ') as [string, string]) : [undefined, at];
+  if (given) paths[template] = { [given.toLowerCase()]: { summary } };
+  else {
     const [verb] = world.keyOf(summary).split(' ') as [string];
     paths[template] = { [verb.toLowerCase()]: { summary: `${summary} again` } };
-  },
-);
+  }
+});
+
+Given('plugin.yaml excludes {string}', (world: PluginAuthorWorld, key: string) => {
+  world.setYaml({ exclude: [key] });
+});
 
 Given(
   'the schema of a task in Acme Tasks fans out {int} ways on {int} levels',

@@ -142,13 +142,8 @@ const BROKEN: Record<string, Build> = {
   'locks "purge lists", which its catalog does not have': {
     files: { 'plugin.yaml': 'rules:\n  - match: lists.purge\n    locked: true\n    reason: Purges every list.\n' },
   },
-  'also locks "archive a list"': {
-    entry: [
-      [
-        "{ typedConfirmation: true, matchProfile: 'list' }",
-        "{ typedConfirmation: true, locked: true, matchProfile: 'list' }",
-      ],
-    ],
+  'also locks "rename a list"': {
+    entry: [["kind: 'config',", "kind: 'config',\n    locked: true,"]],
   },
   'shows the API token field as plain text': {
     manifest: (m) => delete m.connection.schema.properties.token!.writeOnly,
@@ -183,7 +178,7 @@ const FAILURES: Record<string, string> = {
   'the API token reached the approval of "delete a list"': `a secret value of the profile reached the approval of ${opKey('delete a list')}: "${API_TOKEN.slice(0, 4)}…"`,
   '"add a task" asked for no approval': `${opKey('add a task')} asked for no approval`,
   'the share password reached the agent': `a secret value of the profile reached the agent: "${'groceries-share-7'.slice(0, 4)}…"`,
-  '"archive a list" is locked and the profile has no case for it': `${opKey('archive a list')} is locked and the profile has no case for it`,
+  '"rename a list" is locked and the profile has no case for it': `${opKey('rename a list')} is locked and the profile has no case for it`,
   'the API token is a secret that is not write-only': 'connection.token: a secret field must be writeOnly',
   'the guide of "import tasks" is not provided': `the guide of ${opKey('import tasks')} is not provided`,
 };
@@ -194,14 +189,16 @@ type ManifestJson = {
 };
 
 Given(
-  'the profile of Acme Tasks names {string}, {string}, the lock {string} of {string} and the share password',
-  (world: SynoikiaWorld, read: string, write: string, locked: string, list: string) => {
+  'the profile names {string}, {string}, locks {string} and {string} of {string} and the share password',
+  (world: SynoikiaWorld, read: string, write: string, locked: string, alsoLocked: string, list: string) => {
     authorOf(world).profile = {
       reads: [call(read, { list: 'Groceries' })],
       writes: [call(write, { list: 'Groceries', title: 'butter' })],
       rejects: [{ fn: 'call', args: ['lists.purge', {}] }],
       connectionTest: { wrong: { token: 'acme-tok-wrong' } },
-      locks: { [opKey(locked)]: { ...call(locked, { list }), confirm: list, target: list } },
+      locks: Object.fromEntries(
+        [locked, alsoLocked].map((name) => [opKey(name), { ...call(name, { list }), confirm: list, target: list }]),
+      ),
       secrets: [
         {
           ...call('show the share password', { list: 'Groceries' }),
@@ -231,9 +228,12 @@ async function runSuite(world: SynoikiaWorld, breaks?: string | Build) {
     }
     writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
     mkdirSync(path.join(copy, 'test'));
+    world.saveUpstreamSeed();
+    const url = JSON.stringify(world.upstream!.url);
+    const reset = `fetch(${url} + '/reset', { method: 'POST', headers: { authorization: 'Bearer ${API_TOKEN}' } })`;
     writeFileSync(
       path.join(copy, 'test', 'fake.mjs'),
-      `export async function start() { return { url: ${JSON.stringify(world.upstream!.url)}, close() {} }; }\n`,
+      `export async function start() { return { url: ${url}, close() {}, reset: async () => { await ${reset}; } }; }\n`,
     );
     const profile = {
       fake: 'test/fake.mjs',
@@ -344,6 +344,13 @@ When(
   'plugin author {int} runs the compliance suite on a build of Acme Tasks whose only write is {string}',
   async (world: SynoikiaWorld, _author: number, name: string) => {
     const remove = WRITES.filter((w) => w !== name).map(opKey);
+    // The author's profile keeps a lock case only for an operation that the build still has.
+    const a = authorOf(world);
+    const locks = (a.profile?.locks ?? {}) as Record<string, unknown>;
+    a.profile = {
+      ...a.profile,
+      locks: Object.fromEntries(Object.entries(locks).filter(([key]) => !remove.includes(key))),
+    };
     await runSuite(world, {
       entry: [
         [

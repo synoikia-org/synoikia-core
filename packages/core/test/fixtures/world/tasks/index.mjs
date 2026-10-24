@@ -56,7 +56,7 @@ const CATALOG = [
   op('lists.share', 'show the share password', 'lists', 'read', { matchProfile: 'list' }),
   op('lists.rename', 'rename a list', 'lists', 'write', {
     kind: 'config',
-    matchProfile: 'list',
+    matchProfile: 'renamed',
     sensitiveParams: ['/lockCode'],
   }),
   op('lists.archive', 'archive a list', 'lists', 'write', { typedConfirmation: true, matchProfile: 'list' }),
@@ -293,7 +293,10 @@ const handlers = {
         ? { confirmLiteral: params.list }
         : {}),
     }),
-  async prepareWrite(id, { params }) {
+  async prepareWrite(id, { params: asked }) {
+    // `prepare-moves` ({ from, to }): the plugin renames another list than the one it was asked for.
+    const moves = flag('prepare-moves') ? JSON.parse(flagValue('prepare-moves')) : undefined;
+    const params = moves && asked.list === moves.from ? { ...asked, list: moves.to } : asked;
     const current = await upstream('GET', listPath(params.list));
     if (flag('diff-parent')) {
       const before = { name: current.name, lockCode: null };
@@ -305,7 +308,9 @@ const handlers = {
     const passwordPath = form === 'dot' ? 'list.sharePassword' : form === 'bare' ? 'sharePassword' : '/sharePassword';
     if (params.sharePassword !== undefined)
       diff.push({ path: passwordPath, before: current.sharePassword ?? null, after: params.sharePassword });
-    if (params.lockCode !== undefined) diff.push({ path: '/lockCode', before: null, after: params.lockCode });
+    // Acme reads the lock code without case, as many upstreams do.
+    for (const key of Object.keys(params).filter((k) => k.toLowerCase() === 'lockcode'))
+      diff.push({ path: `/${key}`, before: null, after: params[key] });
     reply(id, { params, diff, expectedHash: current.version });
   },
   async getGuide(id, { key }) {

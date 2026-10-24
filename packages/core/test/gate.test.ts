@@ -162,9 +162,10 @@ describe('execute → gate → plugin', () => {
       legacy.approvals.cancelAll();
       await run;
 
-      // Not locked, but a typed confirmation: the page, never the form.
+      // A typed confirmation, so locked (ADR-0004): the page, never the form.
       const t = await setup({ formElicitationApprovals: 'ask' });
       t.setLevel('ask');
+      updateOperation(t.db, t.instanceId, t.opId('echo.confirm'), { level: 'ask' });
       const client = both();
       const typed = t.exec(`await echo.call('echo.confirm', { name: 'vol/c' });`, client.prompts);
       await waitFor(() => client.opened.length === 1);
@@ -178,6 +179,7 @@ describe('execute → gate → plugin', () => {
         const t = await setup(settings);
         t.setLevel('ask');
         updateOperation(t.db, t.instanceId, t.opId('echo.delete'), { level: 'ask' });
+        updateOperation(t.db, t.instanceId, t.opId('echo.confirm'), { level: 'ask' });
         const deps = { ...t.deps, executions: new ExecutionRegistry() };
         const caller = { ...t.caller(), parkable: true };
         const parked = (await executeCode(
@@ -278,6 +280,30 @@ describe('execute → gate → plugin', () => {
       expect(client.asked[0]?.message).toContain('/smtp/password');
       const shown = JSON.stringify(client.asked);
       for (const secret of ['old-smtp-secret', 'new-smtp-secret', '4711']) expect(shown).not.toContain(secret);
+    });
+
+    it('audits what the agent sent and, apart, the params that prepareWrite made (ADR-0003)', async () => {
+      const t = await setup();
+      t.setLevel('ask');
+      t.db.update(operations).set({ kind: 'config' }).where(eq(operations.key, 'echo.set')).run();
+      t.rt.manifest = { ...t.rt.manifest, capabilities: { ...t.rt.manifest.capabilities, configTransform: true } };
+      const real = t.rt.plugin();
+      t.rt.plugin = () =>
+        ({
+          call: (method: string, params: unknown, ...rest: unknown[]) =>
+            method === 'prepareWrite'
+              ? Promise.resolve({ params: { name: 'y', pin: '4711' }, diff: [], expectedHash: 'h1' })
+              : (real.call as (...a: unknown[]) => Promise<unknown>)(method, params, ...rest),
+        }) as unknown as ReturnType<typeof t.rt.plugin>;
+      const run = t.exec(`await echo.call('echo.set', { name: 'x', pin: '4711' });`);
+      await waitFor(() => t.db.select().from(pendingApprovals).all().length === 1);
+      t.approvals.cancelAll();
+      await run;
+      const row = t.audits().find((a) => a.operationKey === 'echo.set');
+      expect(row).toMatchObject({
+        params: { name: 'x', pin: '[REDACTED]' },
+        detail: { preparedParams: { name: 'y', pin: '[REDACTED]' } },
+      });
     });
   });
 

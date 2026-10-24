@@ -71,7 +71,7 @@ effectiveAccess(op, group, principal):
   otherwise                         → auto
 ```
 
-**Locked operations.** They never follow their group into `ask` or `write`. A locked operation is callable only when the admin sets its own level to `ask`. Core refuses `write` for it. Each call needs a human and a typed confirmation, and a pre-approval rule never applies to it.
+**Locked operations.** An operation with typed confirmation is locked too. Locked operations never follow their group into `ask` or `write`. A locked operation is callable only when the admin sets its own level to `ask`. Core refuses `write` for it. Each call needs a human and a typed confirmation, and a pre-approval rule never applies to it.
 
 **Acknowledgement.** At level `write`, calls run without a question. When the admin selects `write` for a group or an operation, core acknowledges each write in it that is not locked. A write that is not acknowledged asks, also at level `write`.
 

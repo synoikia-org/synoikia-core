@@ -102,22 +102,39 @@ const pointerSegments = (path: string) =>
     .slice(1)
     .map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'));
 
-/** Hides values at JSON-pointer `paths` (`sensitiveParams`), on a copy; missing paths are ignored. */
+// ADR-0007: many upstreams read keys without case, so a declared path matches in any case. Compatibility
+// forms, marks and the round trip through upper case also fold "İ", "ſ", the Kelvin sign and fullwidth letters.
+const fold = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toUpperCase().toLowerCase();
+
+const sameSegments = (prefix: readonly string[], segments: readonly string[]) =>
+  prefix.every((part, i) => fold(part) === fold(segments[i] ?? ''));
+
+const escapeSegment = (part: string) => part.replace(/~/g, '~0').replace(/\//g, '~1');
+
+/** Hides the values at `paths` (folded segments) under `node`, folding each key once. */
+function hideAt(node: unknown, paths: readonly (readonly string[])[]): void {
+  if (node === null || typeof node !== 'object') return;
+  const byFirst = new Map<string, (readonly string[])[]>();
+  for (const [first, ...rest] of paths)
+    if (first !== undefined) byFirst.set(first, [...(byFirst.get(first) ?? []), rest]);
+  const container = node as Record<string, unknown>;
+  for (const key of Object.keys(container)) {
+    const rests = byFirst.get(fold(key));
+    if (!rests) continue;
+    if (rests.some((rest) => rest.length === 0)) {
+      if (container[key] !== undefined && container[key] !== null && container[key] !== '') container[key] = REDACTED;
+    } else hideAt(container[key], rests);
+  }
+}
+
+/** Hides values at JSON-pointer `paths` (`sensitiveParams`), in any case, on a copy; missing paths are ignored. */
 export function redactPaths<T>(value: T, paths: readonly string[] | null | undefined): T {
   if (!paths?.length || value === null || typeof value !== 'object') return value;
   const out = structuredClone(value) as unknown;
-  for (const path of paths) {
-    const parts = pointerSegments(path);
-    let node: unknown = out;
-    for (const [i, part] of parts.entries()) {
-      if (node === null || typeof node !== 'object' || !Object.hasOwn(node, part)) break;
-      const container = node as Record<string, unknown>;
-      if (i === parts.length - 1) {
-        if (container[part] !== undefined && container[part] !== null && container[part] !== '')
-          container[part] = REDACTED;
-      } else node = container[part];
-    }
-  }
+  hideAt(
+    out,
+    paths.map((path) => pointerSegments(path).map(fold)).filter((parts) => parts.length > 0),
+  );
   return out as T;
 }
 
@@ -151,7 +168,7 @@ export function redactDiff(
     const secret =
       isSensitive(path) ||
       segments.some((s) => s !== '' && isSensitive(s)) ||
-      declared.some((p) => path === p || path.startsWith(`${p}/`));
+      declared.some((p) => fold(path) === fold(p) || fold(path).startsWith(`${fold(p)}/`));
     if (secret) {
       return {
         path: redact(path),
@@ -160,7 +177,13 @@ export function redactDiff(
       };
     }
     // An entry above a declared path (`/args` holding `/args/1`) hides that part of its values.
-    const below = declared.filter((p) => path === '' || p.startsWith(`${path}/`)).map((p) => p.slice(path.length));
+    const above = path === '' || path.startsWith('/') ? pointerSegments(path) : undefined;
+    const below = above
+      ? declared
+          .map(pointerSegments)
+          .filter((parts) => parts.length > above.length && sameSegments(above, parts))
+          .map((parts) => `/${parts.slice(above.length).map(escapeSegment).join('/')}`)
+      : [];
     const hide = (v: unknown) => (below.length ? redactPaths(v, below) : v);
     return redact({
       path,

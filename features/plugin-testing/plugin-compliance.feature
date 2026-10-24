@@ -8,7 +8,7 @@ Feature: Plugin compliance suite
     Given Acme has the list "Groceries" with the open tasks "milk", "bread" and "eggs"
     And Acme also has the list "Chores" with the open task "sweep"
     And the list "Groceries" has the share password "groceries-share-7"
-    And the profile of Acme Tasks names "show the open tasks", "add a task", the lock "delete a list" of "Chores" and the share password
+    And the profile names "show the open tasks", "add a task", locks "delete a list" and "archive a list" of "Chores" and the share password
 
   Rule: A plugin that keeps every rule of core is fit for production
 
@@ -22,7 +22,7 @@ Feature: Plugin compliance suite
 
       Examples:
         | breaks                                    | failure                                                       |
-        | also locks "archive a list"               | "archive a list" is locked and the profile has no case for it |
+        | also locks "rename a list"                | "rename a list" is locked and the profile has no case for it  |
         | shows the API token field as plain text   | the API token is a secret that is not write-only              |
         | does not ship the guide of "import tasks" | the guide of "import tasks" is not provided                   |
         | runs only the access rule of the suite    | the suite did not run every rule                              |

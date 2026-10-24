@@ -245,7 +245,7 @@ Then('agent {word} reads that {string} runs at once', (world: SynoikiaWorld, _ag
 });
 
 Then(
-  'agent {word} sees the group {string} at {word} with {int} reads, {int} writes, {int} locked, {int} to acknowledge and {int} own level',
+  'agent {word} sees the group {string} at {word} with {int} reads, {int} write(s), {int} locked, {int} to acknowledge and {int} own level',
   (
     world: SynoikiaWorld,
     _agent: string,

@@ -125,6 +125,7 @@ Feature: Access levels
       Then agent 7 is told that the call waits for a human to approve it
 
   Rule: A locked operation runs only with its own level ask
+    An operation that asks for a typed confirmation is locked too.
 
     Scenario: A locked operation stays off in a group at level write
       Given the admin sets the group "lists" of "tasks" to write
@@ -140,6 +141,17 @@ Feature: Access levels
     Scenario: The admin cannot give a locked operation the level write
       When the admin tries to give "delete a list" its own level write
       Then the admin is told that "delete a list" is locked and always asks
+
+    Scenario: An archive, which asks for a typed confirmation, stays off in a group at level write
+      Given Acme also has the list "Chores" with the open task "dishes"
+      And the admin sets the group "lists" of "tasks" to write
+      When agent 7 archives the list "Chores"
+      Then agent 7 is told that the operation is protected and the admin has not enabled it
+      And Acme has not archived "Chores"
+
+    Scenario: The admin cannot give the archive the level write
+      When the admin tries to give "archive a list" its own level write
+      Then the admin is told that "archive a list" is locked and always asks
 
   Rule: A missing group or an unknown level hides the operation
 

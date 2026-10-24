@@ -406,3 +406,39 @@ Then('the approval page shows the parameter {string} with its value', async (wor
   expect(Object.getPrototypeOf(params)).toBe(Object.prototype);
   expect(({} as Fields).force).toBeUndefined();
 });
+
+Given(
+  'agent {word} waits for the admin to approve the add of {string} to {string} with {string} set to {string}',
+  async (world: SynoikiaWorld, agent: string, title: string, list: string, name: string, value: string) => {
+    await world.call(agent, 'add a task', { list, title, [name]: value });
+    expect(world.answer).toMatchObject({ status: 'awaiting_approval' });
+  },
+);
+
+Then('the approval page shows {string} as [REDACTED]', async (world: SynoikiaWorld, name: string) => {
+  expect(parameters(await openPage(world))[name]).toBe(REDACTED);
+});
+
+Then(
+  'the audit log shows {string} of the add of {string} as [REDACTED]',
+  async (world: SynoikiaWorld, name: string, title: string) => {
+    const rows = (await world.audit({ kind: 'call', operation: 'tasks.add' })) as { params?: Fields | null }[];
+    const adds = rows.filter((r) => r.params?.title === title);
+    expect(adds).not.toEqual([]);
+    for (const row of adds) expect(row.params?.[name]).toBe(REDACTED);
+  },
+);
+
+When(
+  'agent {word} renames {string} to {string} with {string} set to {string}',
+  async (world: SynoikiaWorld, agent: string, list: string, name: string, key: string, value: string) => {
+    await world.call(agent, 'rename a list', { list, name, [key]: value });
+    expect(world.answer).toMatchObject({ status: 'awaiting_approval' });
+  },
+);
+
+Then('the approval page shows {string} as [REDACTED] after', async (world: SynoikiaWorld, key: string) => {
+  const html = await openPage(world);
+  expect(parameters(html)[key]).toBe(REDACTED);
+  expect(changes(html).find((c) => c.path === `/${key}`)?.after).toBe(REDACTED);
+});

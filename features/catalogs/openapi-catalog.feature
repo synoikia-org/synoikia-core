@@ -151,6 +151,12 @@ Feature: OpenAPI catalog
         | {path: /lists, query: limit}  | query must be an object                                   |
         | {path: /nope}                 | GET /nope is not an operation of the Acme Tasks API       |
 
+    Scenario: An excluded path is refused, though a path with a list id has the same form
+      Given Acme Tasks also describes "Delete every list" at "DELETE /lists/everything"
+      And plugin.yaml excludes "DELETE /lists/everything"
+      When the agent sends Acme Tasks the request {method: delete, path: /lists/everything}
+      Then the request is refused with "DELETE /lists/everything is not an operation of the Acme Tasks API"
+
     Scenario: Core cannot run an operation that is not in the catalog
       When core runs the read of "/nope" on Acme Tasks
       Then the request is refused with "/nope is not an operation of the Acme Tasks API"

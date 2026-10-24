@@ -628,6 +628,22 @@ export class SynoikiaWorld extends QuickPickleWorld {
     return undefined;
   }
 
+  private seed?: string;
+
+  /** Keeps what Acme holds now, so a fake reset (the compliance suite's, between lock cases) brings it back. */
+  saveUpstreamSeed() {
+    this.seed = JSON.stringify({ lists: [...this.lists], archived: [...this.archived] });
+  }
+
+  private restoreUpstreamSeed() {
+    if (!this.seed) return;
+    const seed = JSON.parse(this.seed) as { lists: [string, Task[]][]; archived: string[] };
+    this.lists.clear();
+    for (const [name, tasks] of seed.lists) this.lists.set(name, tasks);
+    this.archived.clear();
+    for (const name of seed.archived) this.archived.add(name);
+  }
+
   private listVersion(name: string) {
     return createHash('sha256')
       .update(JSON.stringify([name, this.lists.get(name)]))
@@ -653,6 +669,10 @@ export class SynoikiaWorld extends QuickPickleWorld {
       if (this.upstreamDelayMs) await sleep(this.upstreamDelayMs);
     };
     return {
+      'POST /reset': () => {
+        this.restoreUpstreamSeed();
+        return { body: { reset: true } };
+      },
       'GET /lists': () => ({
         body: [...this.lists.keys()]
           .filter((name) => !this.archived.has(name))
@@ -768,7 +788,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
       | 'catalog-changed'
       | 'debugger'
       | 'broken-answer'
-      | 'broken-log',
+      | 'broken-log'
+      | 'prepare-moves',
     value = '',
   ) {
     writeFileSync(this.pluginFile(name), value);
