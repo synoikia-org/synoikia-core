@@ -88,6 +88,7 @@ describe('redactPaths', () => {
     expect(redactPaths({ Settings: { URL: 'u', url: 'v' } }, ['/settings/url'])).toEqual({
       Settings: { URL: REDACTED, url: REDACTED },
     });
+    expect(redactPaths({ PİN: '1', ｐin: '2' }, ['/pin'])).toEqual({ PİN: REDACTED, ｐin: REDACTED });
     expect(redactPaths({ ſecret: 's', Key: 'k' }, ['/secret', '/key'])).toEqual({
       ſecret: REDACTED,
       Key: REDACTED,

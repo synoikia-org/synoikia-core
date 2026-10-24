@@ -102,9 +102,9 @@ const pointerSegments = (path: string) =>
     .slice(1)
     .map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'));
 
-// ADR-0007: many upstreams read keys without case, so a declared path matches in any case. The round trip
-// through upper case also folds forms such as "ſ" and the Kelvin sign that lower case alone leaves alone.
-const fold = (text: string) => text.toUpperCase().toLowerCase();
+// ADR-0007: many upstreams read keys without case, so a declared path matches in any case. Compatibility
+// forms, marks and the round trip through upper case also fold "İ", "ſ", the Kelvin sign and fullwidth letters.
+const fold = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toUpperCase().toLowerCase();
 
 const sameSegments = (prefix: readonly string[], segments: readonly string[]) =>
   prefix.every((part, i) => fold(part) === fold(segments[i] ?? ''));
