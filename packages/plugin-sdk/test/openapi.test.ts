@@ -340,6 +340,48 @@ describe('excluded paths (ADR-0012)', () => {
     expect(matchPath(cat, 'GET', '/a/q/c')?.op.key).toBe('GET /a/{x}/c');
   });
 
+  it('matches a template with many parameters in linear time', () => {
+    const cat = buildOpenApiCatalog(
+      {
+        openapi: '3.0.3',
+        paths: { '/files/{a}.{b}.{c}.json': { get: {} }, '/x/{id}': { get: {} }, '/x/{a}{b}{c}!': { get: {} } },
+      },
+      { service: 'Acme', rules: compileRules(parsePluginSettings({})) },
+    );
+    const start = performance.now();
+    matchPath(cat, 'GET', `/files/${'.'.repeat(50_000)}x`);
+    matchPath(cat, 'GET', `/x/${'a'.repeat(50_000)}`);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+
+  it('refuses a path that a left-out template matches with a line break, an empty part or a suffix', () => {
+    const cat = buildOpenApiCatalog(
+      {
+        openapi: '3.0.3',
+        paths: {
+          '/v1/things/{id}': { delete: {} },
+          '/v1/things/{name}:purge': { delete: {} },
+          '/users/{id}': { delete: {} },
+          '/users/kill': { delete: {} },
+        },
+      },
+      { service: 'Acme', rules: compileRules(parsePluginSettings({ exclude: ['DELETE /users/kill'] })) },
+    );
+    for (const path of [
+      '/v1/things/x%0A:purge',
+      '/v1/things/x%0D:purge',
+      '/v1/things/x%E2%80%A8:purge',
+      '/v1/things/%3Apurge',
+      '/users/kill.json',
+      '/users/kill.',
+      '/users/K%C4%B0LL',
+      '/users/%EF%BD%8Bill',
+    ])
+      expect(matchPath(cat, 'DELETE', path), path).toBeUndefined();
+    expect(matchPath(cat, 'DELETE', '/users/u-1')?.op.key).toBe('DELETE /users/{id}');
+    expect(matchPath(cat, 'DELETE', '/v1/things/t-1')?.op.key).toBe('DELETE /v1/things/{id}');
+  });
+
   it('keeps a literal path when only its template is excluded', () => {
     const cat = build(['DELETE /items/{itemId}']);
     expect(matchPath(cat, 'DELETE', '/items/archived')?.op.key).toBe('DELETE /items/archived');

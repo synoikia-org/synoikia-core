@@ -362,21 +362,34 @@ export function matchPath(
 const literalAt = (op: RestOperation) => op.segments.flatMap((seg, i) => (isParam(seg) ? [] : [i]));
 const isSubset = (a: number[], b: number[]) => a.every((i) => b.includes(i));
 const isStrictSubset = (a: number[], b: number[]) => isSubset(a, b) && b.length > a.length;
-const fold = (text: string) => text.toUpperCase().toLowerCase();
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Fails closed for routers that compare without case or Unicode form: "İ", "ſ", the Kelvin sign and fullwidth
+// letters fold to their plain letter. Folding too much only refuses more.
+const fold = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toUpperCase().toLowerCase();
+
+/** Whether `value` fits the parts of a template segment (`{name}:purge`), each parameter taking any text,
+ * also empty. Leftmost `indexOf` keeps it linear. */
+function fitsParts(parts: string[], value: string): boolean {
+  const first = parts[0]!;
+  const last = parts.at(-1)!;
+  if (!value.startsWith(first)) return false;
+  let at = first.length;
+  for (const part of parts.slice(1, -1)) {
+    const found = value.indexOf(part, at);
+    if (found < 0) return false;
+    at = found + part.length;
+  }
+  return value.length - last.length >= at && value.endsWith(last);
+}
 
 function segmentMatches(seg: string, value: string, caseless: boolean): boolean {
   if (isParam(seg)) return true;
   if (!caseless) return seg === value;
+  const folded = fold(value);
   // A segment that mixes text and a parameter (`{name}:purge`), as only a left-out template has.
-  if (seg.includes('{')) {
-    const pattern = fold(seg)
-      .split(/\{[^}]*\}/)
-      .map(escapeRegExp)
-      .join('.+');
-    return new RegExp(`^${pattern}$`, 'u').test(fold(value));
-  }
-  return fold(seg) === fold(value);
+  if (seg.includes('{')) return fitsParts(fold(seg).split(/\{[^}]*\}/), folded);
+  // Many routers also take `kill.json` or `kill.` for `kill`.
+  const literal = fold(seg);
+  return folded === literal || folded.startsWith(`${literal}.`);
 }
 
 function matchesSegments(op: RestOperation, decoded: string[], caseless: boolean): boolean {
