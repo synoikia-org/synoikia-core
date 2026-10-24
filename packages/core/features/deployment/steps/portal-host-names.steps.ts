@@ -22,7 +22,7 @@ When(
 Then('they are refused because the host name is not allowed', (world: SynoikiaWorld) => {
   const [answer] = answers.get(world)!;
   expect(answer!.status).toBe(403);
-  expect(answer!.text).toContain('Host or Origin not allowed; set PUBLIC_ADMIN_URL or ADMIN_ALLOWED_HOSTS');
+  expect(answer!.text).toContain('Host not allowed; set PUBLIC_ADMIN_URL or ADMIN_ALLOWED_HOSTS');
 });
 
 Given(

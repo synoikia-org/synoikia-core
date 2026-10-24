@@ -43,11 +43,14 @@ export function createAdminApp(ctx: AppContext, { uiDir }: AdminAppOptions = {})
   // A rebinding page must not reach the portal, nor claim the first account, by another name (ADR-0015).
   const names = { publicUrl: ctx.config.PUBLIC_ADMIN_URL, allowed: ctx.config.ADMIN_ALLOWED_HOSTS };
   app.use('*', async (c, next) => {
-    if (hostAllowed(names, c.req.header('host')) && originAllowed(names, c.req.header('origin'))) return next();
-    return c.json(
-      { error: 'host_not_allowed', message: 'Host or Origin not allowed; set PUBLIC_ADMIN_URL or ADMIN_ALLOWED_HOSTS' },
-      403,
-    );
+    if (!hostAllowed(names, c.req.header('host')))
+      return c.json(
+        { error: 'host_not_allowed', message: 'Host not allowed; set PUBLIC_ADMIN_URL or ADMIN_ALLOWED_HOSTS' },
+        403,
+      );
+    if (!originAllowed(names, c.req.header('origin')))
+      return c.json({ error: 'bad_origin', message: 'Cross-origin request refused' }, 403);
+    return next();
   });
 
   app.get('/healthz', (c) => c.json({ status: 'ok' }));
