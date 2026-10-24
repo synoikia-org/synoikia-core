@@ -327,7 +327,12 @@ describe('instances and access', () => {
     const cookie = [...t.b.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     const bad = await t.app.request(`/api/instances/${t.id}/connection/test`, {
       method: 'POST',
-      headers: { cookie, 'x-csrf-token': t.b.jar.get('syn_csrf')!, 'content-type': 'application/json' },
+      headers: {
+        host: 'localhost',
+        cookie,
+        'x-csrf-token': t.b.jar.get('syn_csrf')!,
+        'content-type': 'application/json',
+      },
       body: '{"config": ',
     });
     expect(bad.status).toBe(400);

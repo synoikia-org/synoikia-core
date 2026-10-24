@@ -71,7 +71,7 @@ These rules apply to the pipeline:
 
 **Attestation.** Some operations need the model to read a best-practice guide first (`attestationRequired`).
 
-- `guides.get` in `search` returns the guide with its key.
+- `guides.get` in `search` returns the guide with its key, only for an operation that the role of the caller reaches. For any other operation, core answers as for an unknown operation.
 - The key is `HMAC(attestation key, instance ‖ operation key ‖ guide version ‖ MCP session id)`.
 - The key works only in the MCP session that read the guide. A new guide version makes all old keys invalid.
 - Core audits each guide read as a `search` event with `decision: guide_read`, the guide version and the MCP session.

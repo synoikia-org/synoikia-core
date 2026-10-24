@@ -33,6 +33,15 @@ Feature: Best-practice attestation
       Then agent 7 is told that the admin turned "import tasks" off, and is not asked for the guide
       And the list "Groceries" still holds the open tasks "milk", "bread" and "eggs"
 
+  Rule: Only an agent whose role reaches an operation reads its guide
+
+    Scenario: An agent whose role keeps "import tasks" from it gets no guide
+      Given user 12 has the role "family", which has the instance "tasks"
+      And agent 9 belongs to user 12 and may read and write
+      And the admin sets the maximum of "family" for the group "tasks" to none
+      When agent 9 reads the guide of "import tasks"
+      Then agent 9 is told that "import tasks" is unknown, and gets no key
+
   Rule: The key works only in the session that read the guide
     Every MCP call has a session. A unit test covers a key read outside any session.
 

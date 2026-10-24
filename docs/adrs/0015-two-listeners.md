@@ -40,6 +40,12 @@ For example, `GET :8080/api/instances` and `GET :8081/{slug}` both return 404.
 - Only the approval-page link, which goes back to the same client, uses the request origin when `PUBLIC_MCP_URL` is not set.
 - `PUBLIC_ADMIN_URL` is optional. Core uses it for OIDC redirect URIs and for links in notifications.
 
+**Host names of the admin listener.** The admin listener has the same DNS-rebinding defence as the MCP listener, with its own names.
+
+- The `Host` header must be the host of `PUBLIC_ADMIN_URL`, a name in `ADMIN_ALLOWED_HOSTS`, `localhost`, or an IP address. Otherwise core returns 403 before any route, the setup endpoint included.
+- A browser `Origin` must be in the same set.
+- `MCP_ALLOWED_HOSTS` does not count for the admin listener, and `ADMIN_ALLOWED_HOSTS` does not count for the MCP listener.
+
 **Pages on the MCP listener.** The MCP listener shows a small fixed set of HTML pages: OAuth sign-in, OAuth consent, and the approval page. They use the portal user accounts and the OIDC configuration.
 
 - The pages run no scripts. The only exception is the page after an approval decision: its CSP allows one static `window.close()` script by its hash (ADR-0006).
@@ -73,8 +79,9 @@ For example, `GET :8080/api/instances` and `GET :8081/{slug}` both return 404.
 
 - Good, because the admin portal is not on the internet unless an admin publishes its port.
 - Good, because a stolen consent or approval cookie cannot reach the Admin API or the other purpose.
-- Good, because a rebinding page cannot reach the MCP listener through another host name.
+- Good, because a rebinding page cannot reach the MCP or the admin listener through another host name. So it cannot claim the first account.
+- Bad, because an install that reaches the portal through an unlisted name must add it to `ADMIN_ALLOWED_HOSTS`.
 - Bad, because an install without `PUBLIC_MCP_URL` has no OAuth.
 - Bad, because plugin text still reaches the model. The block marks it, and core's rules come before and after it.
 
-The model views `containers` and `deployment` show the listeners. The feature files `@id:listeners`, `@id:host-origin` and `@id:proxies` specify its behavior.
+The model views `containers` and `deployment` show the listeners. The feature files `@id:listeners`, `@id:host-origin`, `@id:portal-host-names` and `@id:proxies` specify its behavior.

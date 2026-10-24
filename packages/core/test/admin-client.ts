@@ -6,7 +6,7 @@ export function browser(app: Pick<Hono, 'request'>, opts: { csrf?: boolean } = {
   const withCsrf = opts.csrf ?? true;
 
   async function req(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-    const h: Record<string, string> = { ...headers };
+    const h: Record<string, string> = { host: 'localhost', ...headers };
     if (jar.size) h.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (withCsrf && jar.has('syn_csrf') && !('x-csrf-token' in h)) h['x-csrf-token'] = jar.get('syn_csrf')!;
     const stream = body instanceof ReadableStream;

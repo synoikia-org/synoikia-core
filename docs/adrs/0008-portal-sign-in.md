@@ -47,6 +47,8 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 - An e-mail entry is an exact address or `*@domain`, compared without case. `*@domain` accepts that domain after the last `@`, but not its subdomains. Core refuses other wildcard forms.
 - The flow is the authorization code flow with PKCE, `state` and `nonce`.
 - `autoProvision` is off by default. Then a user must link an OIDC identity first (Profile → "Link OIDC identity"). With `autoProvision` and self-registration on (ADR-0010), core creates a user for each accepted identity.
+- After an OIDC sign-in, core returns only to a path of the portal. The path starts with one `/` and holds no `\`, no space and no control character. Core returns to `/` for any other path.
+- An automatic user gets the name from the identity. Core compares names without case. When the name is taken, core adds `-2`, `-3` and so on.
 - The IdP redirect is cross-site, so the browser does not send the session cookie. The callback opens the link step on the same site, which links the identity only for the user who started the link.
 
 **Local sign-in fallback.**
@@ -63,7 +65,7 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 - A session ends after 30 minutes without use, and after 12 hours in total. Both values are settings.
 - Sign-out deletes the session. A password change ends the other sessions of the user.
 
-**CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it.
+**CSRF.** Each request that changes state on `/api/*` or `/auth/*` needs a double-submit token: the `syn_csrf` cookie and the `X-CSRF-Token` header. If `PUBLIC_ADMIN_URL` is set, core also checks `Origin` against it. Before that, any browser `Origin` must be a host name of the admin listener (ADR-0015).
 
 **Brute-force protection.**
 
