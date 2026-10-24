@@ -108,7 +108,7 @@ export function runPlugin(handlers: PluginHandlers): void {
     const ms = (params as { heartbeatMs?: unknown } | null)?.heartbeatMs;
     clearInterval(heartbeat);
     if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0)
-      heartbeat = setInterval(() => notify({ method: 'heartbeat' }), Math.max(100, ms));
+      heartbeat = setInterval(() => notify({ method: 'heartbeat' }), Math.min(60_000, Math.max(100, ms)));
   };
   pipe.on('data', (chunk: Buffer) => {
     const frames = read(chunk);

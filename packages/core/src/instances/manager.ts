@@ -99,7 +99,7 @@ interface Live {
   /** The cold start of an idle instance that every caller waits for. */
   waking?: Promise<void>;
   catalogChangedTimer?: NodeJS.Timeout;
-  /** When a change report last started a sync, on the wall clock. */
+  /** When a change report last started a sync, on the monotonic clock. */
   lastChangeSync?: number;
   /** The running child's bundle version, read from its manifest.json just before each fork; the catalog
    * must have been synced from it (`ensureFresh`). */
@@ -865,10 +865,10 @@ export class InstanceManager {
     const live = this.live.get(instanceId);
     if (!live || live.catalogChangedTimer) return;
     const interval = this.opts.supervisor?.changeSyncIntervalMs ?? 60_000;
-    const delayMs = Math.max(2000, (live.lastChangeSync ?? -Infinity) + interval - Date.now());
+    const delayMs = Math.max(2000, (live.lastChangeSync ?? -Infinity) + interval - performance.now());
     live.catalogChangedTimer = setTimeout(() => {
       live.catalogChangedTimer = undefined;
-      live.lastChangeSync = Date.now();
+      live.lastChangeSync = performance.now();
       void this.syncNow(instanceId).catch(() => undefined);
     }, delayMs);
   }

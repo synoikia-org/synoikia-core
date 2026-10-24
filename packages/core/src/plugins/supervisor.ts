@@ -118,6 +118,8 @@ export class PluginSupervisor {
 
   private async shutdown() {
     this.stopping = true;
+    this.stoppedAnswering = false;
+    this.unwatch();
     this.generation++;
     clearTimeout(this.restartTimer);
     const proc = this.proc;
@@ -138,7 +140,11 @@ export class PluginSupervisor {
     this.proc = proc;
     proc.on('log', (level, message) => this.opts.onLog?.(level, message));
     proc.on('catalogChanged', (reason) => this.opts.onCatalogChanged?.(reason));
-    proc.on('heartbeat', () => this.watchHeartbeats(proc, generation));
+    const beat = { at: 0 };
+    proc.on('heartbeat', () => {
+      beat.at = performance.now();
+      this.watchHeartbeats(proc, generation, beat);
+    });
     proc.on('invalidMessage', () => this.opts.onInvalidMessage?.());
     proc.on('handlerFault', (err) => this.opts.onHandlerFault?.(err));
     proc.on('exit', (code, signal) => {
@@ -171,17 +177,25 @@ export class PluginSupervisor {
     this.setStatus('ready');
   }
 
+  /** Bounded, so neither a tiny interval nor one past the timer limit of Node reaches the child. */
   private get heartbeatMs() {
-    return this.opts.heartbeatMs ?? 5000;
+    return Math.min(60_000, Math.max(100, this.opts.heartbeatMs ?? 5000));
   }
 
-  /** ADR-0023: watches a child from its first heartbeat, so a child that sends none is never watched. */
-  private watchHeartbeats(proc: PluginProcess, generation: number) {
-    this.lastBeat = Date.now();
-    if (this.watch) return;
+  /** ADR-0023: watches a child from its first heartbeat, so a child that sends none is never watched. Times are
+   * monotonic, so a step of the wall clock restarts no child. */
+  private watchHeartbeats(proc: PluginProcess, generation: number, beat: { at: number }) {
+    if (this.watched === proc) return;
+    this.unwatch();
+    this.watched = proc;
+    let tickedAt = performance.now();
     this.watch = setInterval(() => {
       if (generation !== this.generation || this.proc !== proc) return this.unwatch();
-      if (Date.now() - this.lastBeat < 3 * this.heartbeatMs) return;
+      const now = performance.now();
+      // A late tick means core itself was busy, and the heartbeats may still wait to be read: check next time.
+      const late = now - tickedAt > 2 * this.heartbeatMs;
+      tickedAt = now;
+      if (late || now - beat.at < 3 * this.heartbeatMs) return;
       this.unwatch();
       this.stoppedAnswering = true;
       this.scheduleRestart('plugin stopped answering');
@@ -190,11 +204,12 @@ export class PluginSupervisor {
     this.watch.unref();
   }
 
-  private lastBeat = 0;
+  private watched?: PluginProcess;
 
   private unwatch() {
     clearInterval(this.watch);
     this.watch = undefined;
+    this.watched = undefined;
   }
 
   private scheduleRestart(reason: string) {
