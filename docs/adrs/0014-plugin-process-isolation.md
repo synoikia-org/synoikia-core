@@ -36,7 +36,7 @@ Core starts each enabled instance with `child_process.spawn` of Node on its entr
 
 **Supervision.**
 
-- If the child crashes, the instance status becomes `error`. Core starts it again with exponential backoff, from 1 s to 60 s. Core audits the crash and sends a notification.
+- If the child crashes, the instance status becomes `error`. Core starts it again with exponential backoff, from 1 s to 60 s. Core audits the crash and sends a notification. A child that stops sending heartbeats counts as a crash (ADR-0023).
 - Start, stop and restart of an instance run one at a time. A stop or restart kills a child that is still in `init`. At most one child of an instance is alive.
 - While the child is down, `execute` calls fail with `PLUGIN_UNAVAILABLE`. The gate does not need the plugin to refuse a call, so it never fails open.
 - **Bundle version.** Just before each fork, core reads the version in the `manifest.json` of the bundle. If the catalog does not come from this version, core syncs before the endpoint serves again.

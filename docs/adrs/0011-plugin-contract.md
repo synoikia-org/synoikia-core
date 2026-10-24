@@ -84,7 +84,7 @@ Core calls `invoke` only after the gate lets the call through. The admin accepts
 | `getGuide(key)` → `{ version, content }`                        | With `attestation`     | The best-practice guide of an operation.                                                             |
 | `shutdown()`                                                    | Yes                    | Stops the child.                                                                                     |
 
-The child can also send the notifications `log` and `catalogChanged`.
+The child can also send the notifications `log`, `catalogChanged` and `heartbeat` (ADR-0023). After a `catalogChanged`, core syncs the catalog within seconds, and at most once a minute for each instance.
 
 `InvokeContext` holds `callId` (unique for each call), `expectedHash` (from `prepareWrite`), `deadlineMs` and `targets`. `targets` are the targets that the approver saw. The plugin acts on these targets and does not resolve them again.
 
