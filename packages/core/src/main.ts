@@ -19,6 +19,7 @@ await ctx.start();
 const servers = await startServers(ctx);
 console.log(`MCP listener on ${config.MCP_HOST}:${servers.mcp.port}`);
 console.log(`Admin listener on ${config.ADMIN_HOST}:${servers.admin.port}`);
+if (servers.metrics) console.log(`Metrics listener on ${config.METRICS_HOST}:${servers.metrics.port}`);
 
 let stopping = false;
 const shutdown = (signal: string) => {

@@ -72,7 +72,7 @@ views {
 
   deployment view deployment {
     title 'Deployment'
-    description 'One container, two listeners and one data volume.'
+    description 'One container, its listeners and one data volume.'
     include *
   }
 }

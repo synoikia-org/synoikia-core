@@ -236,10 +236,15 @@ export interface AcmeId {
 /** Polls `check` until it holds, for at most `ms`. */
 /** The servers never close an idle connection, so fetch closes it first: no reset when a reused socket races the close. */
 function keepIdleConnections<
-  T extends { admin: { server: { keepAliveTimeout: number } }; mcp: { server: { keepAliveTimeout: number } } },
+  T extends {
+    admin: { server: { keepAliveTimeout: number } };
+    mcp: { server: { keepAliveTimeout: number } };
+    metrics?: { server: { keepAliveTimeout: number } };
+  },
 >(servers: T): T {
   servers.admin.server.keepAliveTimeout = 0;
   servers.mcp.server.keepAliveTimeout = 0;
+  if (servers.metrics) servers.metrics.server.keepAliveTimeout = 0;
   return servers;
 }
 
@@ -354,6 +359,8 @@ export class SynoikiaWorld extends QuickPickleWorld {
   admin!: Portal;
   adminBase = '';
   mcpBase = '';
+  /** Empty while core runs without its metrics listener. */
+  metricsBase = '';
   instances = new Map<string, string>();
   lastInstance = '';
   agents = new Map<string, Agent>();
@@ -477,6 +484,7 @@ export class SynoikiaWorld extends QuickPickleWorld {
     }
     this.adminBase = `http://127.0.0.1:${this.servers.admin.port}`;
     this.mcpBase = `http://127.0.0.1:${this.servers.mcp.port}`;
+    this.metricsBase = this.servers.metrics ? `http://127.0.0.1:${this.servers.metrics.port}` : '';
   }
 
   /** Stops core the way main.ts does on a signal: drain, close the listeners, stop. Agents lose their sessions. */

@@ -115,6 +115,19 @@ On first start, open the admin portal and create the first account (or set `ADMI
 - `admin.example.com` → `:8081`. The admin portal has its own port, and its sign-in protects it. An access proxy, such as Cloudflare Access, can add a second layer.
 - Set `TRUST_PROXY=true`, or the number of proxies, so that core reads `X-Forwarded-*`. Core reads `X-Forwarded-For` from the right, and takes the entry that the outermost trusted proxy added as the client.
 
+### Metrics
+
+Set `METRICS_PORT` to let Prometheus read the metrics of core at `/metrics` on that port. Set `METRICS_TOKEN` too, and give Prometheus the same value as its bearer token. Without `METRICS_TOKEN`, anyone who can reach the port can read the metrics, and core logs a warning at start. Keep the port on the LAN. The port has no Host check, so set `METRICS_TOKEN` where browsers share the network. See ADR-0023.
+
+```yaml
+scrape_configs:
+  - job_name: synoikia
+    authorization:
+      credentials: <METRICS_TOKEN>
+    static_configs:
+      - targets: ['synoikia.lan:9464']
+```
+
 ### Network egress
 
 Core does not restrict the network access of plugins yet (issues #108 and #111). Use a container network policy. Allow outbound traffic only to the upstream hosts, the ntfy and webhook targets, the OIDC issuer and the plugin repository hosts.
