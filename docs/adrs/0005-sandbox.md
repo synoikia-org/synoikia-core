@@ -42,7 +42,7 @@ Chosen option: "A new `isolated-vm` isolate for each run", because a V8 isolate 
 | Time        | 10 s    | Time that a binding waits for a human approval does not count. The CPU that the script uses meanwhile counts. |
 | Memory      | 64 MB   |                                                                                                               |
 | Result size | 64 KB   | A larger result comes back as `{ truncated, bytes, preview }`.                                                |
-| Logs        | 16 KB   | In UTF-8 bytes. Each line counts at least 1 byte.                                                             |
+| Logs        | 16 KB   | In UTF-8 bytes. Each line counts at least 1 byte. Past the cap, the script stops calling into core.           |
 
 The time limit stops synchronous loops (V8 timeout) and asynchronous loops (core disposes of the isolate). A parked execution (ADR-0006) keeps its isolate after the tool call answers, until the script ends.
 

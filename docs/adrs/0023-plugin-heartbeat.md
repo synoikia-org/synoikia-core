@@ -27,7 +27,9 @@ Chosen option: "The child sends a heartbeat, and core restarts a child that stop
 
 - **Contract.** Core passes `heartbeatMs` in `init`, 5 s by default. The child then sends the notification `heartbeat` at that interval. Plugin contract `0.3.1` adds both. A child that gets no `heartbeatMs`, from an older core, sends none.
 - **Watch.** Core watches a child from its first heartbeat. A child that never sends one, from an older SDK, is never watched, and works as before.
-- **Restart.** When three intervals pass with no heartbeat, core kills the child. Supervision counts it as a crash, with the reason `stopped_answering`, and follows the back-off of ADR-0014. Core audits it and sends the crash notification. The calls that wait on the child fail as `PLUGIN_UNAVAILABLE`.
+- **Restart.** When three intervals pass with no heartbeat, core kills the child. Supervision counts it as a crash, with the reason "plugin stopped answering", and follows the back-off of ADR-0014. Core audits it and sends the crash notification.
+- **Calls.** A read that waits on the child fails as `PLUGIN_UNAVAILABLE`. A write fails as `UPSTREAM_TIMEOUT`, because the child may have sent it upstream, so the result is unknown.
+- **Clock.** Core measures the intervals on a monotonic clock. A watch tick that comes late, because core itself was busy, kills no child.
 
 ### Consequences
 
