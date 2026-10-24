@@ -461,3 +461,38 @@ describe('0019 typed confirmation locks migration', () => {
     ]);
   });
 });
+
+describe('0020 account kinds migration', () => {
+  it('makes each user with an identity an SSO account, and removes the password and app of one that had both', () => {
+    const { dir, sqlite } = databaseAt('0019_typed_confirmation_locks');
+    sqlite.exec(`
+      INSERT INTO users (id, username, password_hash, totp_enabled, recovery_codes_hash, oidc_issuer, oidc_subject, created_at)
+        VALUES
+          ('both', 'user30', 'hash', 1, '["r"]', 'https://idp.example.com', 'sub-30', 1000),
+          ('sso', 'user12', NULL, 0, NULL, 'https://idp.example.com', 'sub-12', 2000),
+          ('local', 'user15', 'hash', 0, NULL, NULL, NULL, 3000);
+    `);
+    sqlite.close();
+
+    const db = openDatabase({ dataDir: dir });
+    const user = (id: string) => db.select().from(schema.users).where(eq(schema.users.id, id)).get();
+    expect(user('both')).toMatchObject({
+      kind: 'sso',
+      passwordHash: null,
+      totpEnabled: false,
+      recoveryCodesHash: null,
+      oidcSubject: 'sub-30',
+    });
+    expect(user('sso')).toMatchObject({ kind: 'sso', oidcSubject: 'sub-12' });
+    expect(user('local')).toMatchObject({ kind: 'local', passwordHash: 'hash' });
+    expect(db.select().from(schema.auditLog).all()).toMatchObject([
+      {
+        kind: 'auth',
+        decision: 'password_removed_sso_account',
+        actorKind: 'system',
+        actorId: 'both',
+        detail: { username: 'user30', totpRemoved: true, migration: '0020_account_kinds' },
+      },
+    ]);
+  });
+});
