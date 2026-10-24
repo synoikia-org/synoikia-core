@@ -122,11 +122,11 @@ Feature: Metrics for Prometheus
       When Prometheus reads the metrics
       Then Prometheus reads 2 active users
 
-    Scenario: The agents that core knows are counted
+    Scenario: Sessions are counted by the app that the agent runs in
       Given the operator started the server with metrics on the port 9464
-      And core knows the agents 7 and 9
+      And agent 7 connected to "tasks" from "claude-code" and agent 9 from "cursor"
       When Prometheus reads the metrics
-      Then Prometheus reads 2 agents
+      Then Prometheus reads 1 session from "claude-code" and 1 from "cursor"
 
   @backlog
   Rule: Prometheus sees the agent sessions and the sign-ins that fail
