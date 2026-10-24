@@ -233,4 +233,10 @@ function open(id: string, section?: string) {
 .d-foot a {
   margin-left: auto;
 }
+@media (max-width: 720px) {
+  .help-drawer {
+    width: 100vw;
+    border-left: none;
+  }
+}
 </style>
