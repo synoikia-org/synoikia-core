@@ -74,7 +74,7 @@ Chosen option: "Local users with optional TOTP and OIDC". An install works on it
 
 **Delete a user.** An admin deletes a user (`DELETE /api/users/:id`). The delete is permanent.
 
-- Core refuses to delete the admin who asks, the last user or the last enabled admin.
+- Core refuses to delete the admin who asks, the primary owner (ADR-0025), the last user or the last enabled admin.
 - First, core takes every credential of the user away: sessions, OAuth grants and bearer tokens. It also ends their pending approvals and the session grants that they gave (ADR-0006).
 - Then, in one transaction, core deletes the user, their personal levels and their own pre-approval rules. It keeps the shared rows that name the user and clears that name. It writes the audit event `user_deleted`.
 - Core does not change the audit log. The log reads the user name of a deleted user from `user_deleted`.
