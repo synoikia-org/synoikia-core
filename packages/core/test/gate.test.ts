@@ -25,7 +25,7 @@ import { SlidingWindowLimiter } from '../src/gate/rate-limit.js';
 import { createRedactor, GLOBAL_SENSITIVE_KEYS } from '../src/gate/redact.js';
 import { parseInstanceSettings, readInstanceSettings } from '../src/instances/settings.js';
 import type { InstanceSettings } from '../src/instances/settings.js';
-import { PluginProcess } from '../src/plugins/process.js';
+import { PluginProcess, PluginUnresponsiveError } from '../src/plugins/process.js';
 import { ExecutionRegistry } from '../src/runtime/executions.js';
 import type { PendingResult } from '../src/runtime/executions.js';
 import { executeCode, resumeExecution } from '../src/runtime/index.js';
@@ -317,6 +317,24 @@ describe('execute → gate → plugin', () => {
         .run();
       const r = await t.exec(`await echo.call('echo.delete', { name: 'vol/x' });`);
       expect(r).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
+    });
+  });
+
+  it('tells the model that a write is unknown when its plugin stopped answering during it (ADR-0023)', async () => {
+    const t = await setup();
+    t.setLevel('write');
+    updateOperation(t.db, t.instanceId, t.opId('echo.set'), { acknowledged: true });
+    const real = t.rt.plugin();
+    t.rt.plugin = () =>
+      ({
+        call: (method: string, ...rest: unknown[]) =>
+          method === 'invoke'
+            ? Promise.reject(new PluginUnresponsiveError())
+            : (real.call as (...a: unknown[]) => Promise<unknown>)(method, ...rest),
+      }) as unknown as ReturnType<typeof t.rt.plugin>;
+    await expect(t.exec(`await echo.call('echo.set', { name: 'x' });`)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'UPSTREAM_TIMEOUT', message: expect.stringContaining('The result is unknown') as string },
     });
   });
 

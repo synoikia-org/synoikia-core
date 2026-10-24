@@ -553,7 +553,10 @@ export function createGateBindings(
           remaining,
         )
         .catch((err: unknown) => {
-          if (!(err instanceof PluginTimeoutError)) throw err;
+          // A write whose child exited or stopped answering (ADR-0023) may have reached the upstream, as
+          // after a timeout: the result is unknown, so the agent must not just retry it.
+          const unknown = err instanceof PluginTimeoutError || (isWrite && err instanceof PluginUnavailableError);
+          if (!unknown) throw err;
           throw new BindingError(
             'UPSTREAM_TIMEOUT',
             `${rt.manifest.name} did not answer in time. The result is unknown: check before you retry`,
