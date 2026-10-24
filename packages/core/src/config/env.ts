@@ -12,11 +12,10 @@ const bool = z
   .transform((v) => v === 'true' || v === '1');
 
 const port = z.coerce.number().int().min(0).max(65535);
-const optionalPort = z.preprocess((v) => (v === '' ? undefined : v), port.optional());
-const optionalString = z
-  .string()
-  .optional()
-  .transform((v) => (v ? v : undefined));
+// A value of only spaces counts as not set, so a blank line in .env opens no port.
+const blank = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+const optionalPort = z.preprocess(blank, port.optional());
+const optionalString = z.preprocess(blank, z.string().optional());
 const optionalUrl = z
   .string()
   .optional()

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { Gauge, Registry } from 'prom-client';
+import { Gauge, Registry } from '@prometheus-io/client';
 import type { AppContext } from '../app.js';
 import { safeEqual, sha256 } from '../auth/tokens.js';
 import { CORE_VERSION } from '../version.js';

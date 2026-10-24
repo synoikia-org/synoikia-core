@@ -23,6 +23,20 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ MCP_PORT: '9000', ADMIN_PORT: '9000' })).toThrow(/must differ/);
   });
 
+  it('turns the metrics listener on only with a port', () => {
+    expect(loadConfig({}).METRICS_PORT).toBeUndefined();
+    expect(loadConfig({ METRICS_PORT: '' }).METRICS_PORT).toBeUndefined();
+    expect(loadConfig({ METRICS_PORT: ' ' }).METRICS_PORT).toBeUndefined();
+    expect(loadConfig({ METRICS_PORT: '9464' }).METRICS_PORT).toBe(9464);
+    expect(loadConfig({ METRICS_TOKEN: '  ' }).METRICS_TOKEN).toBeUndefined();
+  });
+
+  it('refuses to put metrics on the MCP or the admin port', () => {
+    expect(() => loadConfig({ METRICS_PORT: '8080' })).toThrow(/METRICS_PORT must differ/);
+    expect(() => loadConfig({ METRICS_PORT: '8081' })).toThrow(/METRICS_PORT must differ/);
+    expect(loadConfig({ MCP_PORT: '0', ADMIN_PORT: '0', METRICS_PORT: '0' }).METRICS_PORT).toBe(0);
+  });
+
   it('validates public URLs', () => {
     expect(loadConfig({ PUBLIC_MCP_URL: 'https://mcp.example.com' }).PUBLIC_MCP_URL).toBe('https://mcp.example.com');
     expect(loadConfig({ PUBLIC_MCP_URL: '' }).PUBLIC_MCP_URL).toBeUndefined();
