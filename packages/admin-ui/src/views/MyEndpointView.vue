@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpButton from '../components/HelpButton.vue';
 import { computed, ref, useId } from 'vue';
 import { useRoute } from 'vue-router';
 import { rovingKeydown } from '../a11y';
@@ -51,6 +52,7 @@ const error = computed(() => (loadError.value ? errorText(loadError.value) : und
           </template>
         </p>
       </div>
+      <HelpButton />
     </div>
     <p v-if="endpoint?.status?.error" class="alert error" role="alert">{{ endpoint.status.error }}</p>
     <nav v-if="tabs" class="tabs" role="tablist" aria-label="Endpoint sections" @keydown="rovingKeydown">

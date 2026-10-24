@@ -11,3 +11,4 @@ import '../profile/steps/portal-profile.steps.js';
 import '../audit/steps/portal-audit.steps.js';
 import '../shell/steps/portal-shell.steps.js';
 import '../accessibility/steps/portal-accessibility.steps.js';
+import '../help/steps/portal-help.steps.js';

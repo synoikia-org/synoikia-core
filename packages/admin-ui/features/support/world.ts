@@ -141,6 +141,8 @@ export class PortalWorld extends QuickPickleWorld {
   clockMs = 0;
   /** Start-up settings core gets on top of the World's own, kept across restarts. */
   coreEnv: Record<string, string> = {};
+  /** The version core reports, when a scenario names one. */
+  coreVersion?: string;
   /** The plugin repositories the World publishes, by name, and what their hosts serve. */
   repositories = new Map<string, FakeRepository>();
   repoFiles = new Map<string, Buffer>();
@@ -189,6 +191,7 @@ export class PortalWorld extends QuickPickleWorld {
         oidcAllowInsecure: true,
         now: () => new Date(Date.now() + this.clockMs),
         repoFetch: (url) => this.repositoryHost(url),
+        version: this.coreVersion,
       },
     );
     await this.ctx.start();

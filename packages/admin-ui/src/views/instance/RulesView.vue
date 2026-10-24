@@ -2,7 +2,7 @@
 import { computed, ref, useId, watch } from 'vue';
 import { errorText } from '../../api';
 import ChipsInput from '../../components/ChipsInput.vue';
-import InfoTip from '../../components/InfoTip.vue';
+import HelpLink from '../../components/HelpLink.vue';
 import ModalDialog from '../../components/ModalDialog.vue';
 import RegistryPicker from '../../components/RegistryPicker.vue';
 import { accessBase, useLevelViewQuery, useOperationsQuery } from '../../composables/useAccess';
@@ -304,32 +304,12 @@ watch(draft, (d) => {
 });
 
 /** Help shown beside each setting in the rule editor. */
-const TIPS = {
-  operation:
-    "The write this rule pre-approves. Rules apply while the operation is at Ask; at Write it already runs without asking. Locked operations can't be pre-approved and always ask a person.",
-  onlyWhen:
-    'The rule applies only to calls whose parameters all match what you set here. An empty field means the call must not send that parameter.',
-  anyValue: 'Accept this parameter with any value, or when it is left out.',
-  extraAny:
-    'Parameters this form does not list that a call may still send, with any value. Write them as paths, such as /quota.',
-  anyParams:
-    'Accept calls whatever other parameters they send. The rule then covers far more calls than the fields above suggest.',
-  rateLimit:
-    'How many calls this rule approves within the window. Calls over the limit are not refused; they ask a person instead. Leave empty for no limit.',
-  window: 'The length of the rate-limit window, in minutes. Defaults to 60.',
-  expires: 'After this time (your local time) the rule stops applying and calls ask again. Leave empty to keep it.',
-  reason: 'Why this is safe to run without asking. Recorded in the audit log with every call the rule approves.',
-  enabled: 'A disabled rule is kept but approves nothing, so matching calls ask a person.',
-};
 </script>
 
 <template>
   <div class="stack">
     <div class="row">
-      <p class="small muted grow">
-        A matching call runs without asking a person. Rules never apply to locked operations, and a rule on an operation
-        that is not reachable does nothing.
-      </p>
+      <p class="small muted grow">A rule lets a write run without asking a person.</p>
       <button class="btn btn-primary" type="button" :disabled="!eligible.length" @click="edit()">New rule</button>
     </div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p>
@@ -394,7 +374,7 @@ const TIPS = {
 
     <ModalDialog v-if="draft" :title="draft.id ? 'Edit rule' : 'New pre-approval rule'" wide @close="draft = undefined">
       <div class="field">
-        <label for="r-op">Operation <InfoTip :text="TIPS.operation" label="About the operation" /></label>
+        <label for="r-op">Operation</label>
         <input
           v-if="!draft.id"
           v-model="opSearch"
@@ -411,20 +391,15 @@ const TIPS = {
       </div>
 
       <template v-if="draftOp">
-        <h2>Only when <InfoTip :text="TIPS.onlyWhen" label="About matching" /></h2>
-        <p class="small muted">
-          Strict: a call matches only if every parameter it sends is covered here. Leave a field empty to require that
-          the parameter is absent, or tick “any value”.
-        </p>
+        <h2>Only when <HelpLink topic="rules" section="how-matching-works" label="Only when" /></h2>
         <div v-for="(f, i) in fields" :key="f.field" class="field">
           <div class="field-head">
             <label :id="`${uid}-f${i}`"
               >{{ f.label }} <span class="mono muted small">{{ f.field }}{{ f.op ? ` · ${f.op}` : '' }}</span></label
             >
             <label v-if="f.field !== '$targets'" class="row small any"
-              ><input v-model="valueOf(f).any" type="checkbox" /> any value
-              <InfoTip :text="TIPS.anyValue" label="About any value" end
-            /></label>
+              ><input v-model="valueOf(f).any" type="checkbox" /> any value</label
+            >
           </div>
           <RegistryPicker
             v-if="f.field === '$targets' && targets"
@@ -496,23 +471,20 @@ const TIPS = {
       </template>
 
       <div v-if="draftOp" class="field">
-        <label :id="`${uid}-extra`"
-          >Other parameters accepted with any value <InfoTip :text="TIPS.extraAny" label="About other parameters"
-        /></label>
+        <label :id="`${uid}-extra`">Other parameters accepted with any value</label>
         <ChipsInput v-model="draft.extraAny" placeholder="e.g. /quota" :aria-labelledby="`${uid}-extra`" />
         <label class="row small"
-          ><input v-model="draft.anyParams" type="checkbox" /> Accept any other parameters (not recommended)
-          <InfoTip :text="TIPS.anyParams" label="About accepting any parameters"
-        /></label>
+          ><input v-model="draft.anyParams" type="checkbox" /> Accept any other parameters (not recommended)</label
+        >
       </div>
 
       <div class="form-grid">
         <div class="field">
-          <label for="r-rate">Rate limit (calls) <InfoTip :text="TIPS.rateLimit" label="About the rate limit" /></label>
+          <label for="r-rate">Rate limit (calls)</label>
           <input id="r-rate" v-model="draft.rateLimit" type="number" min="1" placeholder="unlimited" />
         </div>
         <div class="field">
-          <label for="r-win">Per (minutes) <InfoTip :text="TIPS.window" label="About the window" /></label>
+          <label for="r-win">Per (minutes)</label>
           <input
             id="r-win"
             v-model="draft.windowMinutes"
@@ -523,21 +495,22 @@ const TIPS = {
           />
         </div>
         <div class="field">
-          <label for="r-exp">Expires <InfoTip :text="TIPS.expires" label="About expiry" end /></label>
+          <label for="r-exp">Expires</label>
           <input id="r-exp" v-model="draft.expiresAt" type="datetime-local" />
         </div>
       </div>
       <div class="field">
-        <label for="r-reason"
-          >Reason (required, shown in the audit log) <InfoTip :text="TIPS.reason" label="About the reason"
-        /></label>
-        <input id="r-reason" v-model="draft.reason" placeholder="Nightly media snapshots" />
+        <label for="r-reason">Reason</label>
+        <input
+          id="r-reason"
+          v-model="draft.reason"
+          placeholder="Nightly media snapshots"
+          aria-describedby="r-reason-help"
+        />
+        <p id="r-reason-help" class="help">Required. Shown in the audit log.</p>
       </div>
       <div class="field check">
-        <label
-          ><input v-model="draft.enabled" type="checkbox" /> Enabled
-          <InfoTip :text="TIPS.enabled" label="About enabled"
-        /></label>
+        <label><input v-model="draft.enabled" type="checkbox" /> Enabled</label>
       </div>
       <p v-if="draft.note" class="alert error" role="alert">{{ draft.note }}</p>
       <template #footer>
