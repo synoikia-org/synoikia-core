@@ -33,9 +33,9 @@ Feature: Metrics for Prometheus
   Rule: Prometheus sees what is installed and how it runs
 
     Scenario: The version of core is shown
-      Given the operator started core 0.24.0 with metrics on the port 9464
+      Given the operator started core 0.25.0 with metrics on the port 9464
       When Prometheus reads the metrics
-      Then Prometheus reads the version "0.24.0"
+      Then Prometheus reads the version "0.25.0"
 
     Scenario: The installed plugins and the instances are counted
       Given the operator started the server with metrics on the port 9464
@@ -96,6 +96,7 @@ Feature: Metrics for Prometheus
 
   Rule: Prometheus sees how approvals end
 
+    @long-running
     Scenario Outline: An approval that ends as <end> is counted
       Given the operator started the server with metrics on the port 9464
       And agent 7 added "butter" to "Groceries" of the instance "tasks" and waits for approval
