@@ -9,7 +9,7 @@ model {
       description 'The admin listener: the Admin API and the static portal, with session cookies and CSRF checks.'
     }
     metrics = component 'Metrics listener' {
-      technology 'http/metrics, prom-client'
+      technology 'http/metrics, @prometheus-io/client'
       description 'The metrics listener: the metrics of core in the Prometheus text format, with an optional bearer token.'
     }
     auth = component 'Auth' {
